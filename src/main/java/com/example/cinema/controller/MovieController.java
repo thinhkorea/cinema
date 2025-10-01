@@ -1,7 +1,8 @@
 package com.example.cinema.controller;
 
 import com.example.cinema.entity.Movie;
-import com.example.cinema.repository.MovieRepository;
+import com.example.cinema.service.MovieService;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -9,54 +10,46 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/movies")
 public class MovieController {
+    private final MovieService movieService;
 
-    private final MovieRepository movieRepository;
-
-    public MovieController(MovieRepository movieRepository) {
-        this.movieRepository = movieRepository;
+    public MovieController(MovieService movieService) {
+        this.movieService = movieService;
     }
 
-    // 📌 Lấy toàn bộ danh sách phim
     @GetMapping
-    public List<Movie> getAllMovies() {
-        return movieRepository.findAll();
+    public ResponseEntity<List<Movie>> getAllMovies() {
+        return ResponseEntity.ok(movieService.findAll());
     }
 
-    // 📌 Lấy phim theo ID
     @GetMapping("/{id}")
-    public Movie getMovieById(@PathVariable Long id) {
-        return movieRepository.findById(id).orElse(null);
+    public ResponseEntity<?> getMovieById(@PathVariable Long id) {
+        return movieService.findById(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 
-    // 📌 Thêm phim mới
     @PostMapping
-    public Movie addMovie(@RequestBody Movie movie) {
-        return movieRepository.save(movie);
+    public ResponseEntity<Movie> createMovie(@RequestBody Movie movie) {
+        return ResponseEntity.ok(movieService.save(movie));
     }
 
-    // 📌 Cập nhật phim theo ID
     @PutMapping("/{id}")
-    public Movie updateMovie(@PathVariable Long id, @RequestBody Movie movieDetails) {
-        return movieRepository.findById(id).map(movie -> {
-            movie.setTitle(movieDetails.getTitle());
-            movie.setGenre(movieDetails.getGenre());
-            movie.setDuration(movieDetails.getDuration());
-            movie.setDescription(movieDetails.getDescription());
-            movie.setReleaseDate(movieDetails.getReleaseDate());
-            movie.setEndDate(movieDetails.getEndDate());
-            movie.setPosterUrl(movieDetails.getPosterUrl());
-            movie.setTrailerUrl(movieDetails.getTrailerUrl());
-            return movieRepository.save(movie);
-        }).orElse(null);
+    public ResponseEntity<?> updateMovie(@PathVariable Long id, @RequestBody Movie movie) {
+        return movieService.findById(id)
+                .map(m -> {
+                    movie.setMovieId(id);
+                    return ResponseEntity.ok(movieService.save(movie));
+                })
+                .orElse(ResponseEntity.notFound().build());
     }
 
-    // 📌 Xóa phim theo ID
     @DeleteMapping("/{id}")
-    public String deleteMovie(@PathVariable Long id) {
-        if (movieRepository.existsById(id)) {
-            movieRepository.deleteById(id);
-            return "Deleted movie with ID " + id;
+    public ResponseEntity<?> deleteMovie(@PathVariable Long id) {
+        if (movieService.findById(id).isPresent()) {
+            movieService.delete(id);
+            return ResponseEntity.ok("Movie deleted");
+        } else {
+            return ResponseEntity.notFound().build();
         }
-        return "Movie not found!";
     }
 }
