@@ -1,6 +1,6 @@
 package com.example.cinema.controller;
 
-import com.example.cinema.entity.Movie;
+import com.example.cinema.domain.Movie;
 import com.example.cinema.service.MovieService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;

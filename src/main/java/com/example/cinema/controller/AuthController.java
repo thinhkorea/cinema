@@ -1,9 +1,9 @@
 package com.example.cinema.controller;
 
+import com.example.cinema.domain.User;
 import com.example.cinema.dto.LoginRequest;
 import com.example.cinema.dto.LoginResponse;
 import com.example.cinema.dto.RegisterRequest;
-import com.example.cinema.entity.User;
 import com.example.cinema.repository.UserRepository;
 import com.example.cinema.security.JwtUtil;
 import org.springframework.http.ResponseEntity;

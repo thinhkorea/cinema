@@ -1,8 +1,9 @@
 package com.example.cinema.repository;
 
-import com.example.cinema.entity.Ticket;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
+
+import com.example.cinema.domain.Ticket;
 
 @Repository
 public interface TicketRepository extends JpaRepository<Ticket, Long> {

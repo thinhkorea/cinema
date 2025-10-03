@@ -1,0 +1,19 @@
+// package com.example.cinema.config;
+package com.example.cinema.config;
+
+import io.swagger.v3.oas.models.*;
+import io.swagger.v3.oas.models.info.Info;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class OpenApiConfig {
+    @Bean
+    public OpenAPI apiInfo() {
+        return new OpenAPI()
+                .info(new Info()
+                        .title("Cinema Management API")
+                        .description("Backend for cinema booking")
+                        .version("v1"));
+    }
+}

@@ -1,4 +1,4 @@
-package com.example.cinema.entity;
+package com.example.cinema.domain;
 
 import jakarta.persistence.*;
 import lombok.Data;

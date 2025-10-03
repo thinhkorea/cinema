@@ -1,11 +1,11 @@
-package com.example.cinema.entity;
+package com.example.cinema.domain;
 
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 import java.sql.Date;
-import java.sql.Time;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "showtimes")
@@ -26,6 +26,7 @@ public class Showtime {
     private Room room;
 
     private Date showDate;
-    private Time startTime;
-    private Time endTime;
+    @Column(nullable = false)
+    private LocalDateTime startTime;
+    private LocalDateTime endTime;
 }

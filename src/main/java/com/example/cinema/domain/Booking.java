@@ -1,4 +1,4 @@
-package com.example.cinema.entity;
+package com.example.cinema.domain;
 
 import jakarta.persistence.*;
 import lombok.Data;
@@ -8,7 +8,7 @@ import lombok.AllArgsConstructor;
 import java.sql.Timestamp;
 
 @Entity
-@Table(name = "bookings")
+@Table(name = "bookings", uniqueConstraints = @UniqueConstraint(columnNames = { "showtime_id", "seat_id" }))
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -25,7 +25,9 @@ public class Booking {
     @JoinColumn(name = "showtime_id", nullable = false)
     private Showtime showtime;
 
-    private String seatNumber;
+    @ManyToOne
+    @JoinColumn(name = "seat_id", nullable = false)
+    private Seat seat;
 
     @Enumerated(EnumType.STRING)
     private Status status = Status.PENDING; // mặc định chờ thanh toán

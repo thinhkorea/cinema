@@ -35,21 +35,41 @@ public class SecurityConfig {
         http
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**").permitAll() // login, register
-                        .requestMatchers("/api/admin/**").hasRole("ADMIN") // chỉ ADMIN
-                        .requestMatchers("/api/customer/**").hasRole("CUSTOMER") // chỉ CUSTOMER
-                        .requestMatchers(HttpMethod.GET, "/api/movies/**").permitAll() // ai cũng xem phim được
-                        .requestMatchers("/api/movies/**").hasRole("ADMIN") // thêm/sửa/xóa chỉ ADMIN
-                        .anyRequest().authenticated() // các API khác cần login
-                )
+                        // 1) PUBLIC – đặt trước để không bị rule tổng quát phía sau “nuốt”
+                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/movies/**",
+                                "/api/showtimes/**",
+                                "/api/seats/**",
+                                "/api/bookings/showtime/*/seats-status" // xem sơ đồ ghế
+                        ).permitAll()
+
+                        // 2) ROOMS – GET cho ADMIN/STAFF, còn lại ADMIN
+                        .requestMatchers(HttpMethod.GET, "/api/rooms/**").hasAnyRole("ADMIN", "STAFF")
+                        .requestMatchers("/api/rooms/**").hasRole("ADMIN")
+
+                        // 3) ADMIN ONLY – tài nguyên quản trị & thao tác ghi
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/api/movies/**").hasRole("ADMIN") // POST/PUT/DELETE movies
+                        .requestMatchers("/api/seats/**").hasRole("ADMIN") // POST/PUT/DELETE seats
+                        .requestMatchers("/api/showtimes/**").hasRole("ADMIN") // POST/PUT/DELETE showtimes
+                        .requestMatchers(HttpMethod.GET, "/api/bookings/showtime/**").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/bookings/*/pay").hasRole("ADMIN")
+
+                        // 4) CUSTOMER endpoints
+                        .requestMatchers(HttpMethod.GET, "/api/bookings/me").hasRole("CUSTOMER")
+                        .requestMatchers(HttpMethod.POST, "/api/bookings").hasAnyRole("CUSTOMER", "ADMIN") // đặt vé
+                        .requestMatchers(HttpMethod.POST, "/api/bookings/*/cancel").hasAnyRole("CUSTOMER", "ADMIN")
+                        // (quyền huỷ vé của customer sẽ kiểm tra thêm ở service theo owner)
+
+                        // 5) Còn lại phải authenticated
+                        .anyRequest().authenticated())
                 .exceptionHandling(e -> e
-                        .authenticationEntryPoint(jwtAuthenticationEntryPoint) // chưa login / token lỗi
-                        .accessDeniedHandler(jwtAccessDeniedHandler) // có login nhưng thiếu quyền
-                )
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+                        .authenticationEntryPoint(jwtAuthenticationEntryPoint)
+                        .accessDeniedHandler(jwtAccessDeniedHandler))
+                .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
 
         http.addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
-
         return http.build();
     }
 
