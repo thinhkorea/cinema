@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.*;
 import java.time.Instant;
 
 @RestControllerAdvice
-public class GlobalExceptionHandler {
+public class GlobalErrorHandler {
 
     private ResponseEntity<ApiError> build(HttpStatus status, String error, String message, HttpServletRequest req) {
         return ResponseEntity.status(status)
