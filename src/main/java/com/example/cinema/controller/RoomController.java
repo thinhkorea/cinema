@@ -15,7 +15,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestParam;
 
 @RestController
 @RequestMapping("/api/rooms")
@@ -46,7 +45,7 @@ public class RoomController {
     @PutMapping("/{id}")
     public ResponseEntity<?> updateRoom(@PathVariable Long id, @RequestBody Room room) {
         return roomService.findById(id)
-                .map(r -> {
+                .map(res -> {
                     room.setRoomId(id);
                     return ResponseEntity.ok(roomService.save(room));
                 })

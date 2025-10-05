@@ -2,6 +2,8 @@ package com.example.cinema.security;
 
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
+
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
 import java.security.Key;
@@ -34,10 +36,32 @@ public class JwtUtil {
                 .parseClaimsJws(token).getBody().get("role", String.class);
     }
 
-    public boolean validateToken(String token) {
+    // public boolean validateToken(String token) {
+    // try {
+    // Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(token);
+    // return true;
+    // } catch (JwtException e) {
+    // return false;
+    // }
+    // }
+    public boolean validateToken(String token, UserDetails userDetails) {
         try {
-            Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(token);
-            return true;
+            Claims claims = Jwts.parserBuilder()
+                    .setSigningKey(key)
+                    .build()
+                    .parseClaimsJws(token)
+                    .getBody();
+
+            // Kiểm tra username từ token có khớp với UserDetails không
+            String username = claims.getSubject();
+            if (!username.equals(userDetails.getUsername())) {
+                return false;
+            }
+
+            // Kiểm tra token còn hạn không
+            Date expiration = claims.getExpiration();
+            return !expiration.before(new Date());
+
         } catch (JwtException e) {
             return false;
         }

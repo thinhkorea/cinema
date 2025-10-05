@@ -7,6 +7,6 @@ import com.example.cinema.domain.Ticket;
 
 @Repository
 public interface TicketRepository extends JpaRepository<Ticket, Long> {
-    // Ví dụ: thống kê số vé theo suất chiếu
+    // Thống kê số vé theo suất chiếu
     Long countByShowtime_ShowtimeId(Long showtimeId);
 }

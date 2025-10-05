@@ -44,31 +44,39 @@ public class BookingService {
         return bookingRepo.findByShowtime_ShowtimeId(showtimeId);
     }
 
+    // ✅ CREATE BOOKING
     @Transactional
     public Booking createBooking(String username, Long showtimeId, Long seatId) {
-        // 1) Load user theo username (lấy từ JWT principal)
+        // 1️⃣ Load user
         User user = userRepo.findByUsername(username);
         if (user == null)
             throw new IllegalArgumentException("User not found: " + username);
 
-        // 2) Load showtime & seat
+        // 2️⃣ Load showtime & seat
         Showtime showtime = showtimeRepo.findById(showtimeId)
                 .orElseThrow(() -> new IllegalArgumentException("Showtime not found: " + showtimeId));
 
         Seat seat = seatRepo.findById(seatId)
                 .orElseThrow(() -> new IllegalArgumentException("Seat not found: " + seatId));
 
-        // 3) Validate: seat phải thuộc đúng room của showtime
+        // 3️⃣ Validate seat thuộc đúng phòng chiếu
         if (!seat.getRoom().getRoomId().equals(showtime.getRoom().getRoomId())) {
             throw new IllegalStateException("Seat does not belong to the showtime's room");
         }
 
-        // 4) Validate: không đặt trùng ghế cho cùng suất
+        // 4️⃣ Kiểm tra ghế có đang bị đặt không
         if (bookingRepo.existsByShowtime_ShowtimeIdAndSeat_SeatId(showtimeId, seatId)) {
             throw new IllegalStateException("Seat already booked for this showtime");
         }
 
-        // 5) Lưu booking
+        // 5️⃣ Cập nhật trạng thái ghế
+        if (seat.isBooking()) {
+            throw new IllegalStateException("Seat already marked as booked");
+        }
+        seat.setBooking(true);
+        seatRepo.save(seat);
+
+        // 6️⃣ Lưu booking
         Booking booking = new Booking();
         booking.setUser(user);
         booking.setShowtime(showtime);
@@ -78,30 +86,38 @@ public class BookingService {
         try {
             return bookingRepo.save(booking);
         } catch (DataIntegrityViolationException ex) {
-            // Phòng khi 2 request race condition, DB unique constraint sẽ bắt
             throw new IllegalStateException("Seat already booked (race condition)", ex);
         }
     }
 
+    // ✅ MARK AS PAID
     @Transactional
     public Booking markPaid(Long bookingId) {
         Booking b = bookingRepo.findById(bookingId)
                 .orElseThrow(() -> new IllegalArgumentException("Booking not found: " + bookingId));
+
         b.setStatus(Booking.Status.PAID);
         return bookingRepo.save(b);
     }
 
+    // ✅ CANCEL BOOKING
     @Transactional
     public Booking cancel(Long bookingId, String username, boolean isAdmin) {
-        Booking b = bookingRepo.findById(bookingId)
+        Booking booking = bookingRepo.findById(bookingId)
                 .orElseThrow(() -> new IllegalArgumentException("Booking not found: " + bookingId));
 
-        // Nếu không phải admin thì chỉ được huỷ vé của chính mình
-        if (!isAdmin && !b.getUser().getUsername().equals(username)) {
+        if (!isAdmin && !booking.getUser().getUsername().equals(username)) {
             throw new SecurityException("Not allowed to cancel this booking");
         }
-        b.setStatus(Booking.Status.CANCELLED);
-        return bookingRepo.save(b);
+
+        booking.setStatus(Booking.Status.CANCELLED);
+
+        // 🟢 Giải phóng ghế khi huỷ vé
+        Seat seat = booking.getSeat();
+        seat.setBooking(false);
+        seatRepo.save(seat);
+
+        return bookingRepo.save(booking);
     }
 
     @Transactional
@@ -109,22 +125,21 @@ public class BookingService {
         bookingRepo.deleteById(bookingId);
     }
 
-    // NEW: build sơ đồ ghế + trạng thái cho 1 showtime
+    // ✅ Xây sơ đồ ghế theo showtime
     public List<SeatStatusDTO> seatStatusesForShowtime(Long showtimeId) {
         Showtime showtime = showtimeRepo.findById(showtimeId)
                 .orElseThrow(() -> new IllegalArgumentException("Showtime not found: " + showtimeId));
 
-        // tất cả ghế của phòng
         List<Seat> seats = seatRepo.findByRoom_RoomId(showtime.getRoom().getRoomId());
 
-        // các booking của suất này -> map theo seatId
         Map<Long, Booking> bookingBySeatId = bookingRepo.findByShowtime_ShowtimeId(showtimeId)
                 .stream()
-                // nếu có nhiều trạng thái, ưu tiên hiển thị bản ghi mới nhất hoặc PAID; ở đây
-                // chọn bản ghi đầu tiên
-                .collect(Collectors.toMap(b -> b.getSeat().getSeatId(), b -> b, (b1, b2) -> b1));
+                .collect(Collectors.toMap(
+                        b -> b.getSeat().getSeatId(),
+                        b -> b,
+                        (b1, b2) -> b1));
 
-        List<SeatStatusDTO> result = new ArrayList<>(seats.size());
+        List<SeatStatusDTO> result = new ArrayList<>();
         for (Seat s : seats) {
             Booking booked = bookingBySeatId.get(s.getSeatId());
             if (booked != null && booked.getStatus() != Booking.Status.CANCELLED) {

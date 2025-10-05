@@ -47,9 +47,19 @@ public class BookingController {
     @PostMapping
     public ResponseEntity<?> create(@RequestBody @jakarta.validation.Valid BookingRequest req, Authentication auth) {
         try {
-            String username = (String) auth.getPrincipal();
+            String username;
+
+            // ✅ Kiểm tra kiểu của principal trước khi ép kiểu
+            Object principal = auth.getPrincipal();
+            if (principal instanceof org.springframework.security.core.userdetails.User) {
+                username = ((org.springframework.security.core.userdetails.User) principal).getUsername();
+            } else {
+                username = principal.toString();
+            }
+
             Booking booking = bookingService.createBooking(username, req.getShowtimeId(), req.getSeatId());
             return ResponseEntity.ok(booking);
+
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
@@ -70,14 +80,15 @@ public class BookingController {
     @PostMapping("/{id}/cancel")
     public ResponseEntity<?> cancel(@PathVariable Long id, Authentication auth) {
         try {
-            String username = (String) auth.getPrincipal();
-            boolean isAdmin = auth.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
-            Booking b = bookingService.cancel(id, username, isAdmin);
-            return ResponseEntity.ok(b);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        } catch (SecurityException e) {
-            return ResponseEntity.status(403).body(e.getMessage());
+            String username = auth.getName(); // ✅ sửa chỗ này
+            boolean isAdmin = auth.getAuthorities().stream()
+                    .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+
+            Booking booking = bookingService.cancel(id, username, isAdmin);
+            return ResponseEntity.ok(booking);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(e.getMessage());
         }
     }
+
 }

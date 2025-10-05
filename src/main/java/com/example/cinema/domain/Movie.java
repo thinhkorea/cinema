@@ -20,11 +20,11 @@ public class Movie {
     private String title;
 
     private String genre;
-    private Integer duration; // phút
+    private Integer duration;
     private String description;
     private Date releaseDate;
     private Date endDate;
 
-    private String posterUrl; // đường dẫn ảnh poster
-    private String trailerUrl; // đường dẫn trailer video (YouTube, MP4...)
+    private String posterUrl;
+    private String trailerUrl;
 }

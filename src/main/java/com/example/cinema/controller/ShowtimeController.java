@@ -1,7 +1,12 @@
 package com.example.cinema.controller;
 
+import com.example.cinema.domain.Movie;
+import com.example.cinema.domain.Room;
 import com.example.cinema.domain.Showtime;
-import com.example.cinema.service.ShowtimeService;
+import com.example.cinema.dto.ShowtimeRequest;
+import com.example.cinema.repository.MovieRepository;
+import com.example.cinema.repository.RoomRepository;
+import com.example.cinema.repository.ShowtimeRepository;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -10,56 +15,86 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/showtimes")
 public class ShowtimeController {
-    private final ShowtimeService showtimeService;
 
-    public ShowtimeController(ShowtimeService showtimeService) {
-        this.showtimeService = showtimeService;
+    private final ShowtimeRepository showtimeRepository;
+    private final MovieRepository movieRepository;
+    private final RoomRepository roomRepository;
+
+    public ShowtimeController(ShowtimeRepository showtimeRepository,
+            MovieRepository movieRepository,
+            RoomRepository roomRepository) {
+        this.showtimeRepository = showtimeRepository;
+        this.movieRepository = movieRepository;
+        this.roomRepository = roomRepository;
     }
 
-    // GET all showtimes
+    // ✅ GET all showtimes
     @GetMapping
     public ResponseEntity<List<Showtime>> getAllShowtimes() {
-        return ResponseEntity.ok(showtimeService.findAll());
+        return ResponseEntity.ok(showtimeRepository.findAll());
     }
 
-    // GET showtime by ID
+    // ✅ GET showtime by ID
     @GetMapping("/{id}")
     public ResponseEntity<?> getShowtimeById(@PathVariable Long id) {
-        return showtimeService.findById(id)
+        return showtimeRepository.findById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // GET showtimes by movie ID
+    // ✅ GET showtimes by movie ID
     @GetMapping("/movie/{movieId}")
     public ResponseEntity<List<Showtime>> getShowtimesByMovie(@PathVariable Long movieId) {
-        return ResponseEntity.ok(showtimeService.findByMovieId(movieId));
+        List<Showtime> showtimes = showtimeRepository.findByMovie_MovieId(movieId);
+        return ResponseEntity.ok(showtimes);
     }
 
-    // CREATE new showtime
+    // ✅ CREATE new showtime (fix lỗi Data integrity violation)
     @PostMapping
-    public ResponseEntity<Showtime> createShowtime(@RequestBody Showtime showtime) {
-        return ResponseEntity.ok(showtimeService.save(showtime));
+    public ResponseEntity<?> createShowtime(@RequestBody ShowtimeRequest req) {
+        Movie movie = movieRepository.findById(req.getMovieId())
+                .orElseThrow(() -> new IllegalArgumentException("Movie not found"));
+        Room room = roomRepository.findById(req.getRoomId())
+                .orElseThrow(() -> new IllegalArgumentException("Room not found"));
+
+        Showtime showtime = new Showtime();
+        showtime.setMovie(movie);
+        showtime.setRoom(room);
+        showtime.setStartTime(req.getStartTime());
+        showtime.setEndTime(req.getEndTime());
+        showtime.setPrice(req.getPrice());
+
+        Showtime saved = showtimeRepository.save(showtime);
+        return ResponseEntity.ok(saved);
     }
 
-    // UPDATE existing showtime
+    // ✅ UPDATE existing showtime
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateShowtime(@PathVariable Long id, @RequestBody Showtime updatedShowtime) {
-        return showtimeService.findById(id)
+    public ResponseEntity<?> updateShowtime(@PathVariable Long id, @RequestBody ShowtimeRequest req) {
+        return showtimeRepository.findById(id)
                 .map(existing -> {
-                    existing.setMovie(updatedShowtime.getMovie());
-                    existing.setRoom(updatedShowtime.getRoom());
-                    existing.setStartTime(updatedShowtime.getStartTime());
-                    return ResponseEntity.ok(showtimeService.save(existing));
+                    Movie movie = movieRepository.findById(req.getMovieId())
+                            .orElseThrow(() -> new IllegalArgumentException("Movie not found"));
+                    Room room = roomRepository.findById(req.getRoomId())
+                            .orElseThrow(() -> new IllegalArgumentException("Room not found"));
+
+                    existing.setMovie(movie);
+                    existing.setRoom(room);
+                    existing.setStartTime(req.getStartTime());
+                    existing.setEndTime(req.getEndTime());
+                    existing.setPrice(req.getPrice());
+
+                    Showtime updated = showtimeRepository.save(existing);
+                    return ResponseEntity.ok(updated);
                 })
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // DELETE showtime
+    // ✅ DELETE showtime
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteShowtime(@PathVariable Long id) {
-        if (showtimeService.findById(id).isPresent()) {
-            showtimeService.delete(id);
+        if (showtimeRepository.existsById(id)) {
+            showtimeRepository.deleteById(id);
             return ResponseEntity.ok("Showtime deleted");
         } else {
             return ResponseEntity.notFound().build();

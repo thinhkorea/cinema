@@ -41,8 +41,8 @@ public class SecurityConfig {
                                 "/api/movies/**",
                                 "/api/showtimes/**",
                                 "/api/seats/**",
-                                "/api/bookings/showtime/*/seats-status" // xem sơ đồ ghế
-                        ).permitAll()
+                                "/api/bookings/showtime/*/seats-status")
+                        .permitAll()
 
                         // 2) ROOMS – GET cho ADMIN/STAFF, còn lại ADMIN
                         .requestMatchers(HttpMethod.GET, "/api/rooms/**").hasAnyRole("ADMIN", "STAFF")
@@ -50,15 +50,15 @@ public class SecurityConfig {
 
                         // 3) ADMIN ONLY – tài nguyên quản trị & thao tác ghi
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                        .requestMatchers("/api/movies/**").hasRole("ADMIN") // POST/PUT/DELETE movies
-                        .requestMatchers("/api/seats/**").hasRole("ADMIN") // POST/PUT/DELETE seats
-                        .requestMatchers("/api/showtimes/**").hasRole("ADMIN") // POST/PUT/DELETE showtimes
+                        .requestMatchers("/api/movies/**").hasRole("ADMIN")
+                        .requestMatchers("/api/seats/**").hasRole("ADMIN")
+                        .requestMatchers("/api/showtimes/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/bookings/showtime/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/bookings/*/pay").hasRole("ADMIN")
 
                         // 4) CUSTOMER endpoints
                         .requestMatchers(HttpMethod.GET, "/api/bookings/me").hasRole("CUSTOMER")
-                        .requestMatchers(HttpMethod.POST, "/api/bookings").hasAnyRole("CUSTOMER", "ADMIN") // đặt vé
+                        .requestMatchers(HttpMethod.POST, "/api/bookings").hasAnyRole("CUSTOMER", "ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/bookings/*/cancel").hasAnyRole("CUSTOMER", "ADMIN")
                         // (quyền huỷ vé của customer sẽ kiểm tra thêm ở service theo owner)
 

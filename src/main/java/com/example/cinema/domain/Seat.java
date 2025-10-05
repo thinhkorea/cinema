@@ -18,6 +18,9 @@ public class Seat {
     @Column(nullable = false)
     private String seatNumber; // Ví dụ: A1, B2, C10
 
+    @Column(nullable = false)
+    private boolean booking = false; // false = chưa đặt, true = đã đặt
+
     @ManyToOne
     @JoinColumn(name = "room_id", nullable = false)
     private Room room;

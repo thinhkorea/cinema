@@ -25,8 +25,8 @@ public class Showtime {
     @JoinColumn(name = "room_id", nullable = false)
     private Room room;
 
-    private Date showDate;
-    @Column(nullable = false)
     private LocalDateTime startTime;
     private LocalDateTime endTime;
+
+    private Double price;
 }

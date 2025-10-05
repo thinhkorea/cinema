@@ -19,7 +19,7 @@ public class Booking {
 
     @ManyToOne
     @JoinColumn(name = "user_id", nullable = false)
-    private User user; // khách hàng đặt
+    private User user; // khách hàng đặt vé
 
     @ManyToOne
     @JoinColumn(name = "showtime_id", nullable = false)
@@ -30,13 +30,20 @@ public class Booking {
     private Seat seat;
 
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     private Status status = Status.PENDING; // mặc định chờ thanh toán
 
-    private Timestamp createdAt = new Timestamp(System.currentTimeMillis());
+    @Column(nullable = false, updatable = false)
+    private Timestamp createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = new Timestamp(System.currentTimeMillis());
+    }
 
     public enum Status {
-        PENDING,
-        PAID,
-        CANCELLED
+        PENDING, // chờ thanh toán
+        PAID, // đã thanh toán
+        CANCELLED // hủy vé
     }
 }

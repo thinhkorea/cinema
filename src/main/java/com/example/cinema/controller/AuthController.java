@@ -36,6 +36,12 @@ public class AuthController {
 
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody RegisterRequest req) {
+        if (req.getUsername() == null || req.getUsername().trim().isEmpty() ||
+                req.getPassword() == null || req.getPassword().trim().isEmpty() ||
+                req.getFullName() == null || req.getFullName().trim().isEmpty()) {
+            return ResponseEntity.badRequest().body("Username, password and full name cannot be empty!");
+        }
+
         if (userRepository.findByUsername(req.getUsername()) != null) {
             return ResponseEntity.badRequest().body("Username already exists!");
         }
@@ -58,11 +64,20 @@ public class AuthController {
         String token = header.substring(7);
         String username = jwtUtil.extractUsername(token);
         User user = userRepository.findByUsername(username);
+        if (user == null) {
+            throw new IllegalArgumentException("Invalid username or password");
+        }
         return ResponseEntity.ok(user);
     }
 
     @PostMapping("/register-admin")
     public ResponseEntity<?> registerAdmin(@RequestBody RegisterRequest req) {
+        if (req.getUsername() == null || req.getUsername().trim().isEmpty() ||
+                req.getPassword() == null || req.getPassword().trim().isEmpty() ||
+                req.getFullName() == null || req.getFullName().trim().isEmpty()) {
+            return ResponseEntity.badRequest().body("Username, password and full name cannot be empty!");
+        }
+
         if (userRepository.findByUsername(req.getUsername()) != null) {
             return ResponseEntity.badRequest().body("Username already exists!");
         }

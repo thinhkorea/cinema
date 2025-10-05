@@ -1,4 +1,3 @@
-// package com.example.cinema.config;
 package com.example.cinema.config;
 
 import com.example.cinema.dto.ApiError;
