@@ -1,6 +1,7 @@
 package com.example.cinema.service;
 
 import com.example.cinema.domain.*;
+import com.example.cinema.dto.BookingResponse;
 import com.example.cinema.dto.SeatStatusDTO;
 import com.example.cinema.repository.*;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -28,10 +29,6 @@ public class BookingService {
         this.seatRepo = seatRepo;
     }
 
-    public List<Booking> findAll() {
-        return bookingRepo.findAll();
-    }
-
     public List<Booking> findByUserId(Long userId) {
         return bookingRepo.findByUser_UserId(userId);
     }
@@ -42,6 +39,27 @@ public class BookingService {
 
     public List<Booking> findByShowtimeId(Long showtimeId) {
         return bookingRepo.findByShowtime_ShowtimeId(showtimeId);
+    }
+
+    public List<BookingResponse> findAllDTO() {
+        return bookingRepo.findAll()
+                .stream()
+                .map(booking -> new BookingResponse(
+                        booking.getBookingId(),
+                        booking.getUser() != null ? booking.getUser().getUsername() : "Unknown",
+                        (booking.getShowtime() != null && booking.getShowtime().getMovie() != null)
+                                ? booking.getShowtime().getMovie().getTitle()
+                                : "-",
+                        (booking.getShowtime() != null && booking.getShowtime().getRoom() != null)
+                                ? booking.getShowtime().getRoom().getRoomName()
+                                : "-",
+                        booking.getSeat() != null ? booking.getSeat().getSeatNumber() : "-",
+                        (booking.getShowtime() != null && booking.getShowtime().getStartTime() != null)
+                                ? booking.getShowtime().getStartTime().toString()
+                                : "-",
+                        booking.getStatus() != null ? booking.getStatus().name() : "-",
+                        booking.getCreatedAt()))
+                .collect(Collectors.toList());
     }
 
     // ✅ CREATE BOOKING

@@ -60,6 +60,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/bookings/me").hasRole("CUSTOMER")
                         .requestMatchers(HttpMethod.POST, "/api/bookings").hasAnyRole("CUSTOMER", "ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/bookings/*/cancel").hasAnyRole("CUSTOMER", "ADMIN")
+                        .requestMatchers(HttpMethod.GET, "/api/bookings/**").hasRole("ADMIN") // mới thêm sau này
+
                         // (quyền huỷ vé của customer sẽ kiểm tra thêm ở service theo owner)
 
                         // 5) Còn lại phải authenticated

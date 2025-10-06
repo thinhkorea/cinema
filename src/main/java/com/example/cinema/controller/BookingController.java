@@ -19,6 +19,11 @@ public class BookingController {
         this.bookingService = bookingService;
     }
 
+    @GetMapping()
+    public ResponseEntity<?> getAllBookings() {
+        return ResponseEntity.ok(bookingService.findAllDTO());
+    }
+
     // --- Lịch sử của chính user (JWT) ---
     @GetMapping("/me")
     public ResponseEntity<List<Booking>> myBookings(Authentication auth) {
