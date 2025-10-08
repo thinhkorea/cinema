@@ -21,8 +21,8 @@ public class Showtime {
     @JoinColumn(name = "movie_id", nullable = false)
     private Movie movie;
 
-    @ManyToOne
-    @JoinColumn(name = "room_id", nullable = false)
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "room_id")
     private Room room;
 
     private LocalDateTime startTime;

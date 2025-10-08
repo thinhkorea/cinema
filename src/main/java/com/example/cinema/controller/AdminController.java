@@ -44,4 +44,13 @@ public class AdminController {
     public ResponseEntity<?> getAllBookings() {
         return ResponseEntity.ok(bookingService.findAllDTO());
     }
+
+    @GetMapping("/revenue")
+    public ResponseEntity<?> getMonthlyRevenue(@RequestParam(required = false) Integer year) {
+        if (year != null) {
+            return ResponseEntity.ok(bookingService.getMonthlyRevenueByYear(year));
+        }
+        return ResponseEntity.ok(bookingService.getMonthlyRevenue());
+    }
+
 }

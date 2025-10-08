@@ -9,25 +9,40 @@ import java.util.Optional;
 
 @Service
 public class MovieService {
-    private final MovieRepository movieRepository;
 
-    public MovieService(MovieRepository movieRepository) {
-        this.movieRepository = movieRepository;
+    private final MovieRepository movieRepo;
+
+    public MovieService(MovieRepository movieRepo) {
+        this.movieRepo = movieRepo;
     }
 
     public List<Movie> findAll() {
-        return movieRepository.findAll();
+        return movieRepo.findAll();
     }
 
     public Optional<Movie> findById(Long id) {
-        return movieRepository.findById(id);
+        return movieRepo.findById(id);
     }
 
     public Movie save(Movie movie) {
-        return movieRepository.save(movie);
+        return movieRepo.save(movie);
+    }
+
+    public Movie update(Long id, Movie updated) {
+        return movieRepo.findById(id)
+                .map(existing -> {
+                    existing.setTitle(updated.getTitle());
+                    existing.setDuration(updated.getDuration());
+                    existing.setGenre(updated.getGenre());
+                    existing.setDescription(updated.getDescription());
+                    existing.setPosterUrl(updated.getPosterUrl());
+                    existing.setTrailerUrl(updated.getTrailerUrl());
+                    return movieRepo.save(existing);
+                })
+                .orElseThrow(() -> new IllegalArgumentException("Movie not found: " + id));
     }
 
     public void delete(Long id) {
-        movieRepository.deleteById(id);
+        movieRepo.deleteById(id);
     }
 }

@@ -10,14 +10,14 @@ INSERT INTO users (username, password, full_name, role) VALUES
 -- ==========================================================
 -- 🎥 MOVIES
 -- ==========================================================
-INSERT INTO movies (title, genre, duration, description, release_date, end_date, poster_url, trailer_url) VALUES
-('Avengers: Endgame', 'Action', 185, 'Final battle against Thanos.', '2025-01-01', '2025-03-31',
+INSERT INTO movies (title, genre, duration, description, poster_url, trailer_url) VALUES
+('Avengers: Endgame', 'Action', 185, 'Final battle against Thanos.',
 'https://image.tmdb.org/t/p/original/Avengers-Endgame.jpg',
 'https://www.youtube.com/watch?v=TcMBFSGVi1c'),
-('Venom: The Last Dance', 'Sci-Fi', 110, 'Venom faces his greatest challenge.', '2025-02-01', '2025-04-01',
+('Venom: The Last Dance', 'Sci-Fi', 110, 'Venom faces his greatest challenge.',
 'https://image.tmdb.org/t/p/original/Venom-LastDance.jpg',
 'https://www.youtube.com/watch?v=V3qVw1K7mY8'),
-('Aquaman 2', 'Adventure', 140, 'Atlantis in danger once again.', '2025-03-01', '2025-05-01',
+('Aquaman 2', 'Adventure', 140, 'Atlantis in danger once again.',
 'https://image.tmdb.org/t/p/original/Aquaman2.jpg',
 'https://www.youtube.com/watch?v=UGc5ACvXy9I');
 
@@ -32,7 +32,6 @@ INSERT INTO rooms (room_name, capacity, room_type) VALUES
 -- ==========================================================
 -- 🪑 SEATS
 -- ==========================================================
--- 10 ghế mỗi phòng (A1–A10)
 INSERT INTO seats (room_id, seat_number, booking)
 SELECT r.room_id, CONCAT('A', n), 0
 FROM rooms r

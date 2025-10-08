@@ -24,7 +24,7 @@ public class User {
     private String fullName;
 
     @Enumerated(EnumType.STRING)
-    private Role role = Role.STAFF; // mặc định nhân viên
+    private Role role = Role.CUSTOMER;
 
     public enum Role {
         ADMIN,

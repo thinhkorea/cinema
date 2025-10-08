@@ -1,10 +1,9 @@
 package com.example.cinema.domain;
 
 import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
-import java.sql.Date;
 
 @Entity
 @Table(name = "movies")
@@ -12,6 +11,7 @@ import java.sql.Date;
 @NoArgsConstructor
 @AllArgsConstructor
 public class Movie {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long movieId;
@@ -19,12 +19,14 @@ public class Movie {
     @Column(nullable = false)
     private String title;
 
-    private String genre;
-    private Integer duration;
-    private String description;
-    private Date releaseDate;
-    private Date endDate;
+    @Column(nullable = false)
+    private Integer duration; // đơn vị phút
 
-    private String posterUrl;
-    private String trailerUrl;
+    private String genre;
+
+    @Column(length = 2000)
+    private String description;
+
+    private String posterUrl; // ảnh poster (sẽ dùng sau nếu muốn hiển thị)
+    private String trailerUrl; // link trailer YouTube (để mở rộng sau)
 }

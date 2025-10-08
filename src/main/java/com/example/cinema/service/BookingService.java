@@ -178,4 +178,29 @@ public class BookingService {
         }
         return result;
     }
+
+    public List<Map<String, Object>> getMonthlyRevenue() {
+        List<Object[]> results = bookingRepo.getMonthlyRevenue();
+        List<Map<String, Object>> revenueList = new ArrayList<>();
+
+        for (Object[] row : results) {
+            Map<String, Object> map = new HashMap<>();
+            map.put("month", row[0]);
+            map.put("revenue", row[1]);
+            revenueList.add(map);
+        }
+
+        return revenueList;
+    }
+
+    public List<Map<String, Object>> getMonthlyRevenueByYear(int year) {
+        List<Object[]> results = bookingRepo.findMonthlyRevenueByYear(year);
+        return results.stream().map(row -> {
+            Map<String, Object> map = new HashMap<>();
+            map.put("month", row[0]);
+            map.put("revenue", row[1]);
+            return map;
+        }).collect(Collectors.toList());
+    }
+
 }
