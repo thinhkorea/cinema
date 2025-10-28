@@ -2,15 +2,15 @@ package com.example.cinema.controller;
 
 import com.example.cinema.domain.Booking;
 import com.example.cinema.dto.BookingRequest;
+import com.example.cinema.dto.SoldTicketDTO;
 import com.example.cinema.service.BookingService;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
+import java.util.*;
 
 @RestController
 @RequestMapping("/api/bookings")
+@CrossOrigin(origins = "http://localhost:5173", allowCredentials = "true")
 public class BookingController {
 
     private final BookingService bookingService;
@@ -19,81 +19,108 @@ public class BookingController {
         this.bookingService = bookingService;
     }
 
-    @GetMapping()
+    // ==================== ADMIN ====================
+    @GetMapping
     public ResponseEntity<?> getAllBookings() {
         return ResponseEntity.ok(bookingService.findAllDTO());
     }
 
-    // --- Lịch sử của chính user (JWT) ---
-    @GetMapping("/me")
-    public ResponseEntity<List<Booking>> myBookings(Authentication auth) {
-        String username = (String) auth.getPrincipal();
-        return ResponseEntity.ok(bookingService.findByUsername(username));
-    }
-
-    // --- Admin xem theo showtime ---
     @GetMapping("/showtime/{showtimeId}")
     public ResponseEntity<List<Booking>> byShowtime(@PathVariable Long showtimeId) {
         return ResponseEntity.ok(bookingService.findByShowtimeId(showtimeId));
     }
 
-    // --- Sơ đồ ghế suất chiếu: public hoặc có thể cho CUSTOMER ---
-    // BookingController.java (thêm endpoint)
-    @GetMapping("/showtime/{showtimeId}/seats-status")
-    public ResponseEntity<?> seatsStatus(@PathVariable Long showtimeId) {
+    @GetMapping("/status/{status}")
+    public ResponseEntity<?> getByStatus(@PathVariable String status) {
         try {
-            return ResponseEntity.ok(bookingService.seatStatusesForShowtime(showtimeId));
+            Booking.Status s = Booking.Status.valueOf(status.toUpperCase());
+            return ResponseEntity.ok(bookingService.findByStatus(s));
         } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid status"));
         }
     }
 
-    // --- Đặt vé (CUSTOMER) ---
-    @PostMapping
-    public ResponseEntity<?> create(@RequestBody @jakarta.validation.Valid BookingRequest req, Authentication auth) {
-        try {
-            String username;
+    @GetMapping("/revenue/monthly")
+    public ResponseEntity<?> getMonthlyRevenue() {
+        return ResponseEntity.ok(bookingService.getMonthlyRevenue());
+    }
 
-            // ✅ Kiểm tra kiểu của principal trước khi ép kiểu
-            Object principal = auth.getPrincipal();
-            if (principal instanceof org.springframework.security.core.userdetails.User) {
-                username = ((org.springframework.security.core.userdetails.User) principal).getUsername();
-            } else {
-                username = principal.toString();
+    @GetMapping("/revenue/year/{year}")
+    public ResponseEntity<?> getMonthlyRevenueByYear(@PathVariable int year) {
+        return ResponseEntity.ok(bookingService.getMonthlyRevenueByYear(year));
+    }
+
+    @GetMapping("/revenue/movie")
+    public ResponseEntity<?> getRevenueByMovie() {
+        return ResponseEntity.ok(bookingService.getRevenueByMovie());
+    }
+
+    @GetMapping("/admin/revenue/staffs")
+    public ResponseEntity<?> getRevenueByStaffs() {
+        return ResponseEntity.ok(bookingService.getRevenueByStaff());
+    }
+
+    // ==================== STAFF / VNPay ====================
+    @PostMapping("/staff/sell-multi")
+    @Deprecated // Endpoint này sẽ được thay thế bằng /staff/create-multi
+    public ResponseEntity<?> sellMulti(@RequestBody BookingRequest req) {
+        return createMultiByStaff(req); // Chuyển hướng logic sang phương thức createMultiByStaff
+    }
+
+    @PostMapping("/pay-by-txn/{txnRef}")
+    public ResponseEntity<?> markPaidByTxn(@PathVariable String txnRef) {
+        try {
+            bookingService.markPaidByTxn(txnRef, "VNPAY"); // Thêm phương thức thanh toán là VNPAY
+            return ResponseEntity.ok(Map.of("message", "Đã cập nhật thanh toán thành công!", "txnRef", txnRef));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // ==================== STAFF / CASH ====================
+    // B1: Nhân viên chọn ghế và tạo nhiều booking (chưa thanh toán)
+    @PostMapping("/staff/create-multi")
+    public ResponseEntity<?> createMultiByStaff(@RequestBody BookingRequest req) {
+        try {
+            if (req.getSeatIds() == null || req.getSeatIds().isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Chưa chọn ghế nào!"));
+            }
+            if (req.getStaffUsername() == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Không tìm thấy thông tin nhân viên."));
             }
 
-            Booking booking = bookingService.createBooking(username, req.getShowtimeId(), req.getSeatId());
-            return ResponseEntity.ok(booking);
+            // Tạo txnRef để nhóm các booking cùng lượt bán
+            String txnRef = String.valueOf(System.currentTimeMillis()); // Sửa lỗi suy luận kiểu
+            List<Booking> bookings = bookingService.createMultiBooking(req.getShowtimeId(), req.getSeatIds(), txnRef,
+                    req.getStaffUsername());
 
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
-    }
-
-    // --- Đánh dấu đã thanh toán (ADMIN) ---
-    @PostMapping("/{id}/pay")
-    public ResponseEntity<?> markPaid(@PathVariable Long id) {
-        try {
-            Booking b = bookingService.markPaid(id);
-            return ResponseEntity.ok(b);
-        } catch (IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
-    }
-
-    // --- Huỷ vé (CUSTOMER: chỉ huỷ vé của mình; ADMIN: huỷ tất cả) ---
-    @PostMapping("/{id}/cancel")
-    public ResponseEntity<?> cancel(@PathVariable Long id, Authentication auth) {
-        try {
-            String username = auth.getName(); // ✅ sửa chỗ này
-            boolean isAdmin = auth.getAuthorities().stream()
-                    .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
-
-            Booking booking = bookingService.cancel(id, username, isAdmin);
-            return ResponseEntity.ok(booking);
+            return ResponseEntity.ok(Map.of(
+                    "message", "Đã tạo " + bookings.size() + " booking, chờ thanh toán!",
+                    "txnRef", txnRef));
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
         }
     }
 
+    // B2: Thanh toán tiền mặt toàn bộ booking cùng txnRef
+    @PostMapping("/pay-cash/{txnRef}")
+    public ResponseEntity<?> payCash(@PathVariable String txnRef) {
+        try { // Không cần truyền username ở đây vì booking đã có sẵn thông tin staff
+            bookingService.markPaidByTxn(txnRef, "CASH");
+            return ResponseEntity.ok(Map.of(
+                    "message", "Thanh toán tiền mặt thành công!",
+                    "txnRef", txnRef));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/staff/sold")
+    public ResponseEntity<?> getSoldByStaff(@RequestParam String username) {
+        // Chỉ lấy các booking đã thanh toán (PAID) do nhân viên này bán
+        List<SoldTicketDTO> soldTickets = bookingService.findSoldTicketsByStaffUsername(username);
+        return ResponseEntity.ok(soldTickets);
+    }
 }

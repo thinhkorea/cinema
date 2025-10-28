@@ -12,6 +12,7 @@ import java.sql.Timestamp;
 @NoArgsConstructor
 @AllArgsConstructor
 public class Ticket {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long ticketId;
@@ -26,8 +27,14 @@ public class Ticket {
     private Double price;
 
     @ManyToOne
-    @JoinColumn(name = "sold_by")
-    private User soldBy;
+    @JoinColumn(name = "sold_by", nullable = false)
+    private Staff soldBy;
 
-    private Timestamp soldAt = new Timestamp(System.currentTimeMillis());
+    @Column(nullable = false, updatable = false)
+    private Timestamp soldAt;
+
+    @PrePersist
+    protected void onCreate() {
+        soldAt = new Timestamp(System.currentTimeMillis());
+    }
 }

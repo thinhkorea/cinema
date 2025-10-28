@@ -17,71 +17,102 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 
 @Configuration
 public class SecurityConfig {
+        private final JwtAuthFilter jwtAuthFilter;
+        private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
+        private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
 
-    private final JwtAuthFilter jwtAuthFilter;
-    private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
-    private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
+        public SecurityConfig(
+                        JwtAuthFilter jwtAuthFilter,
+                        JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint,
+                        JwtAccessDeniedHandler jwtAccessDeniedHandler) {
 
-    public SecurityConfig(JwtAuthFilter jwtAuthFilter,
-            JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint,
-            JwtAccessDeniedHandler jwtAccessDeniedHandler) {
-        this.jwtAuthFilter = jwtAuthFilter;
-        this.jwtAuthenticationEntryPoint = jwtAuthenticationEntryPoint;
-        this.jwtAccessDeniedHandler = jwtAccessDeniedHandler;
-    }
+                this.jwtAuthFilter = jwtAuthFilter;
+                this.jwtAuthenticationEntryPoint = jwtAuthenticationEntryPoint;
+                this.jwtAccessDeniedHandler = jwtAccessDeniedHandler;
+        }
 
-    @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        http
-                .csrf(csrf -> csrf.disable())
-                .authorizeHttpRequests(auth -> auth
-                        // 1) PUBLIC – đặt trước để không bị rule tổng quát phía sau “nuốt”
-                        .requestMatchers("/api/auth/**").permitAll()
-                        .requestMatchers(HttpMethod.GET,
-                                "/api/movies/**",
-                                "/api/showtimes/**",
-                                "/api/seats/**",
-                                "/api/bookings/showtime/*/seats-status")
-                        .permitAll()
+        @Bean
+        public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+                http
+                                .csrf(csrf -> csrf.disable())
+                                .authorizeHttpRequests(auth -> auth
 
-                        // 2) ROOMS – GET cho ADMIN/STAFF, còn lại ADMIN
-                        .requestMatchers(HttpMethod.GET, "/api/rooms/**").hasAnyRole("ADMIN", "STAFF")
-                        .requestMatchers("/api/rooms/**").hasRole("ADMIN")
+                                                // 1️PUBLIC – login & VNPay callback
+                                                .requestMatchers("/api/auth/**", "/api/payments/vnpay-return")
+                                                .permitAll()
 
-                        // 3) ADMIN ONLY – tài nguyên quản trị & thao tác ghi
-                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                        .requestMatchers("/api/movies/**").hasRole("ADMIN")
-                        .requestMatchers("/api/seats/**").hasRole("ADMIN")
-                        .requestMatchers("/api/showtimes/**").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.GET, "/api/bookings/showtime/**").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.POST, "/api/bookings/*/pay").hasRole("ADMIN")
+                                                // Cho phép cập nhật trạng thái thanh toán (VNPay / frontend callback)
+                                                .requestMatchers(HttpMethod.POST, "/api/bookings/pay-by-txn/{txnRef}")
+                                                .permitAll()
 
-                        // 4) CUSTOMER endpoints
-                        .requestMatchers(HttpMethod.GET, "/api/bookings/me").hasRole("CUSTOMER")
-                        .requestMatchers(HttpMethod.POST, "/api/bookings").hasAnyRole("CUSTOMER", "ADMIN")
-                        .requestMatchers(HttpMethod.POST, "/api/bookings/*/cancel").hasAnyRole("CUSTOMER", "ADMIN")
-                        .requestMatchers(HttpMethod.GET, "/api/bookings/**").hasRole("ADMIN") // mới thêm sau này
+                                                // 2️STAFF zone (chỉ STAFF mới được truy cập)
+                                                .requestMatchers("/api/staff/**").hasRole("STAFF")
 
-                        // (quyền huỷ vé của customer sẽ kiểm tra thêm ở service theo owner)
+                                                // Public GET cho phim, suất chiếu, ghế
+                                                .requestMatchers(HttpMethod.GET,
+                                                                "/api/movies/**",
+                                                                "/api/showtimes/**",
+                                                                "/api/seats/**")
+                                                .permitAll()
 
-                        // 5) Còn lại phải authenticated
-                        .anyRequest().authenticated())
-                .exceptionHandling(e -> e
-                        .authenticationEntryPoint(jwtAuthenticationEntryPoint)
-                        .accessDeniedHandler(jwtAccessDeniedHandler))
-                .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+                                                // Cho phép ADMIN, STAFF, CUSTOMER xem sơ đồ ghế
+                                                .requestMatchers(HttpMethod.GET,
+                                                                "/api/staff/showtimes/{showtimeId}/seats") // Sửa lại
+                                                                                                           // cho đúng
+                                                                                                           // endpoint
+                                                .hasAnyRole("ADMIN", "STAFF", "CUSTOMER")
 
-        http.addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
-        return http.build();
-    }
+                                                // ADMIN hoặc STAFF có thể xem booking theo suất chiếu
+                                                .requestMatchers(HttpMethod.GET, "/api/bookings/showtime/{showtimeId}")
+                                                .hasAnyRole("ADMIN", "STAFF")
 
-    @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
-        return config.getAuthenticationManager();
-    }
+                                                // ROOMS – STAFF & ADMIN xem, ADMIN quản lý
+                                                .requestMatchers(HttpMethod.GET, "/api/rooms/**")
+                                                .hasAnyRole("ADMIN", "STAFF")
+                                                .requestMatchers("/api/rooms/**").hasRole("ADMIN")
 
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
+                                                // ADMIN ONLY – chỉnh sửa dữ liệu
+                                                .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                                                .requestMatchers("/api/movies/**").hasRole("ADMIN")
+                                                .requestMatchers("/api/seats/**").hasRole("ADMIN")
+                                                .requestMatchers("/api/showtimes/**").hasRole("ADMIN")
+
+                                                // BOOKING endpoints
+                                                .requestMatchers(HttpMethod.POST, "/api/bookings")
+                                                .hasAnyRole("CUSTOMER", "STAFF", "ADMIN")
+
+                                                .requestMatchers(HttpMethod.GET, "/api/bookings/me")
+                                                .hasRole("CUSTOMER")
+
+                                                .requestMatchers(HttpMethod.POST, "/api/bookings/{bookingId}/cancel")
+                                                .hasAnyRole("CUSTOMER", "ADMIN")
+
+                                                // PAYMENT endpoints
+                                                .requestMatchers("/api/payments/**")
+                                                .hasAnyRole("CUSTOMER", "STAFF", "ADMIN")
+
+                                                // Mặc định – yêu cầu đăng nhập
+                                                .anyRequest().authenticated())
+
+                                .exceptionHandling(e -> e
+                                                .authenticationEntryPoint(jwtAuthenticationEntryPoint)
+                                                .accessDeniedHandler(jwtAccessDeniedHandler))
+
+                                .sessionManagement(s -> s
+                                                .sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+
+                http.addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+                return http.build();
+        }
+
+        @Bean
+        public AuthenticationManager authenticationManager(AuthenticationConfiguration config)
+                        throws Exception {
+                return config.getAuthenticationManager();
+        }
+
+        @Bean
+        public PasswordEncoder passwordEncoder() {
+                return new BCryptPasswordEncoder();
+        }
 }

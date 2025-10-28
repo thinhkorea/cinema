@@ -6,6 +6,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -17,17 +18,22 @@ public class AdminController {
     private final RoomRepository roomRepo;
     private final ShowtimeRepository showtimeRepo;
     private final BookingRepository bookingRepo;
+    private final TicketRepository ticketRepo;
 
-    public AdminController(BookingService bookingService,
+    public AdminController(
+            BookingService bookingService,
             MovieRepository movieRepo,
             RoomRepository roomRepo,
             ShowtimeRepository showtimeRepo,
-            BookingRepository bookingRepo) {
+            BookingRepository bookingRepo,
+            TicketRepository ticketRepo // Thêm vào constructor
+    ) {
         this.bookingService = bookingService;
         this.movieRepo = movieRepo;
         this.roomRepo = roomRepo;
         this.showtimeRepo = showtimeRepo;
         this.bookingRepo = bookingRepo;
+        this.ticketRepo = ticketRepo; // Gán vào biến
     }
 
     @GetMapping("/dashboard")
@@ -53,4 +59,16 @@ public class AdminController {
         return ResponseEntity.ok(bookingService.getMonthlyRevenue());
     }
 
+    // Top phim theo doanh thu
+    @GetMapping("/revenue/movies")
+    public ResponseEntity<?> getRevenueByMovie() {
+        return ResponseEntity.ok(bookingService.getRevenueByMovie());
+    }
+
+    // Top nhân viên theo doanh thu bán vé
+    @GetMapping("/revenue/staffs")
+    public ResponseEntity<?> getRevenueByStaff() {
+        // Sử dụng BookingService để đảm bảo tính nhất quán dữ liệu
+        return ResponseEntity.ok(bookingService.getRevenueByStaff());
+    }
 }

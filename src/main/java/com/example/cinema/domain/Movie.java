@@ -27,6 +27,6 @@ public class Movie {
     @Column(length = 2000)
     private String description;
 
-    private String posterUrl; // ảnh poster (sẽ dùng sau nếu muốn hiển thị)
-    private String trailerUrl; // link trailer YouTube (để mở rộng sau)
+    private String posterUrl;
+    private String trailerUrl;
 }

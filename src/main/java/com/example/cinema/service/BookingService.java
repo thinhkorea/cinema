@@ -2,9 +2,8 @@ package com.example.cinema.service;
 
 import com.example.cinema.domain.*;
 import com.example.cinema.dto.BookingResponse;
-import com.example.cinema.dto.SeatStatusDTO;
+import com.example.cinema.dto.SoldTicketDTO;
 import com.example.cinema.repository.*;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,192 +14,147 @@ import java.util.stream.Collectors;
 public class BookingService {
 
     private final BookingRepository bookingRepo;
-    private final UserRepository userRepo;
     private final ShowtimeRepository showtimeRepo;
     private final SeatRepository seatRepo;
+    private final TicketRepository ticketRepo;
+    private final StaffRepository staffRepo;
 
     public BookingService(BookingRepository bookingRepo,
-            UserRepository userRepo,
             ShowtimeRepository showtimeRepo,
-            SeatRepository seatRepo) {
+            SeatRepository seatRepo, TicketRepository ticketRepo,
+            StaffRepository staffRepo) {
         this.bookingRepo = bookingRepo;
-        this.userRepo = userRepo;
         this.showtimeRepo = showtimeRepo;
         this.seatRepo = seatRepo;
+        this.ticketRepo = ticketRepo;
+        this.staffRepo = staffRepo;
     }
 
-    public List<Booking> findByUserId(Long userId) {
-        return bookingRepo.findByUser_UserId(userId);
+    // ==================== ADMIN / USER ====================
+    public List<BookingResponse> findAllDTO() {
+        return bookingRepo.findAll().stream()
+                .map(b -> new BookingResponse(
+                        b.getBookingId(),
+                        (b.getCustomer() != null && b.getCustomer().getUser() != null)
+                                ? b.getCustomer().getUser().getUsername()
+                                : "-",
+                        b.getShowtime().getMovie().getTitle(),
+                        b.getShowtime().getRoom().getRoomName(),
+                        b.getSeat().getSeatNumber(),
+                        b.getShowtime().getStartTime().toString(),
+                        b.getStatus().name(),
+                        b.getCreatedAt()))
+                .collect(Collectors.toList());
     }
 
     public List<Booking> findByUsername(String username) {
-        return bookingRepo.findByUser_Username(username);
+        return bookingRepo.findByCustomer_User_Username(username);
     }
 
     public List<Booking> findByShowtimeId(Long showtimeId) {
         return bookingRepo.findByShowtime_ShowtimeId(showtimeId);
     }
 
-    public List<BookingResponse> findAllDTO() {
-        return bookingRepo.findAll()
-                .stream()
-                .map(booking -> new BookingResponse(
-                        booking.getBookingId(),
-                        booking.getUser() != null ? booking.getUser().getUsername() : "Unknown",
-                        (booking.getShowtime() != null && booking.getShowtime().getMovie() != null)
-                                ? booking.getShowtime().getMovie().getTitle()
-                                : "-",
-                        (booking.getShowtime() != null && booking.getShowtime().getRoom() != null)
-                                ? booking.getShowtime().getRoom().getRoomName()
-                                : "-",
-                        booking.getSeat() != null ? booking.getSeat().getSeatNumber() : "-",
-                        (booking.getShowtime() != null && booking.getShowtime().getStartTime() != null)
-                                ? booking.getShowtime().getStartTime().toString()
-                                : "-",
-                        booking.getStatus() != null ? booking.getStatus().name() : "-",
-                        booking.getCreatedAt()))
+    public List<Booking> findByStatus(Booking.Status status) {
+        return bookingRepo.findByStatus(status);
+    }
+
+    public List<Booking> findByStaffUsernameAndStatus(String username, Booking.Status status) {
+        return bookingRepo.findBySoldByStaff_User_UsernameAndStatus(username, status);
+    }
+
+    @Transactional(readOnly = true) // Thêm @Transactional để đảm bảo các lazy-loading hoạt động
+    public List<SoldTicketDTO> findSoldTicketsByStaffUsername(String username) {
+        List<Booking> bookings = bookingRepo.findBySoldByStaff_User_UsernameAndStatus(username, Booking.Status.PAID);
+        return bookings.stream()
+                .map(SoldTicketDTO::new) // Sử dụng constructor để chuyển đổi
+                .sorted(Comparator.comparing(SoldTicketDTO::getCreatedAt).reversed()) // Sắp xếp vé mới nhất lên đầu
                 .collect(Collectors.toList());
     }
 
-    // ✅ CREATE BOOKING
+    // ==================== STAFF / VNPay ====================
     @Transactional
-    public Booking createBooking(String username, Long showtimeId, Long seatId) {
-        // 1️⃣ Load user
-        User user = userRepo.findByUsername(username);
-        if (user == null)
-            throw new IllegalArgumentException("User not found: " + username);
-
-        // 2️⃣ Load showtime & seat
+    public List<Booking> createMultiBooking(Long showtimeId, List<Long> seatIds, String txnRef, String staffUsername) {
         Showtime showtime = showtimeRepo.findById(showtimeId)
-                .orElseThrow(() -> new IllegalArgumentException("Showtime not found: " + showtimeId));
+                .orElseThrow(() -> new IllegalArgumentException("Showtime not found"));
 
-        Seat seat = seatRepo.findById(seatId)
-                .orElseThrow(() -> new IllegalArgumentException("Seat not found: " + seatId));
+        // Tìm nhân viên bán vé dựa trên username
+        Staff staff = staffRepo.findByUser_Username(staffUsername)
+                .orElseThrow(() -> new IllegalArgumentException("Staff not found with username: " + staffUsername));
 
-        // 3️⃣ Validate seat thuộc đúng phòng chiếu
-        if (!seat.getRoom().getRoomId().equals(showtime.getRoom().getRoomId())) {
-            throw new IllegalStateException("Seat does not belong to the showtime's room");
+        List<Booking> list = new ArrayList<>();
+        for (Long seatId : seatIds) {
+            Seat seat = seatRepo.findById(seatId)
+                    .orElseThrow(() -> new IllegalArgumentException("Seat not found: " + seatId));
+
+            if (!seat.getRoom().getRoomId().equals(showtime.getRoom().getRoomId()))
+                throw new IllegalStateException("Seat not in showtime room");
+
+            if (bookingRepo.existsByShowtime_ShowtimeIdAndSeat_SeatId(showtimeId, seatId))
+                throw new IllegalStateException("Seat already booked: " + seat.getSeatNumber());
+
+            seat.setBooking(true);
+            seatRepo.save(seat);
+
+            Booking b = new Booking();
+            b.setShowtime(showtime);
+            b.setSeat(seat);
+            b.setStatus(Booking.Status.PENDING);
+            b.setTxnRef(txnRef);
+            b.setSoldByStaff(staff); // Gán nhân viên đã bán vé này
+            list.add(b);
         }
-
-        // 4️⃣ Kiểm tra ghế có đang bị đặt không
-        if (bookingRepo.existsByShowtime_ShowtimeIdAndSeat_SeatId(showtimeId, seatId)) {
-            throw new IllegalStateException("Seat already booked for this showtime");
-        }
-
-        // 5️⃣ Cập nhật trạng thái ghế
-        if (seat.isBooking()) {
-            throw new IllegalStateException("Seat already marked as booked");
-        }
-        seat.setBooking(true);
-        seatRepo.save(seat);
-
-        // 6️⃣ Lưu booking
-        Booking booking = new Booking();
-        booking.setUser(user);
-        booking.setShowtime(showtime);
-        booking.setSeat(seat);
-        booking.setStatus(Booking.Status.PENDING);
-
-        try {
-            return bookingRepo.save(booking);
-        } catch (DataIntegrityViolationException ex) {
-            throw new IllegalStateException("Seat already booked (race condition)", ex);
-        }
-    }
-
-    // ✅ MARK AS PAID
-    @Transactional
-    public Booking markPaid(Long bookingId) {
-        Booking b = bookingRepo.findById(bookingId)
-                .orElseThrow(() -> new IllegalArgumentException("Booking not found: " + bookingId));
-
-        b.setStatus(Booking.Status.PAID);
-        return bookingRepo.save(b);
-    }
-
-    // ✅ CANCEL BOOKING
-    @Transactional
-    public Booking cancel(Long bookingId, String username, boolean isAdmin) {
-        Booking booking = bookingRepo.findById(bookingId)
-                .orElseThrow(() -> new IllegalArgumentException("Booking not found: " + bookingId));
-
-        if (!isAdmin && !booking.getUser().getUsername().equals(username)) {
-            throw new SecurityException("Not allowed to cancel this booking");
-        }
-
-        booking.setStatus(Booking.Status.CANCELLED);
-
-        // 🟢 Giải phóng ghế khi huỷ vé
-        Seat seat = booking.getSeat();
-        seat.setBooking(false);
-        seatRepo.save(seat);
-
-        return bookingRepo.save(booking);
+        return bookingRepo.saveAll(list);
     }
 
     @Transactional
-    public void deleteHard(Long bookingId) {
-        bookingRepo.deleteById(bookingId);
-    }
-
-    // ✅ Xây sơ đồ ghế theo showtime
-    public List<SeatStatusDTO> seatStatusesForShowtime(Long showtimeId) {
-        Showtime showtime = showtimeRepo.findById(showtimeId)
-                .orElseThrow(() -> new IllegalArgumentException("Showtime not found: " + showtimeId));
-
-        List<Seat> seats = seatRepo.findByRoom_RoomId(showtime.getRoom().getRoomId());
-
-        Map<Long, Booking> bookingBySeatId = bookingRepo.findByShowtime_ShowtimeId(showtimeId)
-                .stream()
-                .collect(Collectors.toMap(
-                        b -> b.getSeat().getSeatId(),
-                        b -> b,
-                        (b1, b2) -> b1));
-
-        List<SeatStatusDTO> result = new ArrayList<>();
-        for (Seat s : seats) {
-            Booking booked = bookingBySeatId.get(s.getSeatId());
-            if (booked != null && booked.getStatus() != Booking.Status.CANCELLED) {
-                result.add(new SeatStatusDTO(
-                        s.getSeatId(),
-                        s.getSeatNumber(),
-                        true,
-                        booked.getStatus().name(),
-                        booked.getBookingId()));
-            } else {
-                result.add(new SeatStatusDTO(
-                        s.getSeatId(),
-                        s.getSeatNumber(),
-                        false,
-                        null,
-                        null));
-            }
+    public void markPaidByTxn(String txnRef, String paymentMethod) {
+        List<Booking> bookings = bookingRepo.findByTxnRef(txnRef);
+        if (bookings.isEmpty()) {
+            throw new IllegalArgumentException("Không tìm thấy booking nào với mã giao dịch: " + txnRef);
         }
-        return result;
+
+        for (Booking b : bookings) {
+            b.setStatus(Booking.Status.PAID);
+            b.setPaymentMethod(paymentMethod); // Gán phương thức thanh toán (CASH hoặc VNPAY)
+
+            bookingRepo.save(b);
+        }
     }
 
+    // ==================== THỐNG KÊ ====================
     public List<Map<String, Object>> getMonthlyRevenue() {
         List<Object[]> results = bookingRepo.getMonthlyRevenue();
-        List<Map<String, Object>> revenueList = new ArrayList<>();
-
-        for (Object[] row : results) {
-            Map<String, Object> map = new HashMap<>();
-            map.put("month", row[0]);
-            map.put("revenue", row[1]);
-            revenueList.add(map);
-        }
-
-        return revenueList;
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (Object[] r : results)
+            list.add(Map.of("month", r[0], "revenue", r[1]));
+        return list;
     }
 
     public List<Map<String, Object>> getMonthlyRevenueByYear(int year) {
-        List<Object[]> results = bookingRepo.findMonthlyRevenueByYear(year);
-        return results.stream().map(row -> {
-            Map<String, Object> map = new HashMap<>();
-            map.put("month", row[0]);
-            map.put("revenue", row[1]);
-            return map;
-        }).collect(Collectors.toList());
+        return bookingRepo.findMonthlyRevenueByYear(year).stream()
+                .map(r -> Map.of("month", r[0], "revenue", r[1]))
+                .collect(Collectors.toList());
+    }
+
+    public List<Map<String, Object>> getRevenueByMovie() {
+        List<Object[]> results = bookingRepo.getRevenueByMovie();
+        List<Map<String, Object>> movieRevenueList = new ArrayList<>();
+        for (Object[] row : results) {
+            movieRevenueList.add(Map.of("movieTitle", row[0], "revenue", row[1]));
+        }
+        return movieRevenueList;
+    }
+
+    public List<Map<String, Object>> getRevenueByStaff() {
+        List<Object[]> results = bookingRepo.getRevenueByStaff();
+        List<Map<String, Object>> staffRevenueList = new ArrayList<>();
+        for (Object[] row : results) {
+            staffRevenueList.add(Map.of(
+                    "staffName", row[0],
+                    "totalRevenue", row[1]));
+        }
+        return staffRevenueList;
     }
 
 }

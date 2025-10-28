@@ -2,8 +2,10 @@ package com.example.cinema.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 @Data
+@NoArgsConstructor
 @AllArgsConstructor
 public class SeatStatusDTO {
     private Long seatId;
@@ -11,4 +13,5 @@ public class SeatStatusDTO {
     private boolean booked; // true nếu có booking
     private String status; // PENDING/PAID/CANCELLED hoặc null nếu chưa đặt
     private Long bookingId; // null nếu chưa đặt
+    private String seatType;
 }

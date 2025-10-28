@@ -36,14 +36,6 @@ public class JwtUtil {
                 .parseClaimsJws(token).getBody().get("role", String.class);
     }
 
-    // public boolean validateToken(String token) {
-    // try {
-    // Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(token);
-    // return true;
-    // } catch (JwtException e) {
-    // return false;
-    // }
-    // }
     public boolean validateToken(String token, UserDetails userDetails) {
         try {
             Claims claims = Jwts.parserBuilder()
@@ -63,6 +55,7 @@ public class JwtUtil {
             return !expiration.before(new Date());
 
         } catch (JwtException e) {
+            System.out.println("❌ JWT ERROR: " + e.getMessage());
             return false;
         }
     }

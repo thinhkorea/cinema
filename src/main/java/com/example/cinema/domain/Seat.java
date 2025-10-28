@@ -16,12 +16,22 @@ public class Seat {
     private Long seatId;
 
     @Column(nullable = false)
-    private String seatNumber; // Ví dụ: A1, B2, C10
+    private String seatNumber; // A1, B5, C10,...
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private boolean booking = false; // false = chưa đặt, true = đã đặt
+    private SeatType seatType = SeatType.NORMAL;
 
     @ManyToOne
     @JoinColumn(name = "room_id", nullable = false)
     private Room room;
+
+    @Column(nullable = false)
+    private boolean booking = false; // false = trống, true = đã đặt
+
+    public enum SeatType {
+        NORMAL,
+        VIP,
+        SWEETBOX
+    }
 }

@@ -15,7 +15,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.List;
 
 @Component
@@ -23,11 +22,6 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
     private final UserDetailsService userDetailsService;
-
-    private static final List<String> PUBLIC_URLS = Arrays.asList(
-            "/api/auth/",
-            "/api/movies",
-            "/api/showtimes");
 
     public JwtAuthFilter(JwtUtil jwtUtil, UserDetailsService userDetailsService) {
         this.jwtUtil = jwtUtil;
@@ -39,64 +33,35 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
         String method = request.getMethod();
 
-        // ✅ Cho phép tất cả request tới các đường dẫn PUBLIC
-        if (path.startsWith("/api/auth/"))
-            return true;
-
-        // ✅ Cho phép GET tới các API public (movie, showtime, seat)
-        if ("GET".equals(method) && (path.startsWith("/api/movies")
-                || path.startsWith("/api/showtimes")
-                || path.startsWith("/api/seats")
-                || path.startsWith("/api/bookings/showtime"))) {
+        // ✅ Cho phép tất cả request tới auth (login, register)
+        if (path.startsWith("/api/auth/")) {
             return true;
         }
 
+        // ✅ Cho phép GET tới các API public (chỉ movies, showtimes, seats - KHÔNG BAO
+        // GỒM bookings)
+        if ("GET".equals(method) && (path.startsWith("/api/movies") ||
+                path.startsWith("/api/showtimes") ||
+                path.startsWith("/api/seats"))) {
+            return true;
+        }
+
+        // ❌ TẤT CẢ requests khác (bao gồm /api/bookings/**) ĐỀU PHẢI QUA FILTER
         return false;
     }
-
-    // @Override
-    // protected void doFilterInternal(HttpServletRequest request,
-    // HttpServletResponse response,
-    // FilterChain filterChain)
-    // throws ServletException, IOException {
-
-    // String header = request.getHeader("Authorization");
-    // if (header != null && header.startsWith("Bearer ")) {
-    // String token = header.substring(7);
-    // if (jwtUtil.validateToken(token)) {
-    // String username = jwtUtil.extractUsername(token);
-    // String role = jwtUtil.extractRole(token); // hoặc lấy từ DB
-
-    // List<GrantedAuthority> authorities = List.of(new
-    // SimpleGrantedAuthority("ROLE_" + role));
-
-    // UsernamePasswordAuthenticationToken authToken = new
-    // UsernamePasswordAuthenticationToken(username, null,
-    // authorities);
-
-    // authToken.setDetails(new
-    // WebAuthenticationDetailsSource().buildDetails(request));
-    // SecurityContextHolder.getContext().setAuthentication(authToken);
-    // }
-    // }
-    // filterChain.doFilter(request, response);
-    // }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
             HttpServletResponse response,
             FilterChain filterChain) throws ServletException, IOException {
 
-        // Nếu là public URL thì cho qua luôn
-        if (shouldNotFilter(request)) {
-            filterChain.doFilter(request, response);
-            return;
-        }
-
         String header = request.getHeader("Authorization");
 
+        // ❌ Không có token → 401
         if (header == null || !header.startsWith("Bearer ")) {
+            System.out.println("❌ No Authorization header or invalid format");
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType("application/json");
             response.getWriter().write("{\"error\": \"Unauthorized - token missing or invalid\"}");
             return;
         }
@@ -107,7 +72,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         try {
             username = jwtUtil.extractUsername(token);
         } catch (Exception e) {
+            System.out.println("❌ Token parsing error: " + e.getMessage());
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType("application/json");
             response.getWriter().write("{\"error\": \"Invalid token\"}");
             return;
         }
@@ -115,23 +82,46 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
             UserDetails userDetails = userDetailsService.loadUserByUsername(username);
 
-            if (jwtUtil.validateToken(token, userDetails)) {
-                String role = jwtUtil.extractRole(token);
-                List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role));
+            System.out.println("🔐 JWT Filter - Username from token: " + username);
+            System.out.println("🔐 JWT Filter - UserDetails loaded: " + userDetails.getUsername());
 
+            if (jwtUtil.validateToken(token, userDetails)) {
+                // ✅ Extract role từ token
+                String role = jwtUtil.extractRole(token);
+                System.out.println("✅ JWT Filter - Role from token: " + role);
+                System.out.println("✅ JWT Filter - Authority: ROLE_" + role);
+
+                // ✅ Tạo authorities với ROLE_ prefix
+                List<GrantedAuthority> authorities = List.of(
+                        new SimpleGrantedAuthority("ROLE_" + role));
+
+                // ✅ Tạo authentication object
                 UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
                         userDetails,
                         null,
                         authorities);
 
                 authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+
+                // ✅ Set vào SecurityContext
                 SecurityContextHolder.getContext().setAuthentication(authToken);
+
+                System.out.println("✅ JWT Filter - Authentication set successfully");
+                System.out.println("✅ JWT Filter - Request path: " + request.getRequestURI());
+
+                // ✅ Cho request đi tiếp
                 filterChain.doFilter(request, response);
             } else {
+                System.out.println("❌ Token validation failed");
                 response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                response.setContentType("application/json");
                 response.getWriter().write("{\"error\": \"Invalid JWT token\"}");
             }
+        } else {
+            System.out.println("❌ Username is null or authentication already exists");
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType("application/json");
+            response.getWriter().write("{\"error\": \"Authentication failed\"}");
         }
     }
-
 }

@@ -11,6 +11,7 @@ import lombok.AllArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class User {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long userId;
@@ -24,6 +25,7 @@ public class User {
     private String fullName;
 
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     private Role role = Role.CUSTOMER;
 
     public enum Role {
@@ -31,4 +33,11 @@ public class User {
         STAFF,
         CUSTOMER
     }
+
+    // Liên kết 1–1 ngược tới Customer & Staff
+    @OneToOne(mappedBy = "user", cascade = CascadeType.ALL)
+    private Customer customer;
+
+    @OneToOne(mappedBy = "user", cascade = CascadeType.ALL)
+    private Staff staff;
 }

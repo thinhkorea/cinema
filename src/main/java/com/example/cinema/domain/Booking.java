@@ -4,7 +4,6 @@ import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
-
 import java.sql.Timestamp;
 
 @Entity
@@ -13,13 +12,14 @@ import java.sql.Timestamp;
 @NoArgsConstructor
 @AllArgsConstructor
 public class Booking {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long bookingId;
 
     @ManyToOne
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user; // khách hàng đặt vé
+    @JoinColumn(name = "customer_id", nullable = true)
+    private Customer customer;
 
     @ManyToOne
     @JoinColumn(name = "showtime_id", nullable = false)
@@ -31,10 +31,20 @@ public class Booking {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private Status status = Status.PENDING; // mặc định chờ thanh toán
+    private Status status = Status.PENDING;
+
+    @Column
+    private String paymentMethod;
+
+    @Column(name = "txn_ref")
+    private String txnRef;
 
     @Column(nullable = false, updatable = false)
     private Timestamp createdAt;
+
+    @ManyToOne
+    @JoinColumn(name = "sold_by_staff_id", nullable = true)
+    private Staff soldByStaff;
 
     @PrePersist
     protected void onCreate() {
@@ -42,8 +52,8 @@ public class Booking {
     }
 
     public enum Status {
-        PENDING, // chờ thanh toán
-        PAID, // đã thanh toán
-        CANCELLED // hủy vé
+        PENDING,
+        PAID,
+        CANCELLED
     }
 }
