@@ -1,13 +1,35 @@
 package com.example.cinema.dto;
 
-import jakarta.validation.constraints.NotNull;
-import lombok.Data;
+import java.util.List;
 
-@Data
 public class BookingRequest {
-    @NotNull(message = "showtimeId is required")
     private Long showtimeId;
+    private List<Long> seatIds;
+    private String staffUsername; // Thêm trường này
 
-    @NotNull(message = "seatId is required")
-    private Long seatId;
+    // Getters
+    public Long getShowtimeId() {
+        return showtimeId;
+    }
+
+    public List<Long> getSeatIds() {
+        return seatIds;
+    }
+
+    public String getStaffUsername() {
+        return staffUsername;
+    }
+
+    // Setters
+    public void setShowtimeId(Long showtimeId) {
+        this.showtimeId = showtimeId;
+    }
+
+    public void setSeatIds(List<Long> seatIds) {
+        this.seatIds = seatIds;
+    }
+
+    public void setStaffUsername(String staffUsername) {
+        this.staffUsername = staffUsername;
+    }
 }

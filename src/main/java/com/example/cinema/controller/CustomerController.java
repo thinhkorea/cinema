@@ -1,15 +1,68 @@
 package com.example.cinema.controller;
 
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import com.example.cinema.domain.Customer;
+import com.example.cinema.domain.User;
+import com.example.cinema.repository.CustomerRepository;
+import com.example.cinema.repository.UserRepository;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
-@RequestMapping("/api/customer")
+@RequestMapping("/api/customers")
+@CrossOrigin(origins = "*")
 public class CustomerController {
 
-    @GetMapping("/profile")
-    public String getProfile() {
-        return "Welcome CUSTOMER! Đây là thông tin hồ sơ khách hàng.";
+    private final CustomerRepository customerRepo;
+    private final UserRepository userRepo;
+
+    public CustomerController(CustomerRepository customerRepo, UserRepository userRepo) {
+        this.customerRepo = customerRepo;
+        this.userRepo = userRepo;
+    }
+
+    // 🟢 1️⃣ Lấy danh sách tất cả khách hàng
+    @GetMapping
+    public ResponseEntity<List<Customer>> getAllCustomers() {
+        return ResponseEntity.ok(customerRepo.findAll());
+    }
+
+    // 🟢 2️⃣ Xem chi tiết 1 khách hàng
+    @GetMapping("/{id}")
+    public ResponseEntity<?> getCustomerById(@PathVariable Long id) {
+        return customerRepo.findById(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    // 🟢 3️⃣ Tạo khách hàng mới (thường dùng khi đăng ký user)
+    @PostMapping
+    public ResponseEntity<?> createCustomer(@RequestBody Customer customer) {
+        if (customer.getUser() != null && customer.getUser().getUserId() != null) {
+            User user = userRepo.findById(customer.getUser().getUserId())
+                    .orElseThrow(() -> new IllegalArgumentException("User not found"));
+            customer.setUser(user);
+        }
+        return ResponseEntity.ok(customerRepo.save(customer));
+    }
+
+    // 🟢 4️⃣ Cập nhật thông tin khách hàng
+    @PutMapping("/{id}")
+    public ResponseEntity<?> updateCustomer(@PathVariable Long id, @RequestBody Customer updated) {
+        return customerRepo.findById(id)
+                .map(c -> {
+                    c.setGender(updated.getGender());
+                    c.setPhone(updated.getPhone());
+                    return ResponseEntity.ok(customerRepo.save(c));
+                })
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    // 🟢 5️⃣ Xóa khách hàng
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> deleteCustomer(@PathVariable Long id) {
+        customerRepo.deleteById(id);
+        return ResponseEntity.ok().body("Customer deleted successfully");
     }
 }

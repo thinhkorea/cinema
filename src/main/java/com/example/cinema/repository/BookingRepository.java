@@ -7,47 +7,69 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
-import java.util.Optional;
 
 public interface BookingRepository extends JpaRepository<Booking, Long> {
 
-    @EntityGraph(attributePaths = { "user", "showtime.movie", "showtime.room", "seat" })
-    List<Booking> findAll();
+       // Dành cho Admin xem toàn bộ hoặc theo user
+       @EntityGraph(attributePaths = { "customer.user", "showtime.movie", "showtime.room", "seat" })
+       List<Booking> findAll();
 
-    @EntityGraph(attributePaths = { "user", "showtime.movie", "showtime.room", "seat" })
-    List<Booking> findByUser_UserId(Long userId);
+       @EntityGraph(attributePaths = { "customer.user", "showtime.movie", "showtime.room", "seat" })
+       List<Booking> findByCustomer_User_Username(String username);
 
-    @EntityGraph(attributePaths = { "user", "showtime.movie", "showtime.room", "seat" })
-    List<Booking> findByShowtime_ShowtimeId(Long showtimeId);
+       List<Booking> findBySoldByStaff_User_UsernameAndStatus(String username, Booking.Status status);
 
-    boolean existsByShowtime_ShowtimeIdAndSeat_SeatId(Long showtimeId, Long seatId);
+       @EntityGraph(attributePaths = { "customer.user", "showtime.movie", "showtime.room", "seat" })
+       List<Booking> findByShowtime_ShowtimeId(Long showtimeId);
 
-    Optional<Booking> findByShowtime_ShowtimeIdAndSeat_SeatId(Long showtimeId, Long seatId);
+       boolean existsByShowtime_ShowtimeIdAndSeat_SeatId(Long showtimeId, Long seatId);
 
-    @EntityGraph(attributePaths = { "user", "showtime.movie", "showtime.room", "seat" })
-    List<Booking> findByUser_Username(String username);
+       List<Booking> findByStatus(Booking.Status status);
 
-    @Query("""
-                SELECT
-                    FUNCTION('DATE_FORMAT', b.createdAt, '%Y-%m') AS month,
-                    SUM(s.price) AS totalRevenue
-                FROM Booking b
-                JOIN b.showtime s
-                WHERE b.status = 'PAID'
-                GROUP BY FUNCTION('DATE_FORMAT', b.createdAt, '%Y-%m')
-                ORDER BY month
-            """)
-    List<Object[]> getMonthlyRevenue();
+       // Dùng cho nhóm vé VNPay (multi booking)
+       List<Booking> findByTxnRef(String txnRef);
 
-    @Query("""
-                SELECT MONTH(b.showtime.startTime) AS month,
-                       SUM(b.showtime.price) AS revenue
-                FROM Booking b
-                WHERE b.status = 'PAID'
-                  AND YEAR(b.showtime.startTime) = :year
-                GROUP BY MONTH(b.showtime.startTime)
-                ORDER BY month
-            """)
-    List<Object[]> findMonthlyRevenueByYear(@Param("year") int year);
+       // ===================== THỐNG KÊ =====================
+       @Query("""
+                      SELECT FUNCTION('DATE_FORMAT', b.createdAt, '%Y-%m') AS month,
+                             SUM(b.showtime.price) AS totalRevenue
+                      FROM Booking b
+                      WHERE b.status = 'PAID'
+                      GROUP BY FUNCTION('DATE_FORMAT', b.createdAt, '%Y-%m')
+                      ORDER BY month
+                     """)
+       List<Object[]> getMonthlyRevenue();
 
+       @Query("""
+                      SELECT MONTH(b.showtime.startTime) AS month,
+                             SUM(b.showtime.price) AS revenue
+                      FROM Booking b
+                      WHERE b.status = 'PAID'
+                        AND YEAR(b.showtime.startTime) = :year
+                      GROUP BY MONTH(b.showtime.startTime)
+                      ORDER BY month
+                     """)
+       List<Object[]> findMonthlyRevenueByYear(@Param("year") int year);
+
+       @Query("""
+                     SELECT m.title AS movieTitle,
+                            SUM(b.showtime.price) AS revenue
+                     FROM Booking b
+                     JOIN b.showtime.movie m
+                     WHERE b.status = com.example.cinema.domain.Booking$Status.PAID
+                     GROUP BY m.title
+                     ORDER BY revenue DESC
+                     """)
+       List<Object[]> getRevenueByMovie();
+
+       @Query("""
+                     SELECT s.user.fullName AS staffName,
+                            SUM(b.showtime.price) AS totalRevenue
+                     FROM Booking b
+                     JOIN b.soldByStaff s
+                     WHERE b.status = com.example.cinema.domain.Booking$Status.PAID
+                     GROUP BY s.staffId, s.user.fullName
+                     ORDER BY totalRevenue DESC
+                     """)
+       List<Object[]> getRevenueByStaff();
 }

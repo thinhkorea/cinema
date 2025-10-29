@@ -97,27 +97,34 @@ public class DataSeeder {
             s1.setGender(Staff.Gender.MALE);
             staffRepo.save(s1);
 
-            // 🎬 Movies
+            // Movies
             Movie m1 = new Movie();
             m1.setTitle("Avengers: Endgame");
             m1.setDuration(180);
-            m1.setGenre("Action");
-            m1.setDescription("The Avengers take on Thanos.");
+            m1.setGenre("Action, Adventure, Sci-Fi");
+            m1.setDescription(
+                    "The Avengers unite for one final stand against Thanos to restore balance to the universe.");
+            m1.setPosterUrl("https://image.tmdb.org/t/p/w500/or06FN3Dka5tukK1e9sl16pB3iy.jpg");
+            m1.setTrailerUrl("https://www.youtube.com/watch?v=TcMBFSGVi1c");
 
             Movie m2 = new Movie();
             m2.setTitle("Inside Out 2");
             m2.setDuration(100);
-            m2.setGenre("Animation");
-            m2.setDescription("Journey into Riley’s mind again.");
+            m2.setGenre("Animation, Family, Comedy");
+            m2.setDescription(
+                    "Riley faces new emotions and challenges as she becomes a teenager in this heartwarming Pixar sequel.");
+            m2.setPosterUrl("https://upload.wikimedia.org/wikipedia/vi/a/a3/Inside_Out_2_VN_poster.jpg");
+            m2.setTrailerUrl("https://www.youtube.com/watch?v=LEjhY15eCx0");
 
             Movie m3 = new Movie();
             m3.setTitle("Doraemon: Nobita’s Sky Utopia");
             m3.setDuration(95);
-            m3.setGenre("Adventure");
-            m3.setDescription("Doraemon and friends discover a utopian world.");
+            m3.setGenre("Adventure, Animation, Fantasy");
+            m3.setDescription("Doraemon and friends travel to a utopian land in the sky in search of an ideal world.");
+            m3.setPosterUrl("https://upload.wikimedia.org/wikipedia/vi/2/27/Doraemon-_Nobita%27s_Sky_Utopia.jpg");
+            m3.setTrailerUrl("https://www.youtube.com/watch?v=Ol6Z_QR-OH8");
 
             movieRepo.saveAll(List.of(m1, m2, m3));
-
             // Rooms
             Room r1 = new Room();
             r1.setRoomName("Room 1");
