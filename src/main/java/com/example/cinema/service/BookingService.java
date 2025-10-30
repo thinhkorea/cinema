@@ -59,8 +59,18 @@ public class BookingService {
         return bookingRepo.findByStatus(status);
     }
 
+    public Optional<Booking> findById(Long id) {
+        return bookingRepo.findById(id);
+    }
+
     public List<Booking> findByStaffUsernameAndStatus(String username, Booking.Status status) {
         return bookingRepo.findBySoldByStaff_User_UsernameAndStatus(username, status);
+    }
+
+    // Phương thức mới để lấy Booking theo ID, xử lý logic tìm kiếm trong Service
+    public Booking getBookingById(Long bookingId) {
+        return bookingRepo.findById(bookingId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy vé với ID: " + bookingId));
     }
 
     @Transactional(readOnly = true) // Thêm @Transactional để đảm bảo các lazy-loading hoạt động

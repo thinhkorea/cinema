@@ -87,6 +87,9 @@ public class SecurityConfig {
                                                 .requestMatchers(HttpMethod.POST, "/api/bookings/{bookingId}/cancel")
                                                 .hasAnyRole("CUSTOMER", "ADMIN")
 
+                                                .requestMatchers(HttpMethod.GET, "/api/bookings/{bookingId}/ticket")
+                                                .hasAnyRole("STAFF", "ADMIN")
+
                                                 // PAYMENT endpoints
                                                 .requestMatchers("/api/payments/**")
                                                 .hasAnyRole("CUSTOMER", "STAFF", "ADMIN")

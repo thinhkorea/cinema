@@ -4,6 +4,7 @@ import com.example.cinema.domain.Booking;
 import com.example.cinema.dto.BookingRequest;
 import com.example.cinema.dto.SoldTicketDTO;
 import com.example.cinema.service.BookingService;
+import com.example.cinema.service.TicketPDFService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.util.*;
@@ -14,9 +15,11 @@ import java.util.*;
 public class BookingController {
 
     private final BookingService bookingService;
+    private final TicketPDFService ticketPdfService;
 
-    public BookingController(BookingService bookingService) {
+    public BookingController(BookingService bookingService, TicketPDFService ticketPdfService) {
         this.bookingService = bookingService;
+        this.ticketPdfService = ticketPdfService;
     }
 
     // ==================== ADMIN ====================
@@ -123,4 +126,24 @@ public class BookingController {
         List<SoldTicketDTO> soldTickets = bookingService.findSoldTicketsByStaffUsername(username);
         return ResponseEntity.ok(soldTickets);
     }
+
+    @GetMapping(value = "/{bookingId}/ticket", produces = "application/pdf")
+    public ResponseEntity<byte[]> downloadTicket(@PathVariable Long bookingId) {
+        var booking = bookingService.findById(bookingId) // bạn thêm method này trong service
+                .orElseThrow(() -> new RuntimeException("Booking not found: " + bookingId));
+
+        // chỉ cho tải nếu đã thanh toán
+        if (booking.getStatus() != Booking.Status.PAID) {
+            return ResponseEntity.status(403)
+                    .body(("Vé chưa thanh toán - không thể xuất PDF").getBytes());
+        }
+
+        byte[] pdf = ticketPdfService.generate(booking);
+
+        String filename = "ticket_" + bookingId + ".pdf";
+        return ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=\"" + filename + "\"")
+                .body(pdf);
+    }
+
 }
