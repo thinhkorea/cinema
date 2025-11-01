@@ -106,6 +106,7 @@ public class DataSeeder {
                     "The Avengers unite for one final stand against Thanos to restore balance to the universe.");
             m1.setPosterUrl("https://image.tmdb.org/t/p/w500/or06FN3Dka5tukK1e9sl16pB3iy.jpg");
             m1.setTrailerUrl("https://www.youtube.com/watch?v=TcMBFSGVi1c");
+            m1.setStatus(Movie.MovieStatus.NOW_SHOWING); // Gán trạng thái Đang chiếu
 
             Movie m2 = new Movie();
             m2.setTitle("Inside Out 2");
@@ -115,6 +116,7 @@ public class DataSeeder {
                     "Riley faces new emotions and challenges as she becomes a teenager in this heartwarming Pixar sequel.");
             m2.setPosterUrl("https://upload.wikimedia.org/wikipedia/vi/a/a3/Inside_Out_2_VN_poster.jpg");
             m2.setTrailerUrl("https://www.youtube.com/watch?v=LEjhY15eCx0");
+            m2.setStatus(Movie.MovieStatus.COMING_SOON); // Gán trạng thái Sắp chiếu
 
             Movie m3 = new Movie();
             m3.setTitle("Doraemon: Nobita’s Sky Utopia");
@@ -123,6 +125,7 @@ public class DataSeeder {
             m3.setDescription("Doraemon and friends travel to a utopian land in the sky in search of an ideal world.");
             m3.setPosterUrl("https://upload.wikimedia.org/wikipedia/vi/2/27/Doraemon-_Nobita%27s_Sky_Utopia.jpg");
             m3.setTrailerUrl("https://www.youtube.com/watch?v=Ol6Z_QR-OH8");
+            m3.setStatus(Movie.MovieStatus.SPECIAL_RELEASE); // Gán trạng thái Đặc biệt
 
             movieRepo.saveAll(List.of(m1, m2, m3));
             // Rooms

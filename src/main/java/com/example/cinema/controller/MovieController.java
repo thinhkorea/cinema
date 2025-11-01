@@ -31,6 +31,12 @@ public class MovieController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    // 🔹 Lấy phim theo trạng thái (NOW_SHOWING, COMING_SOON)
+    @GetMapping("/status/{status}")
+    public ResponseEntity<List<Movie>> getMoviesByStatus(@PathVariable String status) {
+        return ResponseEntity.ok(movieService.findByStatus(status));
+    }
+
     // 🔹 Tạo mới phim
     @PostMapping
     public ResponseEntity<Movie> createMovie(@RequestBody Movie movie) {

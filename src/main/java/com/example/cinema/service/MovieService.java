@@ -4,6 +4,7 @@ import com.example.cinema.domain.Movie;
 import com.example.cinema.repository.MovieRepository;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -44,5 +45,15 @@ public class MovieService {
 
     public void delete(Long id) {
         movieRepo.deleteById(id);
+    }
+
+    public List<Movie> findByStatus(String status) {
+        try {
+            Movie.MovieStatus movieStatus = Movie.MovieStatus.valueOf(status.toUpperCase());
+            return movieRepo.findByStatus(movieStatus);
+        } catch (IllegalArgumentException e) {
+            // Nếu status không hợp lệ, trả về danh sách rỗng
+            return new ArrayList<>();
+        }
     }
 }

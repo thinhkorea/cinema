@@ -11,4 +11,7 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
 
     // Tìm khách hàng thông qua userId
     Optional<Customer> findByUser_UserId(Long userId);
+
+    // Kiểm tra khách hàng có tồn tại bằng email không
+    boolean existsByEmail(String email);
 }

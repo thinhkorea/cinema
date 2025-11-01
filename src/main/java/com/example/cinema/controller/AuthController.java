@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/auth")
+@CrossOrigin("*")
 public class AuthController {
 
     private final JwtUtil jwtUtil;
@@ -30,7 +31,7 @@ public class AuthController {
         if (user == null || !passwordEncoder.matches(req.getPassword(), user.getPassword())) {
             return ResponseEntity.badRequest().body(new LoginResponse(null, "Bad credentials", null));
         }
-        String token = jwtUtil.generateToken(user.getUsername(), user.getRole().name());
+        String token = jwtUtil.generateToken(user.getUsername(), user.getRole().name(), user.getFullName());
         return ResponseEntity.ok(new LoginResponse(token, "OK", user.getRole().name()));
     }
 
@@ -48,9 +49,9 @@ public class AuthController {
 
         User newUser = new User();
         newUser.setUsername(req.getUsername());
-        newUser.setPassword(passwordEncoder.encode(req.getPassword())); // hash password
+        newUser.setPassword(passwordEncoder.encode(req.getPassword()));
         newUser.setFullName(req.getFullName());
-        newUser.setRole(User.Role.CUSTOMER); // mặc định CUSTOMER
+        newUser.setRole(User.Role.CUSTOMER);
 
         userRepository.save(newUser);
         return ResponseEntity.ok("Register success!");

@@ -2,7 +2,11 @@ package com.example.cinema.config;
 
 import com.example.cinema.security.JwtAuthFilter;
 import com.example.cinema.security.JwtAuthenticationEntryPoint;
+import com.example.cinema.security.OAuth2SuccessHandler;
 import com.example.cinema.security.JwtAccessDeniedHandler;
+
+import java.util.List;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -14,31 +18,45 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
 
 @Configuration
 public class SecurityConfig {
         private final JwtAuthFilter jwtAuthFilter;
         private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
         private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
+        private final OAuth2SuccessHandler oAuth2SuccessHandler;
 
         public SecurityConfig(
                         JwtAuthFilter jwtAuthFilter,
                         JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint,
-                        JwtAccessDeniedHandler jwtAccessDeniedHandler) {
+                        JwtAccessDeniedHandler jwtAccessDeniedHandler,
+                        OAuth2SuccessHandler oAuth2SuccessHandler) {
 
                 this.jwtAuthFilter = jwtAuthFilter;
                 this.jwtAuthenticationEntryPoint = jwtAuthenticationEntryPoint;
                 this.jwtAccessDeniedHandler = jwtAccessDeniedHandler;
+                this.oAuth2SuccessHandler = oAuth2SuccessHandler;
         }
 
         @Bean
         public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
                 http
+                                .cors(cors -> cors.configurationSource(request -> {
+                                        var corsConfig = new CorsConfiguration();
+                                        corsConfig.setAllowedOriginPatterns(List.of("http://localhost:5173")); // frontend
+                                        corsConfig.setAllowedMethods(
+                                                        List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+                                        corsConfig.setAllowedHeaders(List.of("*"));
+                                        corsConfig.setAllowCredentials(true);
+                                        return corsConfig;
+                                }))
                                 .csrf(csrf -> csrf.disable())
                                 .authorizeHttpRequests(auth -> auth
 
                                                 // 1️PUBLIC – login & VNPay callback
-                                                .requestMatchers("/api/auth/**", "/api/payments/vnpay-return")
+                                                .requestMatchers("/api/auth/**", "/oauth2/**", "/login/oauth2/**",
+                                                                "/api/payments/vnpay-return")
                                                 .permitAll()
 
                                                 // Cho phép cập nhật trạng thái thanh toán (VNPay / frontend callback)
@@ -102,7 +120,10 @@ public class SecurityConfig {
                                                 .accessDeniedHandler(jwtAccessDeniedHandler))
 
                                 .sessionManagement(s -> s
-                                                .sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+                                                .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+
+                                .oauth2Login(oauth -> oauth
+                                                .successHandler(oAuth2SuccessHandler));
 
                 http.addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
                 return http.build();

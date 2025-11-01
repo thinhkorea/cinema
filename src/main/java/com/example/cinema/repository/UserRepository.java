@@ -8,4 +8,8 @@ import com.example.cinema.domain.User;
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
     User findByUsername(String username);
+
+    boolean existsByUsername(String username);
+
+    boolean existsByCustomer_Email(String email);
 }

@@ -25,7 +25,7 @@ public class Customer {
     private String address;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Gender gender;
     private Integer loyaltyPoints = 0;
 
