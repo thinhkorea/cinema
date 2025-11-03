@@ -10,6 +10,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.List;
 
 @Configuration
@@ -158,34 +160,36 @@ public class DataSeeder {
             generateSeats(r4, seatRepo, true);
 
             // Suất chiếu — tự động cộng ngày tương lai
-            LocalDateTime now = LocalDateTime.now();
+            // Luôn sử dụng múi giờ Việt Nam để đảm bảo tính nhất quán
+            ZonedDateTime nowInVietnam = ZonedDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+            final int BUFFER_MINUTES = 30; // Thời gian nghỉ giữa các suất
 
             Showtime s01 = new Showtime();
             s01.setMovie(m1);
             s01.setRoom(r1);
-            s01.setStartTime(now.plusDays(1).withHour(18).withMinute(0));
-            s01.setEndTime(now.plusDays(1).withHour(21).withMinute(0));
+            s01.setStartTime(nowInVietnam.plusDays(1).withHour(18).withMinute(0).withSecond(0).toLocalDateTime());
+            s01.setEndTime(s01.getStartTime().plusMinutes(m1.getDuration() + BUFFER_MINUTES));
             s01.setPrice(90000.0);
 
             Showtime s02 = new Showtime();
             s02.setMovie(m2);
             s02.setRoom(r2);
-            s02.setStartTime(now.plusDays(2).withHour(20).withMinute(0));
-            s02.setEndTime(now.plusDays(2).withHour(21).withMinute(40));
+            s02.setStartTime(nowInVietnam.plusDays(2).withHour(20).withMinute(0).withSecond(0).toLocalDateTime());
+            s02.setEndTime(s02.getStartTime().plusMinutes(m2.getDuration() + BUFFER_MINUTES));
             s02.setPrice(80000.0);
 
             Showtime s03 = new Showtime();
             s03.setMovie(m3);
             s03.setRoom(r3);
-            s03.setStartTime(now.plusDays(3).withHour(9).withMinute(0));
-            s03.setEndTime(now.plusDays(3).withHour(10).withMinute(40));
+            s03.setStartTime(nowInVietnam.plusDays(3).withHour(9).withMinute(0).withSecond(0).toLocalDateTime());
+            s03.setEndTime(s03.getStartTime().plusMinutes(m3.getDuration() + BUFFER_MINUTES));
             s03.setPrice(75000.0);
 
             Showtime s04 = new Showtime();
             s04.setMovie(m1);
             s04.setRoom(r4);
-            s04.setStartTime(now.plusDays(4).withHour(19).withMinute(0));
-            s04.setEndTime(now.plusDays(4).withHour(21).withMinute(50));
+            s04.setStartTime(nowInVietnam.plusDays(4).withHour(19).withMinute(0).withSecond(0).toLocalDateTime());
+            s04.setEndTime(s04.getStartTime().plusMinutes(m1.getDuration() + BUFFER_MINUTES));
             s04.setPrice(120000.0);
 
             showtimeRepo.saveAll(List.of(s01, s02, s03, s04));

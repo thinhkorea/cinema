@@ -4,12 +4,9 @@ import com.example.cinema.domain.Movie;
 import com.example.cinema.domain.Showtime;
 import com.example.cinema.repository.ShowtimeRepository;
 
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.stream.Collectors;
 import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/staff/showtimes")
