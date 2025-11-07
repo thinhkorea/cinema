@@ -63,9 +63,6 @@ public class SecurityConfig {
                                                 .requestMatchers(HttpMethod.POST, "/api/bookings/pay-by-txn/{txnRef}")
                                                 .permitAll()
 
-                                                // 2️STAFF zone (chỉ STAFF mới được truy cập)
-                                                .requestMatchers("/api/staff/**").hasRole("STAFF")
-
                                                 // Public GET cho phim, suất chiếu, ghế
                                                 .requestMatchers(HttpMethod.GET,
                                                                 "/api/movies/**",
@@ -73,12 +70,9 @@ public class SecurityConfig {
                                                                 "/api/seats/**")
                                                 .permitAll()
 
-                                                // Cho phép ADMIN, STAFF, CUSTOMER xem sơ đồ ghế
-                                                .requestMatchers(HttpMethod.GET,
-                                                                "/api/staff/showtimes/{showtimeId}/seats") // Sửa lại
-                                                                                                           // cho đúng
-                                                                                                           // endpoint
-                                                .hasAnyRole("ADMIN", "STAFF", "CUSTOMER")
+                                                // 2️STAFF zone (chỉ STAFF mới được truy cập) - phải đặt sau rule cụ thể
+                                                // ở trên
+                                                .requestMatchers("/api/staff/**").hasRole("STAFF")
 
                                                 // ADMIN hoặc STAFF có thể xem booking theo suất chiếu
                                                 .requestMatchers(HttpMethod.GET, "/api/bookings/showtime/{showtimeId}")

@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import java.time.LocalDateTime;
 
 import java.util.List;
 
@@ -28,6 +29,10 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
        // Dùng cho nhóm vé VNPay (multi booking)
        List<Booking> findByTxnRef(String txnRef);
+
+       List<Booking> findByTxnRefAndStatus(String txnRef, Booking.Status status);
+
+       List<Booking> findAllByStatusAndCreatedAtBefore(Booking.Status status, LocalDateTime timestamp);
 
        // ===================== THỐNG KÊ =====================
        @Query("""

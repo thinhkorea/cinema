@@ -1,5 +1,7 @@
 package com.example.cinema.domain;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -36,6 +38,7 @@ public class User {
 
     // Liên kết 1–1 ngược tới Customer & Staff
     @OneToOne(mappedBy = "user", cascade = CascadeType.ALL)
+    @JsonIgnore
     private Customer customer;
 
     @OneToOne(mappedBy = "user", cascade = CascadeType.ALL)

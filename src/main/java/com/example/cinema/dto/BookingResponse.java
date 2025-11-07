@@ -1,6 +1,6 @@
 package com.example.cinema.dto;
 
-import java.sql.Timestamp;
+import java.time.LocalDateTime;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -17,5 +17,5 @@ public class BookingResponse {
     private String seatNumber;
     private String showtime;
     private String status;
-    private Timestamp createdAt;
+    private LocalDateTime createdAt;
 }

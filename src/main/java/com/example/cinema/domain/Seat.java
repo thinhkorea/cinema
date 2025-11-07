@@ -16,7 +16,7 @@ public class Seat {
     private Long seatId;
 
     @Column(nullable = false)
-    private String seatNumber; // A1, B5, C10,...
+    private String seatNumber;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -27,7 +27,7 @@ public class Seat {
     private Room room;
 
     @Column(nullable = false)
-    private boolean booking = false; // false = trống, true = đã đặt
+    private boolean booking = false;
 
     public enum SeatType {
         NORMAL,

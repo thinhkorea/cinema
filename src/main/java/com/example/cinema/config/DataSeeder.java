@@ -193,22 +193,6 @@ public class DataSeeder {
             s04.setPrice(120000.0);
 
             showtimeRepo.saveAll(List.of(s01, s02, s03, s04));
-
-            // Booking mẫu
-            Seat bookedSeat = seatRepo.findByRoom_RoomId(r4.getRoomId()).stream()
-                    .filter(seat -> seat.getSeatNumber().equals("F5-6"))
-                    .findFirst().orElse(null);
-
-            if (bookedSeat != null) {
-                Booking b1 = new Booking();
-                b1.setCustomer(c1);
-                b1.setShowtime(s04);
-                b1.setSeat(bookedSeat);
-                b1.setStatus(Booking.Status.PAID);
-                b1.setPaymentMethod("CASH"); // Thêm phương thức thanh toán cho đầy đủ
-                bookingRepo.save(b1);
-            }
-
             System.out.println("Database seeded successfully!");
         };
     }

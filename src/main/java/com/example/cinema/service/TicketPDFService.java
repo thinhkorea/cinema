@@ -12,8 +12,9 @@ import org.springframework.stereotype.Service;
 
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
-import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 public class TicketPDFService {
@@ -41,18 +42,51 @@ public class TicketPDFService {
         return new Font(baseFont, size, style, new java.awt.Color(33, 37, 41));
     }
 
+    private PdfPCell cell(String text, float size, int style) {
+        PdfPCell c = new PdfPCell(new Phrase(text, f(size, style)));
+        c.setBorder(Rectangle.NO_BORDER);
+        c.setPadding(1.5f);
+        return c;
+    }
+
+    private String money(Double v) {
+        return v == null ? "-" : String.format("%,.0f", v);
+    }
+
+    private String safe(String s) {
+        return s == null ? "" : s.replace(";", ",");
+    }
+
+    private String buildQrPayload(Booking b) {
+        return "TICKET|" +
+                "ID=" + b.getBookingId() +
+                ";MOVIE=" + safe(b.getShowtime().getMovie().getTitle()) +
+                ";ROOM=" + safe(b.getShowtime().getRoom().getRoomName()) +
+                ";SEAT=" + b.getSeat().getSeatNumber() +
+                ";TIME=" + b.getShowtime().getStartTime() +
+                (b.getTxnRef() != null ? ";TXN=" + b.getTxnRef() : "");
+    }
+
+    private Image qrImage(String data, int w, int h) throws Exception {
+        var writer = new QRCodeWriter();
+        var matrix = writer.encode(data, BarcodeFormat.QR_CODE, w, h);
+        BufferedImage bi = MatrixToImageWriter.toBufferedImage(matrix);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(bi, "png", out);
+        return Image.getInstance(out.toByteArray());
+    }
+
+    // ===========================================
+    // 1️⃣ TẠO FILE PDF CHO MỘT VÉ ĐƠN
+    // ===========================================
     public byte[] generate(Booking b) {
         try {
             var baos = new ByteArrayOutputStream();
-
-            //Khổ vé: A6 xoay ngang, margin nhỏ gọn
             var document = new Document(PageSize.A6.rotate(), 18, 18, 10, 10);
             PdfWriter.getInstance(document, baos);
             document.open();
 
-            // =======================
-            // HEADER: logo + tên rạp
-            // =======================
+            // HEADER
             PdfPTable header = new PdfPTable(new float[] { 1f, 3f });
             header.setWidthPercentage(100);
 
@@ -82,13 +116,10 @@ public class TicketPDFService {
             brandCell.addElement(brand);
             brandCell.addElement(addr);
             header.addCell(brandCell);
-
             document.add(header);
             document.add(new LineSeparator());
 
-            // =======================
             // THÔNG TIN VÉ
-            // =======================
             var showtime = b.getShowtime();
             var movie = showtime.getMovie();
             var room = showtime.getRoom();
@@ -102,23 +133,20 @@ public class TicketPDFService {
             info.addCell(cell("Phim / Movie: " + movie.getTitle(), 13, Font.BOLD));
             info.addCell(cell("Phòng / Room: " + room.getRoomName(), 11, Font.NORMAL));
             info.addCell(cell("Ghế / Seat: " + b.getSeat().getSeatNumber(), 11, Font.BOLD));
-            info.addCell(
-                    cell("Suất chiếu / Showtime: " + dtFmt.format(java.sql.Timestamp.valueOf(showtime.getStartTime())),
-                            11, Font.NORMAL));
-            info.addCell(cell("Giá / Price: " + money(showtime.getPrice()) + " VND", 11, Font.NORMAL));
-            info.addCell(cell("Thanh toán / Payment: " + (b.getPaymentMethod() != null ? b.getPaymentMethod() : "-"),
+            info.addCell(cell("Suất chiếu / Showtime: " +
+                    dtFmt.format(java.sql.Timestamp.valueOf(showtime.getStartTime())),
                     11, Font.NORMAL));
+            info.addCell(cell("Giá / Price: " + money(showtime.getPrice()) + " VND", 11, Font.NORMAL));
+            info.addCell(cell("Thanh toán / Payment: " +
+                    (b.getPaymentMethod() != null ? b.getPaymentMethod() : "-"), 11, Font.NORMAL));
             info.addCell(cell("Mã vé / Ticket ID: " + b.getBookingId(), 11, Font.NORMAL));
             if (b.getTxnRef() != null)
                 info.addCell(cell("Mã giao dịch / TxnRef: " + b.getTxnRef(), 9, Font.ITALIC));
-
             document.add(info);
 
-            // =======================
-            // QR CODE
-            // =======================
+            // QR
             String qrData = buildQrPayload(b);
-            Image qr = qrImage(qrData, 100, 100); // giảm kích thước QR cho vừa trang
+            Image qr = qrImage(qrData, 100, 100);
             qr.scaleToFit(100, 100);
             qr.setAlignment(Element.ALIGN_CENTER);
             document.add(qr);
@@ -128,12 +156,10 @@ public class TicketPDFService {
             qrTitle.setSpacingBefore(2f);
             document.add(qrTitle);
 
-            // =======================
-            // FOOTER (chú thích)
-            // =======================
+            // FOOTER
             document.add(Chunk.NEWLINE);
             Paragraph note = new Paragraph(
-                    "Lưu ý: Có mặt trước giờ chiếu 10 phút. Vé không hoàn/từ chối sau khi xuất. " +
+                    "Lưu ý: Có mặt trước giờ chiếu 10 phút. Vé không hoàn/từ chối sau khi xuất.\n" +
                             "Giữ sạch, không làm rách QR.\n— Cảm ơn bạn đã chọn rạp của chúng tôi —",
                     f(8.5f, Font.NORMAL));
             note.setAlignment(Element.ALIGN_CENTER);
@@ -142,43 +168,77 @@ public class TicketPDFService {
 
             document.close();
             return baos.toByteArray();
-
         } catch (Exception e) {
             throw new RuntimeException("Lỗi tạo PDF: " + e.getMessage(), e);
         }
     }
 
-    private PdfPCell cell(String text, float size, int style) {
-        PdfPCell c = new PdfPCell(new Phrase(text, f(size, style)));
-        c.setBorder(Rectangle.NO_BORDER);
-        c.setPadding(1.5f);
-        return c;
-    }
+    // ===========================================
+    // 2️⃣ TẠO FILE PDF CHO NHIỀU VÉ (NHÂN VIÊN)
+    // ===========================================
+    public byte[] generateGroupPDF(List<Booking> bookings) {
+        if (bookings == null || bookings.isEmpty())
+            return new byte[0];
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            Document doc = new Document(PageSize.A6.rotate(), 18, 18, 10, 10);
+            PdfWriter.getInstance(doc, baos);
+            doc.open();
 
-    private String money(Double v) {
-        return v == null ? "-" : String.format("%,.0f", v);
-    }
+            Booking first = bookings.get(0);
+            var showtime = first.getShowtime();
+            var movie = showtime.getMovie();
+            var room = showtime.getRoom();
+            SimpleDateFormat dtFmt = new SimpleDateFormat("HH:mm dd/MM/yyyy");
 
-    private String buildQrPayload(Booking b) {
-        return "TICKET|" +
-                "ID=" + b.getBookingId() +
-                ";MOVIE=" + safe(b.getShowtime().getMovie().getTitle()) +
-                ";ROOM=" + safe(b.getShowtime().getRoom().getRoomName()) +
-                ";SEAT=" + b.getSeat().getSeatNumber() +
-                ";TIME=" + b.getShowtime().getStartTime() +
-                (b.getTxnRef() != null ? ";TXN=" + b.getTxnRef() : "");
-    }
+            // HEADER CHUNG
+            PdfPTable header = new PdfPTable(1);
+            header.setWidthPercentage(100);
+            header.addCell(cell("🎬 " + movie.getTitle(), 15, Font.BOLD));
+            header.addCell(cell("Phòng / Room: " + room.getRoomName(), 11, Font.NORMAL));
+            header.addCell(cell("Suất chiếu / Showtime: " +
+                    dtFmt.format(java.sql.Timestamp.valueOf(showtime.getStartTime())),
+                    11, Font.NORMAL));
+            header.addCell(cell("Phương thức / Payment: " + first.getPaymentMethod(), 11, Font.NORMAL));
+            if (first.getTxnRef() != null)
+                header.addCell(cell("Mã giao dịch / TxnRef: " + first.getTxnRef(), 9, Font.ITALIC));
+            LineSeparator line = new LineSeparator(0.8f, 100, java.awt.Color.GRAY, Element.ALIGN_CENTER, -2);
+            PdfPCell lineCell = new PdfPCell(new Phrase(new Chunk(line)));
+            lineCell.setBorder(Rectangle.NO_BORDER);
+            header.addCell(lineCell);
+            doc.add(header);
 
-    private String safe(String s) {
-        return s == null ? "" : s.replace(";", ",");
-    }
+            // DANH SÁCH GHẾ
+            for (Booking b : bookings) {
+                PdfPTable ticket = new PdfPTable(new float[] { 1, 2 });
+                ticket.setWidthPercentage(100);
+                ticket.setSpacingBefore(8f);
 
-    private Image qrImage(String data, int w, int h) throws Exception {
-        var writer = new QRCodeWriter();
-        var matrix = writer.encode(data, BarcodeFormat.QR_CODE, w, h);
-        BufferedImage bi = MatrixToImageWriter.toBufferedImage(matrix);
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        javax.imageio.ImageIO.write(bi, "png", out);
-        return Image.getInstance(out.toByteArray());
+                // QR code từng vé
+                String qrData = buildQrPayload(b);
+                Image qr = qrImage(qrData, 80, 80);
+                qr.scaleToFit(80, 80);
+                PdfPCell qrCell = new PdfPCell(qr);
+                qrCell.setBorder(Rectangle.NO_BORDER);
+                qrCell.setRowspan(4);
+                ticket.addCell(qrCell);
+
+                ticket.addCell(cell("Ghế / Seat: " + b.getSeat().getSeatNumber(), 12, Font.BOLD));
+                ticket.addCell(cell("Giá: " + money(showtime.getPrice()) + " VND", 11, Font.NORMAL));
+                ticket.addCell(cell("Mã vé / Ticket ID: " + b.getBookingId(), 10, Font.NORMAL));
+                ticket.addCell(cell("Trạng thái: " + b.getStatus().name(), 10, Font.NORMAL));
+
+                doc.add(ticket);
+            }
+
+            // FOOTER
+            doc.add(new Paragraph("\nVui lòng kiểm tra thông tin vé trước khi giao cho khách hàng.",
+                    f(9, Font.ITALIC)));
+
+            doc.close();
+            return baos.toByteArray();
+
+        } catch (Exception e) {
+            throw new RuntimeException("Lỗi tạo PDF nhóm: " + e.getMessage(), e);
+        }
     }
 }

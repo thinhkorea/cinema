@@ -2,11 +2,15 @@ package com.example.cinema.controller;
 
 import com.example.cinema.domain.Booking;
 import com.example.cinema.dto.BookingRequest;
+import com.example.cinema.dto.BookingResponse;
 import com.example.cinema.dto.SoldTicketDTO;
 import com.example.cinema.service.BookingService;
 import com.example.cinema.service.TicketPDFService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.MediaType;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import java.util.stream.Collectors;
 import java.util.*;
 
 @RestController
@@ -80,6 +84,22 @@ public class BookingController {
         }
     }
 
+    // Endpoint này sẽ cập nhật trạng thái và trả về danh sách booking đã cập nhật
+    @PostMapping("/confirm-payment/{txnRef}")
+    public ResponseEntity<?> confirmPaymentAndUpdateStatus(@PathVariable String txnRef) {
+        try {
+            // Cập nhật trạng thái thành PAID
+            List<Booking> updatedBookings = bookingService.markPaidByTxn(txnRef, "VNPAY");
+            // Chuyển đổi sang DTO để tránh lỗi tuần tự hóa JSON (circular reference)
+            List<SoldTicketDTO> updatedBookingsDTO = updatedBookings.stream()
+                    .map(SoldTicketDTO::new)
+                    .collect(Collectors.toList());
+            return ResponseEntity.ok(updatedBookingsDTO);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     // ==================== STAFF / CASH ====================
     // B1: Nhân viên chọn ghế và tạo nhiều booking (chưa thanh toán)
     @PostMapping("/staff/create-multi")
@@ -146,4 +166,110 @@ public class BookingController {
                 .body(pdf);
     }
 
+    // ==================== CUSTOMER ====================
+    @PostMapping
+    public ResponseEntity<?> createMultiByCustomer(@RequestBody BookingRequest req, Authentication authentication) {
+        try {
+            if (req.getSeatIds() == null || req.getSeatIds().isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Chưa chọn ghế nào!"));
+            }
+
+            if (authentication == null) {
+                return ResponseEntity.status(401).body(Map.of("error", "Bạn cần đăng nhập trước khi đặt vé."));
+            }
+
+            String customerUsername = authentication.getName();
+            String txnRef = String.valueOf(System.currentTimeMillis());
+
+            // Gọi sang hàm bạn vừa thêm
+            List<Booking> bookings = bookingService.createMultiBookingForCustomer(
+                    req.getShowtimeId(),
+                    req.getSeatIds(),
+                    txnRef,
+                    customerUsername);
+
+            return ResponseEntity.ok(Map.of(
+                    "message", "Đã tạo " + bookings.size() + " booking, chờ thanh toán!",
+                    "txnRef", txnRef));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // Endpoint mới để hủy các booking PENDING nếu thanh toán thất bại
+    @PostMapping("/cancel-by-txn/{txnRef}")
+    public ResponseEntity<?> cancelPendingBookingsByTxn(@PathVariable String txnRef) {
+        try {
+            bookingService.cancelPendingBookingsByTxn(txnRef);
+            return ResponseEntity.ok(Map.of("message", "Đã hủy các booking đang chờ thanh toán."));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().body(Map.of("error", "Lỗi khi hủy booking: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/{bookingId}")
+    public ResponseEntity<?> getBookingDetail(@PathVariable Long bookingId) {
+        try {
+            Booking booking = bookingService.findById(bookingId)
+                    .orElseThrow(() -> new RuntimeException("Không tìm thấy vé"));
+
+            // Trả về DTO để tránh vòng lặp JSON và chỉ gửi dữ liệu cần thiết
+            SoldTicketDTO dto = new SoldTicketDTO(booking);
+            return ResponseEntity.ok(dto);
+
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/txn/{txnRef}")
+    public ResponseEntity<List<SoldTicketDTO>> getBookingsByTxnRef(@PathVariable String txnRef) {
+        List<Booking> bookings = bookingService.findByTxnRef(txnRef);
+        if (bookings.isEmpty()) {
+            return ResponseEntity.ok(Collections.emptyList());
+        }
+
+        List<SoldTicketDTO> dtoList = bookings.stream()
+                .map(SoldTicketDTO::new)
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(dtoList);
+    }
+
+    @GetMapping("/group-ticket/{txnRef}")
+    public ResponseEntity<byte[]> downloadGroupTicket(@PathVariable String txnRef) {
+        List<Booking> bookings = bookingService.findByTxnRef(txnRef);
+        if (bookings.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        byte[] pdfData = ticketPdfService.generateGroupPDF(bookings);
+
+        return ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=tickets_" + txnRef + ".pdf")
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(pdfData);
+    }
+
+    @PostMapping("/mark-printed/{txnRef}")
+    public ResponseEntity<?> markTicketsAsPrinted(@PathVariable String txnRef) {
+        List<Booking> bookings = bookingService.findByTxnRef(txnRef);
+        if (bookings.isEmpty()) {
+            return ResponseEntity.badRequest().body("Không tìm thấy vé với mã giao dịch này!");
+        }
+
+        // Nếu tất cả đều đã in rồi → không cho in lại
+        boolean alreadyPrinted = bookings.stream().allMatch(Booking::isPrinted);
+        if (alreadyPrinted) {
+            return ResponseEntity.status(409).body("Các vé trong mã này đã được in trước đó!");
+        }
+
+        bookings.forEach(b -> b.setPrinted(true));
+        bookingService.saveAll(bookings);
+
+        System.out.println("Đánh dấu đã in vé cho txnRef: " + txnRef);
+        return ResponseEntity.ok("Đã đánh dấu vé đã in cho mã giao dịch: " + txnRef);
+    }
 }

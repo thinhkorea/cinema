@@ -1,16 +1,19 @@
 package com.example.cinema.domain;
 
 import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
-import java.sql.Timestamp;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
+import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "bookings", uniqueConstraints = @UniqueConstraint(columnNames = { "showtime_id", "seat_id" }))
+@Table(name = "bookings")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@EntityListeners(AuditingEntityListener.class) // 1. Bật "listener" của Auditing cho class này
 public class Booking {
 
     @Id
@@ -18,15 +21,15 @@ public class Booking {
     private Long bookingId;
 
     @ManyToOne
-    @JoinColumn(name = "customer_id", nullable = true)
+    @JoinColumn(name = "customer_id")
     private Customer customer;
 
     @ManyToOne
     @JoinColumn(name = "showtime_id", nullable = false)
     private Showtime showtime;
 
-    @ManyToOne
-    @JoinColumn(name = "seat_id", nullable = false)
+    @OneToOne // Một booking chỉ ứng với 1 ghế trong 1 suất chiếu
+    @JoinColumn(name = "seat_id", nullable = false, unique = true)
     private Seat seat;
 
     @Enumerated(EnumType.STRING)
@@ -36,19 +39,28 @@ public class Booking {
     @Column
     private String paymentMethod;
 
-    @Column(name = "txn_ref")
+    @Column(nullable = false)
     private String txnRef;
 
+    @Column(nullable = false)
+    private Double total = 0.0;
+
+    @CreatedDate
     @Column(nullable = false, updatable = false)
-    private Timestamp createdAt;
+    private LocalDateTime createdAt;
 
     @ManyToOne
-    @JoinColumn(name = "sold_by_staff_id", nullable = true)
+    @JoinColumn(name = "staff_id")
     private Staff soldByStaff;
+
+    @Column(nullable = false)
+    private boolean printed = false;
 
     @PrePersist
     protected void onCreate() {
-        createdAt = new Timestamp(System.currentTimeMillis());
+        if (this.status == null) {
+            this.status = Status.PENDING;
+        }
     }
 
     public enum Status {

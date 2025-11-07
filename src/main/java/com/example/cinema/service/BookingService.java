@@ -18,16 +18,18 @@ public class BookingService {
     private final SeatRepository seatRepo;
     private final TicketRepository ticketRepo;
     private final StaffRepository staffRepo;
+    private final CustomerRepository customerRepo;
 
     public BookingService(BookingRepository bookingRepo,
             ShowtimeRepository showtimeRepo,
             SeatRepository seatRepo, TicketRepository ticketRepo,
-            StaffRepository staffRepo) {
+            StaffRepository staffRepo, CustomerRepository customerRepo) {
         this.bookingRepo = bookingRepo;
         this.showtimeRepo = showtimeRepo;
         this.seatRepo = seatRepo;
         this.ticketRepo = ticketRepo;
         this.staffRepo = staffRepo;
+        this.customerRepo = customerRepo;
     }
 
     // ==================== ADMIN / USER ====================
@@ -63,6 +65,10 @@ public class BookingService {
         return bookingRepo.findById(id);
     }
 
+    public void saveAll(List<Booking> bookings) {
+        bookingRepo.saveAll(bookings);
+    }
+
     public List<Booking> findByStaffUsernameAndStatus(String username, Booking.Status status) {
         return bookingRepo.findBySoldByStaff_User_UsernameAndStatus(username, status);
     }
@@ -80,6 +86,11 @@ public class BookingService {
                 .map(SoldTicketDTO::new) // Sử dụng constructor để chuyển đổi
                 .sorted(Comparator.comparing(SoldTicketDTO::getCreatedAt).reversed()) // Sắp xếp vé mới nhất lên đầu
                 .collect(Collectors.toList());
+    }
+
+    // Thêm phương thức mới để tìm booking theo txnRef
+    public List<Booking> findByTxnRef(String txnRef) {
+        return bookingRepo.findByTxnRef(txnRef);
     }
 
     // ==================== STAFF / VNPay ====================
@@ -111,25 +122,26 @@ public class BookingService {
             b.setSeat(seat);
             b.setStatus(Booking.Status.PENDING);
             b.setTxnRef(txnRef);
-            b.setSoldByStaff(staff); // Gán nhân viên đã bán vé này
+            b.setSoldByStaff(staff);
             list.add(b);
         }
         return bookingRepo.saveAll(list);
     }
 
     @Transactional
-    public void markPaidByTxn(String txnRef, String paymentMethod) {
+    public List<Booking> markPaidByTxn(String txnRef, String paymentMethod) { // Thay đổi kiểu trả về
         List<Booking> bookings = bookingRepo.findByTxnRef(txnRef);
         if (bookings.isEmpty()) {
             throw new IllegalArgumentException("Không tìm thấy booking nào với mã giao dịch: " + txnRef);
         }
 
+        List<Booking> updatedBookings = new ArrayList<>();
         for (Booking b : bookings) {
             b.setStatus(Booking.Status.PAID);
             b.setPaymentMethod(paymentMethod); // Gán phương thức thanh toán (CASH hoặc VNPAY)
-
-            bookingRepo.save(b);
+            updatedBookings.add(bookingRepo.save(b)); // Lưu và thêm vào danh sách mới
         }
+        return updatedBookings; // Trả về danh sách các booking đã được cập nhật
     }
 
     // ==================== THỐNG KÊ ====================
@@ -165,6 +177,61 @@ public class BookingService {
                     "totalRevenue", row[1]));
         }
         return staffRevenueList;
+    }
+
+    /** CUSTOMER */
+    @Transactional
+    public List<Booking> createMultiBookingForCustomer(Long showtimeId, List<Long> seatIds, String txnRef,
+            String customerUsername) {
+        Showtime showtime = showtimeRepo.findById(showtimeId)
+                .orElseThrow(() -> new IllegalArgumentException("Showtime not found"));
+
+        // Tìm khách hàng
+        Customer customer = customerRepo.findByUser_Username(customerUsername)
+                .orElseThrow(
+                        () -> new IllegalArgumentException("Customer not found with username: " + customerUsername));
+
+        // Lấy giá vé từ showtime (hoặc dùng mặc định nếu null)
+        double basePrice = showtime.getPrice() != null ? showtime.getPrice() : 95000.0;
+
+        List<Booking> list = new ArrayList<>();
+
+        for (Long seatId : seatIds) {
+            Seat seat = seatRepo.findById(seatId)
+                    .orElseThrow(() -> new IllegalArgumentException("Seat not found: " + seatId));
+
+            if (!seat.getRoom().getRoomId().equals(showtime.getRoom().getRoomId()))
+                throw new IllegalStateException("Seat not in showtime room");
+
+            if (bookingRepo.existsByShowtime_ShowtimeIdAndSeat_SeatId(showtimeId, seatId))
+                throw new IllegalStateException("Seat already booked: " + seat.getSeatNumber());
+
+            seat.setBooking(true);
+            seatRepo.save(seat);
+
+            Booking b = new Booking();
+            b.setShowtime(showtime);
+            b.setSeat(seat);
+            b.setCustomer(customer);
+            b.setStatus(Booking.Status.PENDING);
+            b.setTxnRef(txnRef);
+            b.setPaymentMethod("VNPAY");
+            b.setTotal(basePrice);
+
+            list.add(b);
+        }
+
+        return bookingRepo.saveAll(list);
+    }
+
+    // Thêm vào interface BookingService
+    @Transactional
+    public void cancelPendingBookingsByTxn(String txnRef) {
+        List<Booking> bookingsToCancel = bookingRepo.findByTxnRefAndStatus(txnRef, Booking.Status.PENDING);
+        if (!bookingsToCancel.isEmpty()) {
+            bookingRepo.deleteAll(bookingsToCancel);
+            System.out.println("Đã hủy " + bookingsToCancel.size() + " booking PENDING với txnRef: " + txnRef);
+        }
     }
 
 }

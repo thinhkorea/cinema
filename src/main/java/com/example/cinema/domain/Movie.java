@@ -20,7 +20,7 @@ public class Movie {
     private String title;
 
     @Column(nullable = false)
-    private Integer duration; // đơn vị phút
+    private Integer duration;
 
     private String genre;
 
@@ -32,13 +32,12 @@ public class Movie {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status")
-    private MovieStatus status; // Sử dụng inner enum bên dưới
+    private MovieStatus status;
 
-    // Định nghĩa enum ngay trong class Movie
     public enum MovieStatus {
-        NOW_SHOWING, // Đang chiếu
-        COMING_SOON, // Sắp chiếu
-        SPECIAL_RELEASE, // Suất chiếu đặc biệt
-        ENDED // Đã kết thúc
+        NOW_SHOWING,
+        COMING_SOON,
+        SPECIAL_RELEASE,
+        ENDED
     }
 }
