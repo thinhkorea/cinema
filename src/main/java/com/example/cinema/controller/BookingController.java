@@ -2,7 +2,6 @@ package com.example.cinema.controller;
 
 import com.example.cinema.domain.Booking;
 import com.example.cinema.dto.BookingRequest;
-import com.example.cinema.dto.BookingResponse;
 import com.example.cinema.dto.SoldTicketDTO;
 import com.example.cinema.service.BookingService;
 import com.example.cinema.service.TicketPDFService;

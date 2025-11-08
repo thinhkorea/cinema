@@ -14,7 +14,6 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.text.SimpleDateFormat;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 public class TicketPDFService {
@@ -77,7 +76,7 @@ public class TicketPDFService {
     }
 
     // ===========================================
-    // 1️⃣ TẠO FILE PDF CHO MỘT VÉ ĐƠN
+    // TẠO FILE PDF CHO MỘT VÉ ĐƠN
     // ===========================================
     public byte[] generate(Booking b) {
         try {
@@ -174,7 +173,7 @@ public class TicketPDFService {
     }
 
     // ===========================================
-    // 2️⃣ TẠO FILE PDF CHO NHIỀU VÉ (NHÂN VIÊN)
+    // TẠO FILE PDF CHO NHIỀU VÉ (NHÂN VIÊN)
     // ===========================================
     public byte[] generateGroupPDF(List<Booking> bookings) {
         if (bookings == null || bookings.isEmpty())
@@ -193,7 +192,7 @@ public class TicketPDFService {
             // HEADER CHUNG
             PdfPTable header = new PdfPTable(1);
             header.setWidthPercentage(100);
-            header.addCell(cell("🎬 " + movie.getTitle(), 15, Font.BOLD));
+            header.addCell(cell("" + movie.getTitle(), 15, Font.BOLD));
             header.addCell(cell("Phòng / Room: " + room.getRoomName(), 11, Font.NORMAL));
             header.addCell(cell("Suất chiếu / Showtime: " +
                     dtFmt.format(java.sql.Timestamp.valueOf(showtime.getStartTime())),

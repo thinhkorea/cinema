@@ -16,18 +16,16 @@ public class BookingService {
     private final BookingRepository bookingRepo;
     private final ShowtimeRepository showtimeRepo;
     private final SeatRepository seatRepo;
-    private final TicketRepository ticketRepo;
     private final StaffRepository staffRepo;
     private final CustomerRepository customerRepo;
 
     public BookingService(BookingRepository bookingRepo,
             ShowtimeRepository showtimeRepo,
-            SeatRepository seatRepo, TicketRepository ticketRepo,
+            SeatRepository seatRepo,
             StaffRepository staffRepo, CustomerRepository customerRepo) {
         this.bookingRepo = bookingRepo;
         this.showtimeRepo = showtimeRepo;
         this.seatRepo = seatRepo;
-        this.ticketRepo = ticketRepo;
         this.staffRepo = staffRepo;
         this.customerRepo = customerRepo;
     }
@@ -138,10 +136,10 @@ public class BookingService {
         List<Booking> updatedBookings = new ArrayList<>();
         for (Booking b : bookings) {
             b.setStatus(Booking.Status.PAID);
-            b.setPaymentMethod(paymentMethod); // Gán phương thức thanh toán (CASH hoặc VNPAY)
-            updatedBookings.add(bookingRepo.save(b)); // Lưu và thêm vào danh sách mới
+            b.setPaymentMethod(paymentMethod);
+            updatedBookings.add(bookingRepo.save(b));
         }
-        return updatedBookings; // Trả về danh sách các booking đã được cập nhật
+        return updatedBookings;
     }
 
     // ==================== THỐNG KÊ ====================

@@ -120,41 +120,6 @@ public class PaymentController {
                 "role", role));
     }
 
-    // @GetMapping("/vnpay-return")
-    // public ResponseEntity<?> handleReturn(@RequestParam Map<String, String>
-    // params) {
-    // String responseCode = params.get("vnp_ResponseCode");
-    // Long bookingId = Long.parseLong(params.get("vnp_TxnRef"));
-
-    // if ("00".equals(responseCode)) {
-    // Booking booking = bookingRepo.findById(bookingId).orElseThrow();
-    // booking.setStatus(Booking.Status.PAID);
-    // booking.setPaymentMethod("VNPAY");
-    // bookingRepo.save(booking);
-    // System.out.println("VNPay return: " + params);
-    // return ResponseEntity.ok("Thanh toán thành công!");
-    // }
-    // return ResponseEntity.badRequest().body("Thanh toán thất bại!");
-    // }
-
-    // @GetMapping("/vnpay-return")
-    // public ResponseEntity<?> handleReturn(@RequestParam Map<String, String>
-    // params) {
-    // String responseCode = params.get("vnp_ResponseCode");
-    // String txnRef = params.get("vnp_TxnRef");
-
-    // if ("00".equals(responseCode)) {
-    // System.out.println("VNPay giao dịch thành công, mã đơn hàng: " + txnRef);
-    // // TODO: Nếu muốn, có thể cập nhật toàn bộ booking PENDING → PAID theo
-    // // user/session
-    // return ResponseEntity.ok("Thanh toán thành công!");
-    // }
-
-    // System.out.println("VNPay thất bại, mã lỗi: " + responseCode + ", TxnRef=" +
-    // txnRef);
-    // return ResponseEntity.badRequest().body("Thanh toán thất bại!");
-    // }
-
     @GetMapping("/vnpay-return")
     public ResponseEntity<?> handleReturn(@RequestParam Map<String, String> params) {
         String responseCode = params.get("vnp_ResponseCode");

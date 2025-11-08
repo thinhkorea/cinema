@@ -28,13 +28,13 @@ public class ShowtimeController {
         this.roomRepository = roomRepository;
     }
 
-    // ✅ GET all showtimes
+    // GET all showtimes
     @GetMapping
     public ResponseEntity<List<Showtime>> getAllShowtimes() {
         return ResponseEntity.ok(showtimeRepository.findAll());
     }
 
-    // ✅ GET showtime by ID
+    // GET showtime by ID
     @GetMapping("/{id}")
     public ResponseEntity<?> getShowtimeById(@PathVariable Long id) {
         return showtimeRepository.findById(id)
@@ -42,14 +42,14 @@ public class ShowtimeController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // ✅ GET showtimes by movie ID
+    // GET showtimes by movie ID
     @GetMapping("/movie/{movieId}")
     public ResponseEntity<List<Showtime>> getShowtimesByMovie(@PathVariable Long movieId) {
         List<Showtime> showtimes = showtimeRepository.findByMovie_MovieId(movieId);
         return ResponseEntity.ok(showtimes);
     }
 
-    // ✅ CREATE new showtime (fix lỗi Data integrity violation)
+    // CREATE new showtime (fix lỗi Data integrity violation)
     @PostMapping
     public ResponseEntity<?> createShowtime(@RequestBody ShowtimeRequest req) {
         Movie movie = movieRepository.findById(req.getMovieId())
@@ -68,7 +68,7 @@ public class ShowtimeController {
         return ResponseEntity.ok(saved);
     }
 
-    // ✅ UPDATE existing showtime
+    // UPDATE existing showtime
     @PutMapping("/{id}")
     public ResponseEntity<?> updateShowtime(@PathVariable Long id, @RequestBody ShowtimeRequest req) {
         return showtimeRepository.findById(id)
@@ -90,7 +90,7 @@ public class ShowtimeController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // ✅ DELETE showtime
+    // DELETE showtime
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteShowtime(@PathVariable Long id) {
         if (showtimeRepository.existsById(id)) {

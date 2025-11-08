@@ -18,22 +18,18 @@ public class AdminController {
     private final RoomRepository roomRepo;
     private final ShowtimeRepository showtimeRepo;
     private final BookingRepository bookingRepo;
-    private final TicketRepository ticketRepo;
 
     public AdminController(
             BookingService bookingService,
             MovieRepository movieRepo,
             RoomRepository roomRepo,
             ShowtimeRepository showtimeRepo,
-            BookingRepository bookingRepo,
-            TicketRepository ticketRepo // Thêm vào constructor
-    ) {
+            BookingRepository bookingRepo) {
         this.bookingService = bookingService;
         this.movieRepo = movieRepo;
         this.roomRepo = roomRepo;
         this.showtimeRepo = showtimeRepo;
         this.bookingRepo = bookingRepo;
-        this.ticketRepo = ticketRepo; // Gán vào biến
     }
 
     @GetMapping("/dashboard")

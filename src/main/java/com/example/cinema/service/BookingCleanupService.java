@@ -23,7 +23,7 @@ public class BookingCleanupService {
 
     /**
      * Tác vụ này chạy định kỳ để dọn dẹp các booking "treo" (PENDING) đã quá hạn.
-     * fixedRate = 300000 ms = 5 phút.
+     * fixedRate = 60000 ms = 1 phút.
      */
     @Scheduled(fixedRate = 60000)
     @Transactional

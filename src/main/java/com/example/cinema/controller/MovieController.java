@@ -17,13 +17,13 @@ public class MovieController {
         this.movieService = movieService;
     }
 
-    // 🔹 Lấy tất cả phim
+    // Lấy tất cả phim
     @GetMapping
     public ResponseEntity<List<Movie>> getAllMovies() {
         return ResponseEntity.ok(movieService.findAll());
     }
 
-    // 🔹 Lấy phim theo ID
+    // Lấy phim theo ID
     @GetMapping("/{id}")
     public ResponseEntity<?> getMovieById(@PathVariable Long id) {
         return movieService.findById(id)
@@ -31,19 +31,19 @@ public class MovieController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // 🔹 Lấy phim theo trạng thái (NOW_SHOWING, COMING_SOON)
+    // Lấy phim theo trạng thái (NOW_SHOWING, COMING_SOON)
     @GetMapping("/status/{status}")
     public ResponseEntity<List<Movie>> getMoviesByStatus(@PathVariable String status) {
         return ResponseEntity.ok(movieService.findByStatus(status));
     }
 
-    // 🔹 Tạo mới phim
+    // Tạo mới phim
     @PostMapping
     public ResponseEntity<Movie> createMovie(@RequestBody Movie movie) {
         return ResponseEntity.ok(movieService.save(movie));
     }
 
-    // 🔹 Cập nhật phim
+    // Cập nhật phim
     @PutMapping("/{id}")
     public ResponseEntity<?> updateMovie(@PathVariable Long id, @RequestBody Movie movie) {
         try {
@@ -54,7 +54,7 @@ public class MovieController {
         }
     }
 
-    // 🔹 Xoá phim
+    // Xoá phim
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteMovie(@PathVariable Long id) {
         if (movieService.findById(id).isPresent()) {
