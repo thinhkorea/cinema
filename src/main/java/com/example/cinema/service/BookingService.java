@@ -18,16 +18,20 @@ public class BookingService {
     private final SeatRepository seatRepo;
     private final StaffRepository staffRepo;
     private final CustomerRepository customerRepo;
+    private final UserRepository userRepository;
 
     public BookingService(BookingRepository bookingRepo,
             ShowtimeRepository showtimeRepo,
             SeatRepository seatRepo,
-            StaffRepository staffRepo, CustomerRepository customerRepo) {
+            StaffRepository staffRepo, 
+            CustomerRepository customerRepo,
+            UserRepository userRepository) {
         this.bookingRepo = bookingRepo;
         this.showtimeRepo = showtimeRepo;
         this.seatRepo = seatRepo;
         this.staffRepo = staffRepo;
         this.customerRepo = customerRepo;
+        this.userRepository = userRepository;
     }
 
     // ==================== ADMIN / USER ====================
@@ -69,6 +73,14 @@ public class BookingService {
 
     public List<Booking> findByStaffUsernameAndStatus(String username, Booking.Status status) {
         return bookingRepo.findBySoldByStaff_User_UsernameAndStatus(username, status);
+    }
+
+    public List<Booking> getBookingsByUsername(String username) {
+        User user = userRepository.findByUsername(username);
+        if (user == null) {
+            throw new RuntimeException("User not found: " + username);
+        }
+        return bookingRepo.findByCustomer_User_Username(username);
     }
 
     // Phương thức mới để lấy Booking theo ID, xử lý logic tìm kiếm trong Service

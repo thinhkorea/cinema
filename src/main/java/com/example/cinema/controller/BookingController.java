@@ -14,6 +14,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import java.util.stream.Collectors;
+import java.security.Principal;
 import java.util.*;
 
 @RestController
@@ -338,5 +339,15 @@ public class BookingController {
 
         System.out.println("Đánh dấu đã in vé cho txnRef: " + txnRef);
         return ResponseEntity.ok("Đã đánh dấu vé đã in cho mã giao dịch: " + txnRef);
+    }
+
+    @GetMapping("/my-bookings")
+    public ResponseEntity<?> getMyBookings(Principal principal) {
+        try {
+            List<Booking> bookings = bookingService.getBookingsByUsername(principal.getName());
+            return ResponseEntity.ok(bookings);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
     }
 }
