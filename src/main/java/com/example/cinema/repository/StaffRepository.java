@@ -7,9 +7,13 @@ import java.util.Optional;
 
 public interface StaffRepository extends JpaRepository<Staff, Long> {
 
-    // 🔍 Tìm nhân viên bằng username (thông qua user)
+    // Tìm nhân viên bằng username (thông qua user)
     Optional<Staff> findByUser_Username(String username);
 
-    // 🔍 Tìm nhân viên bằng userId
+    // Tìm nhân viên bằng userId
     Optional<Staff> findByUser_UserId(Long userId);
+
+    boolean existsByUserUsername(String username);
+
+    boolean existsByCccd(String cccd);
 }

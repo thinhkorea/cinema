@@ -33,7 +33,7 @@ public class Customer {
     private Integer loyaltyPoints = 0;
 
     public enum Gender {
-        MALE, // Nam
-        FEMALE // Nữ
+        MALE,
+        FEMALE
     }
 }

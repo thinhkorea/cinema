@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -18,18 +19,21 @@ public class AdminController {
     private final RoomRepository roomRepo;
     private final ShowtimeRepository showtimeRepo;
     private final BookingRepository bookingRepo;
+    private final StaffRepository staffRepository;
 
     public AdminController(
             BookingService bookingService,
             MovieRepository movieRepo,
             RoomRepository roomRepo,
             ShowtimeRepository showtimeRepo,
-            BookingRepository bookingRepo) {
+            BookingRepository bookingRepo,
+            StaffRepository staffRepository) {
         this.bookingService = bookingService;
         this.movieRepo = movieRepo;
         this.roomRepo = roomRepo;
         this.showtimeRepo = showtimeRepo;
         this.bookingRepo = bookingRepo;
+        this.staffRepository = staffRepository;
     }
 
     @GetMapping("/dashboard")
@@ -67,4 +71,22 @@ public class AdminController {
         // Sử dụng BookingService để đảm bảo tính nhất quán dữ liệu
         return ResponseEntity.ok(bookingService.getRevenueByStaff());
     }
+
+    @GetMapping("/staffs")
+    public ResponseEntity<?> getAllStaffs() {
+        List<Map<String, Object>> staffList = staffRepository.findAll().stream()
+                .map(s -> {
+                    Map<String, Object> m = new HashMap<>();
+                    m.put("staffId", s.getStaffId());
+                    m.put("username", s.getUser().getUsername());
+                    m.put("fullName", s.getUser().getFullName());
+                    m.put("email", s.getEmail());
+                    m.put("phone", s.getPhone());
+                    m.put("createdAt", s.getHireDate());
+                    return m;
+                })
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(staffList);
+    }
+
 }

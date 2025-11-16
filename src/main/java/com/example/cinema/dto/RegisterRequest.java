@@ -11,4 +11,7 @@ public class RegisterRequest {
     private String phone;
     private String address;
     private String gender;
+    private String cccd;
+    private String position;
+    private Double salary;
 }

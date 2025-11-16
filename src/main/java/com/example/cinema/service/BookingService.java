@@ -93,7 +93,9 @@ public class BookingService {
 
     // ==================== STAFF / VNPay ====================
     @Transactional
-    public List<Booking> createMultiBooking(Long showtimeId, List<Long> seatIds, String txnRef, String staffUsername) {
+    public List<Booking> createMultiBooking(Long showtimeId, List<Long> seatIds, String txnRef,
+            String staffUsername, Integer total, String paymentMethod) {
+
         Showtime showtime = showtimeRepo.findById(showtimeId)
                 .orElseThrow(() -> new IllegalArgumentException("Showtime not found"));
 
@@ -102,6 +104,7 @@ public class BookingService {
                 .orElseThrow(() -> new IllegalArgumentException("Staff not found with username: " + staffUsername));
 
         List<Booking> list = new ArrayList<>();
+
         for (Long seatId : seatIds) {
             Seat seat = seatRepo.findById(seatId)
                     .orElseThrow(() -> new IllegalArgumentException("Seat not found: " + seatId));
@@ -121,8 +124,16 @@ public class BookingService {
             b.setStatus(Booking.Status.PENDING);
             b.setTxnRef(txnRef);
             b.setSoldByStaff(staff);
+            b.setPaymentMethod(paymentMethod != null ? paymentMethod : "CASH");
+            // Gán giá vé
+            if (total != null && total > 0) {
+                b.setTotal((double) total / seatIds.size());
+            } else {
+                b.setTotal(showtime.getPrice().doubleValue());
+            }
             list.add(b);
         }
+
         return bookingRepo.saveAll(list);
     }
 
@@ -136,7 +147,9 @@ public class BookingService {
         List<Booking> updatedBookings = new ArrayList<>();
         for (Booking b : bookings) {
             b.setStatus(Booking.Status.PAID);
-            b.setPaymentMethod(paymentMethod);
+            if (b.getPaymentMethod() == null || b.getPaymentMethod().isBlank()) {
+                b.setPaymentMethod(paymentMethod != null ? paymentMethod : "CASH");
+            }
             updatedBookings.add(bookingRepo.save(b));
         }
         return updatedBookings;

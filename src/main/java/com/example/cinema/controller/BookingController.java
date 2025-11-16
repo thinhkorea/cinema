@@ -1,11 +1,15 @@
 package com.example.cinema.controller;
 
 import com.example.cinema.domain.Booking;
+import com.example.cinema.domain.Movie;
+import com.example.cinema.domain.Room;
+import com.example.cinema.domain.Showtime;
 import com.example.cinema.dto.BookingRequest;
 import com.example.cinema.dto.SoldTicketDTO;
 import com.example.cinema.service.BookingService;
 import com.example.cinema.service.TicketPDFService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -113,9 +117,13 @@ public class BookingController {
 
             // Tạo txnRef để nhóm các booking cùng lượt bán
             String txnRef = String.valueOf(System.currentTimeMillis()); // Sửa lỗi suy luận kiểu
-            List<Booking> bookings = bookingService.createMultiBooking(req.getShowtimeId(), req.getSeatIds(), txnRef,
-                    req.getStaffUsername());
-
+            List<Booking> bookings = bookingService.createMultiBooking(
+                    req.getShowtimeId(),
+                    req.getSeatIds(),
+                    txnRef,
+                    req.getStaffUsername(),
+                    req.getTotal(),
+                    req.getPaymentMethod());
             return ResponseEntity.ok(Map.of(
                     "message", "Đã tạo " + bookings.size() + " booking, chờ thanh toán!",
                     "txnRef", txnRef));
@@ -237,19 +245,79 @@ public class BookingController {
         return ResponseEntity.ok(dtoList);
     }
 
-    @GetMapping("/group-ticket/{txnRef}")
-    public ResponseEntity<byte[]> downloadGroupTicket(@PathVariable String txnRef) {
-        List<Booking> bookings = bookingService.findByTxnRef(txnRef);
-        if (bookings.isEmpty()) {
-            return ResponseEntity.notFound().build();
+    // @GetMapping("/group-ticket/{txnRef}")
+    // public ResponseEntity<byte[]> downloadGroupTicket(@PathVariable String
+    // txnRef) {
+    // List<Booking> bookings = bookingService.findByTxnRef(txnRef);
+    // if (bookings.isEmpty()) {
+    // return ResponseEntity.notFound().build();
+    // }
+
+    // byte[] pdfData = ticketPdfService.generateGroupPDF(bookings);
+
+    // return ResponseEntity.ok()
+    // .header("Content-Disposition", "attachment; filename=tickets_" + txnRef +
+    // ".pdf")
+    // .contentType(MediaType.APPLICATION_PDF)
+    // .body(pdfData);
+    // }
+
+    @GetMapping("/group-ticket-info/{txnRef}")
+    public ResponseEntity<?> getGroupTicketInfo(@PathVariable String txnRef) {
+        try {
+            List<Booking> bookings = bookingService.findByTxnRef(txnRef);
+            if (bookings.isEmpty()) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body("Không tìm thấy vé với mã giao dịch: " + txnRef);
+            }
+
+            Booking first = bookings.get(0);
+            Showtime showtime = first.getShowtime();
+            Movie movie = showtime.getMovie();
+            Room room = showtime.getRoom();
+
+            // Gộp danh sách ghế
+            String seats = bookings.stream()
+                    .map(b -> b.getSeat().getSeatNumber())
+                    .sorted()
+                    .collect(Collectors.joining(", "));
+
+            // Lấy tên nhân viên bán (từ User trong Staff)
+            String staffName = "Không xác định";
+            if (first.getSoldByStaff() != null
+                    && first.getSoldByStaff().getUser() != null
+                    && first.getSoldByStaff().getUser().getFullName() != null) {
+                staffName = first.getSoldByStaff().getUser().getFullName();
+            }
+
+            // Tính tổng tiền thực tế
+            double totalAmount = bookings.stream()
+                    .mapToDouble(b -> {
+                        Double t = b.getTotal();
+                        return (t != null && t > 0) ? t : showtime.getPrice();
+                    })
+                    .sum();
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("txnRef", txnRef);
+            response.put("movieTitle", movie.getTitle());
+            response.put("room", room.getRoomName());
+            response.put("seat", seats);
+            response.put("startTime", showtime.getStartTime());
+            response.put("endTime", showtime.getEndTime());
+            response.put("total", String.format("%,.0f VND", totalAmount)); // ✅ Đổi thành tổng thực tế
+            response.put("paymentMethod", first.getPaymentMethod());
+            response.put("staff", staffName);
+            response.put("salesNo", first.getBookingId());
+            response.put("footer", "Please verify ticket information before handing to customer");
+
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.internalServerError()
+                    .body("Lỗi lấy thông tin vé: " + e.getMessage());
         }
-
-        byte[] pdfData = ticketPdfService.generateGroupPDF(bookings);
-
-        return ResponseEntity.ok()
-                .header("Content-Disposition", "attachment; filename=tickets_" + txnRef + ".pdf")
-                .contentType(MediaType.APPLICATION_PDF)
-                .body(pdfData);
     }
 
     @PostMapping("/mark-printed/{txnRef}")

@@ -33,31 +33,29 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
         String email = (String) attributes.get("email");
         String name = (String) attributes.get("name");
 
-        // Tạo user nếu chưa có
+        // 🧠 1. Tạo user nếu chưa có
         User user = userRepository.findByUsername(email);
         if (user == null) {
             user = new User();
             user.setUsername(email);
-            user.setPassword("GOOGLE_USER"); // Mật khẩu không dùng để đăng nhập thường
+            user.setPassword("GOOGLE_USER");
             user.setFullName(name);
             user.setRole(User.Role.CUSTOMER);
             user = userRepository.save(user);
         }
 
-        // Tạo customer nếu chưa có
-        if (!customerRepository.existsByEmail(email)) {
-            Customer customer = new Customer();
-            customer.setUser(user);
-            customer.setEmail(email);
-            customer.setGender(Gender.MALE);
-            customer.setLoyaltyPoints(0);
-            customerRepository.save(customer);
+        // 🧠 2. Tạo customer nếu chưa có (tránh lambda)
+        if (customerRepository.findByUserUserId(user.getUserId()).isEmpty()) {
+            Customer c = new Customer();
+            c.setUser(user);
+            c.setEmail(email);
+            c.setGender(Gender.MALE);
+            c.setLoyaltyPoints(0);
+            customerRepository.save(c);
         }
 
-        // Sinh JWT token cho user Gmail
+        // 🧠 3. Sinh JWT token và redirect
         String jwt = jwtTokenProvider.generateToken(user.getUsername(), user.getRole().name(), user.getFullName());
-
-        // Redirect về frontend kèm token
         String redirectUrl = "http://localhost:5173/login-success?token=" + jwt;
         getRedirectStrategy().sendRedirect(request, response, redirectUrl);
     }

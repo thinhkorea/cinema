@@ -25,15 +25,15 @@ public class TicketService {
     // Tạo vé mới (bán vé)
     @Transactional
     public Ticket createTicket(String username, Long showtimeId, String seatNumber, Double price) {
-        // 1️⃣ Tìm nhân viên bán vé thông qua username
+        // Tìm nhân viên bán vé thông qua username
         Staff staff = staffRepo.findByUser_Username(username)
                 .orElseThrow(() -> new IllegalArgumentException("Staff not found for username: " + username));
 
-        // 2️⃣ Kiểm tra suất chiếu hợp lệ
+        // Kiểm tra suất chiếu hợp lệ
         Showtime showtime = showtimeRepo.findById(showtimeId)
                 .orElseThrow(() -> new IllegalArgumentException("Showtime not found: " + showtimeId));
 
-        // 3️⃣ Tạo vé mới
+        // Tạo vé mới
         Ticket ticket = new Ticket();
         ticket.setShowtime(showtime);
         ticket.setSeatNumber(seatNumber);
