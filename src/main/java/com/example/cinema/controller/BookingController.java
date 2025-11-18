@@ -5,6 +5,7 @@ import com.example.cinema.domain.Movie;
 import com.example.cinema.domain.Room;
 import com.example.cinema.domain.Showtime;
 import com.example.cinema.dto.BookingRequest;
+import com.example.cinema.dto.RedeemPointsRequest;
 import com.example.cinema.dto.SoldTicketDTO;
 import com.example.cinema.service.BookingService;
 import com.example.cinema.service.TicketPDFService;
@@ -345,9 +346,23 @@ public class BookingController {
     public ResponseEntity<?> getMyBookings(Principal principal) {
         try {
             List<Booking> bookings = bookingService.getBookingsByUsername(principal.getName());
-            return ResponseEntity.ok(bookings);
+            List<SoldTicketDTO> dtos = bookings.stream()
+                    .map(SoldTicketDTO::new)
+                    .collect(Collectors.toList());
+            return ResponseEntity.ok(dtos);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    // ==================== LOYALTY POINTS ====================
+    @PostMapping("/redeem-points")
+    public ResponseEntity<?> redeemPoints(@RequestBody RedeemPointsRequest req) {
+        try {
+            Map<String, Object> result = bookingService.redeemPoints(req.getTxnRef(), req.getPointsToUse());
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 }

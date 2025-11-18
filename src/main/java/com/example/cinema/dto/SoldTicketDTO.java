@@ -23,6 +23,7 @@ public class SoldTicketDTO {
     private String moviePoster;
     private String txnRef;
     private boolean printed;
+    private Integer pointsUsed; // Điểm tích lũy được dùng
 
     // Constructor để chuyển đổi từ Booking Entity sang DTO
     public SoldTicketDTO(Booking booking) {
@@ -50,6 +51,7 @@ public class SoldTicketDTO {
         this.total = booking.getTotal();
         this.txnRef = booking.getTxnRef();
         this.printed = booking.isPrinted();
+        this.pointsUsed = booking.getPointsUsed() != null ? booking.getPointsUsed() : 0;
     }
 
 }

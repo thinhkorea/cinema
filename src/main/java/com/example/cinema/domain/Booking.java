@@ -47,6 +47,9 @@ public class Booking {
     @Column(nullable = false)
     private Double total = 0.0;
 
+    @Column(columnDefinition = "INT DEFAULT 0")
+    private Integer pointsUsed = 0;  // Điểm tích lũy được dùng
+
     @CreatedDate
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;

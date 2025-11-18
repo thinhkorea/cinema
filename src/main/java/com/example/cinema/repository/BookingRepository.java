@@ -37,7 +37,7 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
        // ===================== THỐNG KÊ =====================
        @Query("""
                       SELECT FUNCTION('DATE_FORMAT', b.createdAt, '%Y-%m') AS month,
-                             SUM(b.showtime.price) AS totalRevenue
+                             SUM(b.total - COALESCE(b.pointsUsed, 0) * 1000) AS totalRevenue
                       FROM Booking b
                       WHERE b.status = 'PAID'
                       GROUP BY FUNCTION('DATE_FORMAT', b.createdAt, '%Y-%m')
@@ -47,7 +47,7 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
        @Query("""
                       SELECT MONTH(b.showtime.startTime) AS month,
-                             SUM(b.showtime.price) AS revenue
+                             SUM(b.total - COALESCE(b.pointsUsed, 0) * 1000) AS revenue
                       FROM Booking b
                       WHERE b.status = 'PAID'
                         AND YEAR(b.showtime.startTime) = :year
@@ -58,7 +58,7 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
        @Query("""
                      SELECT m.title AS movieTitle,
-                            SUM(b.showtime.price) AS revenue
+                            SUM(b.total - COALESCE(b.pointsUsed, 0) * 1000) AS revenue
                      FROM Booking b
                      JOIN b.showtime.movie m
                      WHERE b.status = com.example.cinema.domain.Booking$Status.PAID
@@ -69,7 +69,7 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
        @Query("""
                      SELECT s.user.fullName AS staffName,
-                            SUM(b.showtime.price) AS totalRevenue
+                            SUM(b.total - COALESCE(b.pointsUsed, 0) * 1000) AS totalRevenue
                      FROM Booking b
                      JOIN b.soldByStaff s
                      WHERE b.status = com.example.cinema.domain.Booking$Status.PAID

@@ -75,6 +75,7 @@ public class BookingService {
         return bookingRepo.findBySoldByStaff_User_UsernameAndStatus(username, status);
     }
 
+    @Transactional(readOnly = true)
     public List<Booking> getBookingsByUsername(String username) {
         User user = userRepository.findByUsername(username);
         if (user == null) {
@@ -150,20 +151,56 @@ public class BookingService {
     }
 
     @Transactional
-    public List<Booking> markPaidByTxn(String txnRef, String paymentMethod) { // Thay đổi kiểu trả về
+    public List<Booking> markPaidByTxn(String txnRef, String paymentMethod) {
         List<Booking> bookings = bookingRepo.findByTxnRef(txnRef);
         if (bookings.isEmpty()) {
             throw new IllegalArgumentException("Không tìm thấy booking nào với mã giao dịch: " + txnRef);
         }
-
+        
         List<Booking> updatedBookings = new ArrayList<>();
+        
+        // Tính tổng tiền của toàn bộ giao dịch
+        Double totalAmount = 0.0;
+        Customer customer = null;
+        
         for (Booking b : bookings) {
             b.setStatus(Booking.Status.PAID);
             if (b.getPaymentMethod() == null || b.getPaymentMethod().isBlank()) {
                 b.setPaymentMethod(paymentMethod != null ? paymentMethod : "CASH");
             }
+            
+            if (b.getTotal() != null) {
+                totalAmount += b.getTotal();
+            }
+            if (customer == null && b.getCustomer() != null) {
+                customer = b.getCustomer();
+            }
+            
             updatedBookings.add(bookingRepo.save(b));
         }
+        
+        // TÍCH ĐIỂM: Tính từ tổng tiền THANH TOÁN (sau khi trừ điểm)
+        if (customer != null && totalAmount > 0) {
+            // Lấy pointsUsed từ booking đầu tiên (tất cả booking cùng giá trị)
+            Integer pointsUsed = bookings.get(0).getPointsUsed() != null ? 
+                bookings.get(0).getPointsUsed() : 0;
+            
+            // Tính tiền thanh toán thực tế (tiền gốc - giảm từ điểm)
+            Double discountFromPoints = pointsUsed * 1000.0; // 1 điểm = 1.000đ
+            Double actualPaymentAmount = totalAmount - discountFromPoints;
+            
+            // Tính điểm từ tiền thanh toán
+            Integer points = (int) Math.floor(actualPaymentAmount / 20000.0);
+            
+            Integer currentPoints = customer.getLoyaltyPoints() != null ? 
+                customer.getLoyaltyPoints() : 0;
+            
+            // Cập nhật điểm: trừ điểm đã dùng, cộng điểm mới tích lũy
+            Integer newPoints = currentPoints - pointsUsed + points;
+            customer.setLoyaltyPoints(newPoints);
+            customerRepo.save(customer);
+        }
+        
         return updatedBookings;
     }
 
@@ -245,6 +282,67 @@ public class BookingService {
         }
 
         return bookingRepo.saveAll(list);
+    }
+
+    // Dùng điểm để giảm giá trước khi thanh toán
+    @Transactional
+    public Map<String, Object> redeemPoints(String txnRef, Integer pointsToUse) {
+        List<Booking> bookings = bookingRepo.findByTxnRef(txnRef);
+        if (bookings.isEmpty()) {
+            throw new IllegalArgumentException("Không tìm thấy booking với mã: " + txnRef);
+        }
+
+        Customer customer = bookings.get(0).getCustomer();
+        if (customer == null) {
+            throw new IllegalArgumentException("Booking này không có khách hàng");
+        }
+
+        Integer currentPoints = customer.getLoyaltyPoints() != null ? customer.getLoyaltyPoints() : 0;
+        if (pointsToUse < 0 || pointsToUse > currentPoints) {
+            throw new IllegalArgumentException("Số điểm không hợp lệ. Bạn có: " + currentPoints + " điểm");
+        }
+
+        // Tính tổng tiền hiện tại (theo showtime.price - giá gốc)
+        Double totalAmount = bookings.stream()
+                .mapToDouble(b -> b.getShowtime() != null && b.getShowtime().getPrice() != null ? 
+                    b.getShowtime().getPrice() : 0.0)
+                .sum();
+
+        // Tính tiền giảm từ điểm (1 điểm = 1.000đ)
+        Double discount = pointsToUse * 1000.0;
+        
+        // Không cho giảm quá tổng tiền
+        if (discount > totalAmount) {
+            throw new IllegalArgumentException("Số điểm quá lớn, tối đa có thể dùng: " + (int)(totalAmount / 1000) + " điểm");
+        }
+
+        // Chỉ lưu pointsUsed vào booking đầu tiên, những booking khác để 0
+        // Cập nhật total = giá gốc - phần giảm giá
+        for (int i = 0; i < bookings.size(); i++) {
+            Booking b = bookings.get(i);
+            Double originalPrice = b.getShowtime() != null && b.getShowtime().getPrice() != null ? 
+                b.getShowtime().getPrice() : 0.0;
+            
+            if (i == 0) {
+                b.setPointsUsed(pointsToUse);
+                // Vé đầu tiên: trừ hết discount
+                b.setTotal(originalPrice - discount);
+            } else {
+                b.setPointsUsed(0);
+                // Các vé khác: giữ giá gốc
+                b.setTotal(originalPrice);
+            }
+        }
+        bookingRepo.saveAll(bookings);
+
+        return Map.of(
+                "message", "Lưu " + pointsToUse + " điểm thành công",
+                "pointsUsed", pointsToUse,
+                "discountAmount", discount,
+                "totalAmount", totalAmount,
+                "newTotal", totalAmount - discount,
+                "remainingPoints", currentPoints
+        );
     }
 
     // Thêm vào interface BookingService
