@@ -34,10 +34,24 @@ public class Movie {
     @Column(name = "status")
     private MovieStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "age_rating")
+    private AgeRating ageRating;
+
+    @Column(length = 2000)
+    private String actors;
+
     public enum MovieStatus {
         NOW_SHOWING,
         COMING_SOON,
         SPECIAL_RELEASE,
         ENDED
+    }
+
+    public enum AgeRating {
+        P,      // Phổ thông
+        C13,    // Cấm dưới 13 tuổi
+        C16,    // Cấm dưới 16 tuổi
+        C18     // Cấm dưới 18 tuổi
     }
 }

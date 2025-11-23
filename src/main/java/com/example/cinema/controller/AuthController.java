@@ -46,6 +46,9 @@ public class AuthController {
         if (user == null || !passwordEncoder.matches(req.getPassword(), user.getPassword())) {
             return ResponseEntity.badRequest().body(new LoginResponse(null, "Bad credentials", null, null));
         }
+        if (!user.getIsActive()) {
+            return ResponseEntity.badRequest().body(new LoginResponse(null, "Account is locked", null, null));
+        }
         String token = jwtUtil.generateToken(user.getUsername(), user.getRole().name(), user.getFullName());
         return ResponseEntity.ok(new LoginResponse(token, "OK", user.getRole().name(), user.getUserId()));
     }
@@ -115,12 +118,17 @@ public class AuthController {
             throw new IllegalArgumentException("Invalid username or password");
         }
 
+        if (!user.getIsActive()) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Account is locked"));
+        }
+
         // Trả JSON đơn giản, không phụ thuộc entity
         Map<String, Object> userInfo = new HashMap<>();
         userInfo.put("userId", user.getUserId());
         userInfo.put("username", user.getUsername());
         userInfo.put("fullName", user.getFullName());
         userInfo.put("role", user.getRole().name());
+        userInfo.put("isActive", user.getIsActive());
 
         return ResponseEntity.ok(userInfo);
     }

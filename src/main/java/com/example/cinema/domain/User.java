@@ -30,6 +30,9 @@ public class User {
     @Column(nullable = false)
     private Role role = Role.CUSTOMER;
 
+    @Column(nullable = false)
+    private Boolean isActive = true;
+
     public enum Role {
         ADMIN,
         STAFF,
