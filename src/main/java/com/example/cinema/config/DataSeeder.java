@@ -104,7 +104,7 @@ public class DataSeeder {
                 "Câu chuyện về Mai, một nữ nhân viên massage, vô tình gặp Dương, một anh chàng nhạc công đào hoa.",
                 "https://upload.wikimedia.org/wikipedia/vi/3/36/Mai_2024_poster.jpg",
                 "https://www.youtube.com/watch?v=HXWRTGbhb4U",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.NOW_SHOWING,
                 Movie.AgeRating.C18,
                 "Phương Anh Đào, Tuấn Trần");
             
@@ -112,7 +112,7 @@ public class DataSeeder {
                 "Tổ chức TVA kéo Deadpool vào một nhiệm vụ mới xuyên đa vũ trụ, buộc anh phải hợp tác với một Wolverine cáu kỉnh.",
                 "https://upload.wikimedia.org/wikipedia/en/4/4c/Deadpool_%26_Wolverine_poster.jpg",
                 "https://www.youtube.com/watch?v=73_1biulkYk",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.NOW_SHOWING,
                 Movie.AgeRating.C18,
                 "Ryan Reynolds, Hugh Jackman");
             
@@ -120,7 +120,7 @@ public class DataSeeder {
                 "Riley bước vào tuổi thiếu niên. Trụ sở Cảm Xúc bị xáo trộn bởi sự xuất hiện của các cảm xúc mới: Lo Âu, Ganh Tị, Xấu Hổ và Chán Nản.",
                 "https://upload.wikimedia.org/wikipedia/en/f/f7/Inside_Out_2_poster.jpg",
                 "https://www.youtube.com/watch?v=LEjhY15eCx0&t=2s",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.NOW_SHOWING,
                 Movie.AgeRating.P,
                 "Amy Poehler (lồng tiếng), Maya Hawke (lồng tiếng)");
 
@@ -129,7 +129,7 @@ public class DataSeeder {
                 "Arthur Fleck bị giam giữ tại nhà thương điên Arkham. Tại đây, hắn gặp gỡ và nảy sinh tình cảm với Harley Quinn.",
                 "https://upload.wikimedia.org/wikipedia/vi/7/79/JOKER_FOLIE_%C3%80_DEUX_-_Vietnam_poster.jpg",
                 "https://www.youtube.com/watch?v=xy8aJw1vYHo",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.NOW_SHOWING,
                 Movie.AgeRating.C18,
                 "Joaquin Phoenix, Lady Gaga");
 
@@ -137,7 +137,7 @@ public class DataSeeder {
                 "Paul Atreides hợp nhất với người Fremen để trả thù những kẻ đã hủy hoại gia đình anh.",
                 "https://upload.wikimedia.org/wikipedia/vi/9/94/Dune_2_VN_poster.jpg",
                 "https://www.youtube.com/watch?v=U2Qp5pL3ovA",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.NOW_SHOWING,
                 Movie.AgeRating.C16,
                 "Timothée Chalamet, Zendaya");
 
@@ -145,7 +145,7 @@ public class DataSeeder {
                 "Kong và Godzilla tái hợp để chống lại một mối đe dọa khổng lồ ẩn sâu bên trong Trái Đất.",
                 "https://upload.wikimedia.org/wikipedia/en/b/be/Godzilla_x_kong_the_new_empire_poster.jpg",
                 "https://www.youtube.com/watch?v=qqrpMRDuPfc",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.NOW_SHOWING,
                 Movie.AgeRating.C13,
                 "Rebecca Hall, Dan Stevens");
 
@@ -153,7 +153,7 @@ public class DataSeeder {
                 "Câu chuyện cảm động về bà Hai và 5 người con. Sau một tai nạn, bà Hai cần người chăm sóc.",
                 "https://upload.wikimedia.org/wikipedia/vi/d/d4/%C3%81p_ph%C3%ADch_ch%C3%ADnh_th%E1%BB%A9c_L%E1%BA%ADt_m%E1%BA%B7t_7.jpg",
                 "https://www.youtube.com/watch?v=d1ZHdosjNX8",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.NOW_SHOWING,
                 Movie.AgeRating.P,
                 "Quách Ngọc Tuyên, Nghệ sĩ Thanh Hiền");
 
@@ -161,7 +161,7 @@ public class DataSeeder {
                 "Lấy bối cảnh ngày đầu tiên thế giới bị các sinh vật ngoài hành tinh săn mồi bằng âm thanh xâm lược.",
                 "https://upload.wikimedia.org/wikipedia/vi/6/6f/V%C3%B9ng_%C4%91%E1%BA%A5t_c%C3%A2m_l%E1%BA%B7ng_2024.jpg",
                 "https://www.youtube.com/watch?v=SQYHY5HzRL0",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.NOW_SHOWING,
                 Movie.AgeRating.C16,
                 "Lupita Nyong'o, Joseph Quinn");
 
@@ -169,7 +169,7 @@ public class DataSeeder {
                 "Po được chọn để trở thành Lãnh đạo Tinh thần của Thung lũng Bình Yên, nhưng cậu cần tìm một Chiến binh Rồng mới.",
                 "https://upload.wikimedia.org/wikipedia/vi/7/7f/Kung_Fu_Panda_4_poster.jpg",
                 "https://www.youtube.com/watch?v=_inKs4eeHiI",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.NOW_SHOWING,
                 Movie.AgeRating.P,
                 "Jack Black (lồng tiếng), Awkwafina (lồng tiếng)");
 
@@ -177,7 +177,7 @@ public class DataSeeder {
                 "Câu chuyện về nhà vật lý J. Robert Oppenheimer và vai trò của ông trong việc phát triển bom nguyên tử.",
                 "https://upload.wikimedia.org/wikipedia/vi/2/21/Oppenheimer_%E2%80%93_Vietnam_poster.jpg",
                 "https://www.youtube.com/watch?v=bK6ldnjE3Y0",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.NOW_SHOWING,
                 Movie.AgeRating.C16,
                 "Cillian Murphy, Emily Blunt");
 
@@ -185,7 +185,7 @@ public class DataSeeder {
                 "Gru và gia đình chào đón thành viên mới, Gru Jr. Nhưng họ buộc phải chạy trốn khi kẻ thù cũ, Maxime Le Mal, thoát khỏi tù.",
                 "https://upload.wikimedia.org/wikipedia/vi/e/e3/K%E1%BA%BB_tr%E1%BB%99m_m%E1%BA%B7t_tr%C4%83ng_4_poster2.jpg",
                 "https://www.youtube.com/watch?v=S1dnnQsY0QU",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.SPECIAL_RELEASE,
                 Movie.AgeRating.P,
                 "Steve Carell (lồng tiếng), Kristen Wiig (lồng tiếng)");
 
@@ -193,13 +193,13 @@ public class DataSeeder {
                 "Một chàng trai trẻ bỏ học để về chăm sóc người bà đang mắc bệnh ung thư giai đoạn cuối, với hi vọng được thừa hưởng gia tài.",
                 "https://upload.wikimedia.org/wikipedia/vi/3/37/HOW_TO_MAKE_MILLION_BEFORE_GRANDMA_DIES_%E2%80%93_Vietnam_poster.jpg",
                 "https://www.youtube.com/watch?v=Y_qYJ6To93k",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.SPECIAL_RELEASE,
                 Movie.AgeRating.C13,
                 "Putthipong Assaratanakul, Usha Seamkhum");
 
             Movie m13 = createMovie("The Dark Knight (Kỵ Sĩ Bóng Đêm)", 152, "Hành động, Tội phạm, Chính kịch",
                 "Batman đối mặt với kẻ thù lớn nhất của mình, Joker, một tên tội phạm hỗn loạn muốn chứng minh rằng ai cũng có thể bị tha hóa.",
-                "https://upload.wikimedia.org/wikipedia/vi/2/2d/Poster_phim_K%E1%BB%B5_s%C4%A9_b%C3%B3ng_%C4%90%C3%AAm_2008.jpg",
+                "https://upload.wikimedia.org/wikipedia/vi/2/2d/Poster_phim_K%E1%BB%B5_s%C4%A9_b%C3%B3ng_%C4%91%C3%AAm_2008.jpg",
                 "https://www.youtube.com/watch?v=AW_fVi_YGhE",
                 Movie.MovieStatus.SPECIAL_RELEASE,
                 Movie.AgeRating.C16,
@@ -209,7 +209,7 @@ public class DataSeeder {
                 "Một tên trộm chuyên nghiệp chuyên đánh cắp thông tin bằng cách xâm nhập vào tiềm thức của người khác, được giao nhiệm vụ cấy một ý tưởng.",
                 "https://upload.wikimedia.org/wikipedia/en/2/2e/Inception_%282010%29_theatrical_poster.jpg",
                 "https://www.youtube.com/watch?v=YoHD9XEInc0",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.SPECIAL_RELEASE,
                 Movie.AgeRating.C16,
                 "Leonardo DiCaprio, Joseph Gordon-Levitt");
 
@@ -217,7 +217,7 @@ public class DataSeeder {
                 "Một nhóm phi hành gia du hành qua một hố đen vũ trụ để tìm kiếm một hành tinh mới có thể ở được cho nhân loại.",
                 "https://upload.wikimedia.org/wikipedia/vi/4/46/Interstellar_poster.jpg",
                 "https://www.youtube.com/watch?v=zSWdZVtXT7E",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.SPECIAL_RELEASE,
                 Movie.AgeRating.C13,
                 "Matthew McConaughey, Anne Hathaway");
 
@@ -225,7 +225,7 @@ public class DataSeeder {
                 "Một gia đình nghèo xâm nhập vào cuộc sống của một gia đình giàu có bằng cách giả mạo danh tính, dẫn đến những hậu quả bi thảm.",
                 "https://upload.wikimedia.org/wikipedia/vi/c/cc/Poster_phim_Parasite_2019.jpg",
                 "https://www.youtube.com/watch?v=5xH0HfJHsaY",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.SPECIAL_RELEASE,
                 Movie.AgeRating.C18,
                 "Song Kang-ho, Lee Sun-kyun");
 
@@ -233,7 +233,7 @@ public class DataSeeder {
                 "Danh tích của Peter Parker bị lộ, cậu tìm đến Doctor Strange để nhờ giúp đỡ. Phép thuật thất bại, kéo các kẻ thù từ đa vũ trụ đến.",
                 "https://upload.wikimedia.org/wikipedia/en/0/00/Spider-Man_No_Way_Home_poster.jpg",
                 "https://www.youtube.com/watch?v=JfVOs4VSpmA",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.SPECIAL_RELEASE,
                 Movie.AgeRating.C13,
                 "Tom Holland, Zendaya, Benedict Cumberbatch");
 
@@ -241,7 +241,7 @@ public class DataSeeder {
                 "Sau cú búng tay của Thanos, các Avengers còn lại tập hợp để thực hiện một kế hoạch cuối cùng nhằm đảo ngược mọi thứ.",
                 "https://upload.wikimedia.org/wikipedia/vi/2/2d/Avengers_Endgame_bia_teaser.jpg",
                 "https://www.youtube.com/watch?v=TcMBFSGVi1c",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.SPECIAL_RELEASE,
                 Movie.AgeRating.C13,
                 "Robert Downey Jr., Chris Evans");
 
@@ -249,7 +249,7 @@ public class DataSeeder {
                 "Batman theo đuổi Riddler, một kẻ giết người hàng loạt, và khám phá ra những bí mật đen tối về tham nhũng ở Gotham.",
                 "https://upload.wikimedia.org/wikipedia/en/f/ff/The_Batman_%28film%29_poster.jpg",
                 "https://www.youtube.com/watch?v=mqqft2x_Aa4",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.SPECIAL_RELEASE,
                 Movie.AgeRating.C16,
                 "Robert Pattinson, Zoë Kravitz");
 
@@ -257,7 +257,7 @@ public class DataSeeder {
                 "Barbie và Ken rời khỏi Barbieland để đến thế giới thực, khám phá ra những niềm vui và hiểm họa của việc sống giữa con người.",
                 "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0b/Barbie_Logo.svg/1920px-Barbie_Logo.svg.png",
                 "https://www.youtube.com/watch?v=pBk4NYhWNMM",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.SPECIAL_RELEASE,
                 Movie.AgeRating.C13,
                 "Margot Robbie, Ryan Gosling");
 
@@ -265,7 +265,7 @@ public class DataSeeder {
                 "Phim xoay quanh cuộc sống của gia đình ông Ba Sang tại một xóm lao động, tập trung vào mâu thuẫn thế hệ giữa cha và con.",
                 "https://upload.wikimedia.org/wikipedia/vi/7/72/Bo_gia_2021_ap_phich.jpg",
                 "https://www.youtube.com/watch?v=jluSu8Rw6YE",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.COMING_SOON,
                 Movie.AgeRating.C16,
                 "Trấn Thành, Tuấn Trần");
 
@@ -273,7 +273,7 @@ public class DataSeeder {
                 "Dựa trên truyện của Nguyễn Nhật Ánh, phim là câu chuyện tình đơn phương của Ngạn dành cho Hà Lan, cô bạn có đôi mắt biếc.",
                 "https://upload.wikimedia.org/wikipedia/vi/4/42/%C3%81p_ph%C3%ADch_phim_M%E1%BA%AFt_bi%E1%BA%BFc.jpg",
                 "https://www.youtube.com/watch?v=MNm77lvTfi4",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.COMING_SOON,
                 Movie.AgeRating.C16,
                 "Trần Nghĩa, Trúc Anh");
 
@@ -281,7 +281,7 @@ public class DataSeeder {
                 "Một nhóm bạn thân chơi một trò chơi nguy hiểm: công khai tất cả tin nhắn, cuộc gọi trên điện thoại của họ trong một bữa tiệc.",
                 "https://upload.wikimedia.org/wikipedia/vi/c/cc/Tiec_trang_mau_poster.jpg",
                 "https://www.youtube.com/watch?v=EEaeafFfVE8",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.COMING_SOON,
                 Movie.AgeRating.C18,
                 "Thái Hòa, Thu Trang");
 
@@ -289,7 +289,7 @@ public class DataSeeder {
                 "Aquaman phải hợp tác với người em trai Orm để bảo vệ Atlantis khỏi Black Manta, kẻ đã sở hữu Cây đinh ba đen đầy quyền năng.",
                 "https://upload.wikimedia.org/wikipedia/en/4/4a/Aquaman_and_the_Lost_Kingdom_poster.jpg",
                 "https://www.youtube.com/watch?v=keZ70jipjXc",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.COMING_SOON,
                 Movie.AgeRating.C13,
                 "Jason Momoa, Patrick Wilson");
 
@@ -297,7 +297,7 @@ public class DataSeeder {
                 "Hai anh em thợ sửa ống nước Mario và Luigi bị lạc vào một thế giới phép thuật và phải giải cứu Công chúa Peach khỏi Bowser.",
                 "https://upload.wikimedia.org/wikipedia/en/4/44/The_Super_Mario_Bros._Movie_poster.jpg",
                 "https://www.youtube.com/watch?v=TnGl01FkMMo",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.COMING_SOON,
                 Movie.AgeRating.P,
                 "Chris Pratt (lồng tiếng), Anya Taylor-Joy (lồng tiếng)");
 
@@ -305,7 +305,7 @@ public class DataSeeder {
                 "Dom Toretto và gia đình phải đối mặt với Dante Reyes, con trai của trùm ma túy Hernan Reyes, kẻ muốn trả thù cho cái chết của cha mình.",
                 "https://upload.wikimedia.org/wikipedia/vi/2/22/Fast_X_VN_poster.jpg",
                 "https://www.youtube.com/watch?v=JSE9vhCuxs8",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.COMING_SOON,
                 Movie.AgeRating.C16,
                 "Vin Diesel, Jason Momoa");
 
@@ -313,7 +313,7 @@ public class DataSeeder {
                 "Jake Sully và Neytiri cùng gia đình phải rời bỏ ngôi nhà của mình và tìm nơi ẩn náu tại các rạn san hô khi một mối đe dọa cũ quay trở lại.",
                 "https://upload.wikimedia.org/wikipedia/vi/e/e0/Avatar_D%C3%B2ng_ch%E1%BA%A3y_c%E1%BB%A7a_n%C6%B0%E1%BB%9Bc_-_Poster_ch%C3%ADnh_th%E1%BB%A9c.jpg",
                 "https://www.youtube.com/watch?v=d9MyW72ELq0",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.COMING_SOON,
                 Movie.AgeRating.C13,
                 "Sam Worthington, Zoe Saldaña");
 
@@ -321,7 +321,7 @@ public class DataSeeder {
                 "Wakanda thương tiếc Vua T'Challa. Nữ hoàng Ramonda và Shuri phải chiến đấu để bảo vệ quốc gia của mình khỏi các thế lực xâm lược.",
                 "https://upload.wikimedia.org/wikipedia/vi/3/3b/Black_Panther_Wakanda_Forever_poster.jpg",
                 "https://www.youtube.com/watch?v=sKX4zA52B9c",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.COMING_SOON,
                 Movie.AgeRating.C13,
                 "Letitia Wright, Lupita Nyong'o");
 
@@ -329,7 +329,7 @@ public class DataSeeder {
                 "Một đặc vụ bí mật phải tìm cách ngăn chặn Thế chiến III thông qua công nghệ 'nghịch đảo thời gian' phức tạp.",
                 "https://upload.wikimedia.org/wikipedia/vi/1/18/Tenet_poster_VN.jpeg",
                 "https://www.youtube.com/watch?v=AZGcmvrTX9M",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.COMING_SOON,
                 Movie.AgeRating.C16,
                 "John David Washington, Robert Pattinson");
 
@@ -337,7 +337,7 @@ public class DataSeeder {
                 "Lấy bối cảnh trận chiết 60 ngày đêm cuối năm 1946, phim kể về mối tình của một anh tự vệ và một cô tiểu thư Hà Nội.",
                 "https://upload.wikimedia.org/wikipedia/vi/2/29/%C3%81p_ph%C3%ADch_%C4%90%C3%A0o%2C_ph%E1%BB%9F_v%C3%A0_piano.jpg",
                 "https://www.youtube.com/watch?v=qn1t_biQigc",
-                Movie.MovieStatus.ENDED,
+                Movie.MovieStatus.COMING_SOON,
                 Movie.AgeRating.C13,
                 "Doãn Quốc Đam, Cao Thùy Linh");
 

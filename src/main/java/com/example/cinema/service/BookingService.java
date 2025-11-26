@@ -142,7 +142,10 @@ public class BookingService {
             if (total != null && total > 0) {
                 b.setTotal((double) total / seatIds.size());
             } else {
-                b.setTotal(showtime.getPrice().doubleValue());
+                // Tính giá vé dựa trên loại ghế
+                double basePrice = showtime.getPrice().doubleValue();
+                double seatPrice = calculateSeatPrice(basePrice, seat.getSeatType());
+                b.setTotal(seatPrice);
             }
             list.add(b);
         }
@@ -189,7 +192,7 @@ public class BookingService {
             Double discountFromPoints = pointsUsed * 1000.0; // 1 điểm = 1.000đ
             Double actualPaymentAmount = totalAmount - discountFromPoints;
             
-            // Tính điểm từ tiền thanh toán
+            // Tính điểm từ tiền thanh toán (20.000đ = 1 điểm)
             Integer points = (int) Math.floor(actualPaymentAmount / 20000.0);
             
             Integer currentPoints = customer.getLoyaltyPoints() != null ? 
@@ -269,6 +272,9 @@ public class BookingService {
             seat.setBooking(true);
             seatRepo.save(seat);
 
+            // Tính giá vé dựa trên loại ghế
+            double seatPrice = calculateSeatPrice(basePrice, seat.getSeatType());
+
             Booking b = new Booking();
             b.setShowtime(showtime);
             b.setSeat(seat);
@@ -276,12 +282,25 @@ public class BookingService {
             b.setStatus(Booking.Status.PENDING);
             b.setTxnRef(txnRef);
             b.setPaymentMethod("VNPAY");
-            b.setTotal(basePrice);
+            b.setTotal(seatPrice);
 
             list.add(b);
         }
 
         return bookingRepo.saveAll(list);
+    }
+
+    // Tính giá vé dựa trên loại ghế
+    private double calculateSeatPrice(double basePrice, Seat.SeatType seatType) {
+        switch (seatType) {
+            case VIP:
+                return basePrice + 20000.0; // Phụ thu VIP: +20k
+            case SWEETBOX:
+                return basePrice * 2.0; // Ghế đôi: x2 giá cơ bản
+            case NORMAL:
+            default:
+                return basePrice; // Giá cơ bản
+        }
     }
 
     // Dùng điểm để giảm giá trước khi thanh toán
@@ -302,10 +321,9 @@ public class BookingService {
             throw new IllegalArgumentException("Số điểm không hợp lệ. Bạn có: " + currentPoints + " điểm");
         }
 
-        // Tính tổng tiền hiện tại (theo showtime.price - giá gốc)
+        // Tính tổng tiền hiện tại (theo giá đã tính sẵn của từng ghế)
         Double totalAmount = bookings.stream()
-                .mapToDouble(b -> b.getShowtime() != null && b.getShowtime().getPrice() != null ? 
-                    b.getShowtime().getPrice() : 0.0)
+                .mapToDouble(b -> b.getTotal() != null ? b.getTotal() : 0.0)
                 .sum();
 
         // Tính tiền giảm từ điểm (1 điểm = 1.000đ)
@@ -317,11 +335,10 @@ public class BookingService {
         }
 
         // Chỉ lưu pointsUsed vào booking đầu tiên, những booking khác để 0
-        // Cập nhật total = giá gốc - phần giảm giá
+        // Cập nhật total = giá đã tính sẵn - phần giảm giá
         for (int i = 0; i < bookings.size(); i++) {
             Booking b = bookings.get(i);
-            Double originalPrice = b.getShowtime() != null && b.getShowtime().getPrice() != null ? 
-                b.getShowtime().getPrice() : 0.0;
+            Double originalPrice = b.getTotal() != null ? b.getTotal() : 0.0;
             
             if (i == 0) {
                 b.setPointsUsed(pointsToUse);
@@ -330,6 +347,7 @@ public class BookingService {
             } else {
                 b.setPointsUsed(0);
                 // Các vé khác: giữ giá gốc
+                // Các vé còn lại: giữ nguyên giá gốc
                 b.setTotal(originalPrice);
             }
         }

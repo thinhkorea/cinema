@@ -18,9 +18,7 @@ public class LoyaltyController {
         this.customerRepository = customerRepository;
     }
     
-    /**
-     * Lấy điểm của khách hàng
-     */
+    // Lấy điểm của khách hàng
     @GetMapping("/points/{customerId}")
     public Map<String, Object> getCustomerPoints(@PathVariable Long customerId) {
         Customer customer = customerRepository.findById(customerId)
@@ -31,14 +29,12 @@ public class LoyaltyController {
         return Map.of(
             "customerId", customerId,
             "loyaltyPoints", points,
-            "pointsValue", points * 20000.0,
-            "message", points + " điểm = " + (points * 20000.0) + "đ"
+            "pointsValue", points * 1000.0,
+            "message", points + " điểm (tích từ " + (points * 20000.0) + "đ) = " + (points * 1000.0) + "đ giảm giá"
         );
     }
     
-    /**
-     * Cộng điểm cho khách hàng (Admin/Staff)
-     */
+    // Cộng điểm cho khách hàng (Admin/Staff)
     @PostMapping("/points/{customerId}/add")
     public Map<String, Object> addPoints(@PathVariable Long customerId, @RequestBody Map<String, Integer> request) {
         Integer pointsToAdd = request.get("points");
@@ -58,9 +54,7 @@ public class LoyaltyController {
         );
     }
     
-    /**
-     * Sử dụng điểm để giảm giá
-     */
+    // Sử dụng điểm để giảm giá
     @PostMapping("/points/{customerId}/redeem")
     public Map<String, Object> redeemPoints(@PathVariable Long customerId, @RequestBody Map<String, Integer> request) {
         Integer pointsToUse = request.get("points");
@@ -77,7 +71,7 @@ public class LoyaltyController {
         customer.setLoyaltyPoints(currentPoints - pointsToUse);
         customerRepository.save(customer);
         
-        Double discount = pointsToUse * 20000.0;
+        Double discount = pointsToUse * 1000.0;
         
         return Map.of(
             "customerId", customerId,
