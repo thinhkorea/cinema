@@ -9,6 +9,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Service
 public class BookingService {
@@ -42,6 +44,9 @@ public class BookingService {
                         (b.getCustomer() != null && b.getCustomer().getUser() != null)
                                 ? b.getCustomer().getUser().getUsername()
                                 : "-",
+                        (b.getSoldByStaff() != null && b.getSoldByStaff().getUser() != null)
+                                ? b.getSoldByStaff().getUser().getFullName()
+                                : null,
                         b.getShowtime().getMovie().getTitle(),
                         b.getShowtime().getRoom().getRoomName(),
                         b.getSeat().getSeatNumber(),
@@ -96,6 +101,15 @@ public class BookingService {
         return bookings.stream()
                 .map(SoldTicketDTO::new) // Sử dụng constructor để chuyển đổi
                 .sorted(Comparator.comparing(SoldTicketDTO::getCreatedAt).reversed()) // Sắp xếp vé mới nhất lên đầu
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<SoldTicketDTO> findSoldTicketsByStaffUsernameAndDate(String username, LocalDateTime dateStart, LocalDateTime dateEnd) {
+        List<Booking> bookings = bookingRepo.findBySoldByStaff_User_UsernameAndStatusAndDateRange(username, Booking.Status.PAID, dateStart, dateEnd);
+        return bookings.stream()
+                .map(SoldTicketDTO::new)
+                .sorted(Comparator.comparing(SoldTicketDTO::getCreatedAt).reversed())
                 .collect(Collectors.toList());
     }
 

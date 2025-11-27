@@ -7,4 +7,5 @@ import java.util.List;
 
 public interface SeatRepository extends JpaRepository<Seat, Long> {
     List<Seat> findByRoom_RoomId(Long roomId);
+    void deleteByRoom_RoomId(Long roomId);
 }

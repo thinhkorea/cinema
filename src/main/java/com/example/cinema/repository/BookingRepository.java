@@ -12,13 +12,18 @@ import java.util.List;
 public interface BookingRepository extends JpaRepository<Booking, Long> {
 
        // Dành cho Admin xem toàn bộ hoặc theo user
-       @EntityGraph(attributePaths = { "customer.user", "showtime.movie", "showtime.room", "seat" })
+       @EntityGraph(attributePaths = { "customer.user", "soldByStaff.user", "showtime.movie", "showtime.room", "seat" })
        List<Booking> findAll();
 
        @EntityGraph(attributePaths = { "customer.user", "showtime.movie", "showtime.room", "seat" })
        List<Booking> findByCustomer_User_Username(String username);
 
+       @EntityGraph(attributePaths = { "soldByStaff.user", "showtime.movie", "showtime.room", "seat" })
        List<Booking> findBySoldByStaff_User_UsernameAndStatus(String username, Booking.Status status);
+
+       @EntityGraph(attributePaths = { "soldByStaff.user", "showtime.movie", "showtime.room", "seat" })
+       @Query("SELECT b FROM Booking b WHERE b.soldByStaff.user.username = :username AND b.status = :status AND b.createdAt BETWEEN :dateStart AND :dateEnd ORDER BY b.createdAt DESC")
+       List<Booking> findBySoldByStaff_User_UsernameAndStatusAndDateRange(@Param("username") String username, @Param("status") Booking.Status status, @Param("dateStart") LocalDateTime dateStart, @Param("dateEnd") LocalDateTime dateEnd);
 
        @EntityGraph(attributePaths = { "customer.user", "showtime.movie", "showtime.room", "seat" })
        List<Booking> findByShowtime_ShowtimeId(Long showtimeId);

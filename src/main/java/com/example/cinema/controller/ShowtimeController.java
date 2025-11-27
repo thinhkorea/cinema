@@ -7,6 +7,7 @@ import com.example.cinema.dto.ShowtimeRequest;
 import com.example.cinema.repository.MovieRepository;
 import com.example.cinema.repository.RoomRepository;
 import com.example.cinema.repository.ShowtimeRepository;
+import com.example.cinema.service.SeatService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,13 +20,16 @@ public class ShowtimeController {
     private final ShowtimeRepository showtimeRepository;
     private final MovieRepository movieRepository;
     private final RoomRepository roomRepository;
+    private final SeatService seatService;
 
     public ShowtimeController(ShowtimeRepository showtimeRepository,
             MovieRepository movieRepository,
-            RoomRepository roomRepository) {
+            RoomRepository roomRepository,
+            SeatService seatService) {
         this.showtimeRepository = showtimeRepository;
         this.movieRepository = movieRepository;
         this.roomRepository = roomRepository;
+        this.seatService = seatService;
     }
 
     // GET all showtimes
@@ -56,6 +60,9 @@ public class ShowtimeController {
                 .orElseThrow(() -> new IllegalArgumentException("Movie not found"));
         Room room = roomRepository.findById(req.getRoomId())
                 .orElseThrow(() -> new IllegalArgumentException("Room not found"));
+
+        // Initialize seats for room if not already done
+        seatService.initializeSeatsForRoom(room);
 
         Showtime showtime = new Showtime();
         showtime.setMovie(movie);

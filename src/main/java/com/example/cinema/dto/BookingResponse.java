@@ -12,6 +12,7 @@ import lombok.NoArgsConstructor;
 public class BookingResponse {
     private Long bookingId;
     private String username;
+    private String soldByStaff;
     private String movieTitle;
     private String roomName;
     private String seatNumber;

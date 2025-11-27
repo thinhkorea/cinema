@@ -33,7 +33,7 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
         String email = (String) attributes.get("email");
         String name = (String) attributes.get("name");
 
-        // 🧠 1. Tạo user nếu chưa có
+        // 1. Tạo user nếu chưa có
         User user = userRepository.findByUsername(email);
         if (user == null) {
             user = new User();
@@ -44,7 +44,7 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
             user = userRepository.save(user);
         }
 
-        // 🧠 2. Tạo customer nếu chưa có (tránh lambda)
+        // 2. Tạo customer nếu chưa có (tránh lambda)
         if (customerRepository.findByUserUserId(user.getUserId()).isEmpty()) {
             Customer c = new Customer();
             c.setUser(user);
@@ -54,8 +54,13 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
             customerRepository.save(c);
         }
 
-        // 🧠 3. Sinh JWT token và redirect
+        // 3. Sinh JWT token và redirect
         String jwt = jwtTokenProvider.generateToken(user.getUsername(), user.getRole().name(), user.getFullName());
+        
+        // Lưu token vào database - vô hiệu hóa session cũ (nếu có)
+        user.setCurrentSessionToken(jwt);
+        userRepository.save(user);
+        
         String redirectUrl = "http://localhost:5173/login-success?token=" + jwt;
         getRedirectStrategy().sendRedirect(request, response, redirectUrl);
     }

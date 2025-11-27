@@ -1,5 +1,8 @@
 package com.example.cinema.security;
 
+import com.example.cinema.domain.User;
+import com.example.cinema.repository.UserRepository;
+
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -22,10 +25,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
     private final UserDetailsService userDetailsService;
+    private final UserRepository userRepository;
 
-    public JwtAuthFilter(JwtUtil jwtUtil, UserDetailsService userDetailsService) {
+    public JwtAuthFilter(JwtUtil jwtUtil, UserDetailsService userDetailsService, UserRepository userRepository) {
         this.jwtUtil = jwtUtil;
         this.userDetailsService = userDetailsService;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -33,10 +38,14 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
         String method = request.getMethod();
 
-        // Cho phép tất cả request tới auth (login, register)
-        if (path.startsWith("/api/auth/")) {
+        // Cho phép ONLY login, register và register-admin bỏ qua filter
+        if (path.equals("/api/auth/login") || 
+            path.equals("/api/auth/register") || 
+            path.equals("/api/auth/register-admin")) {
             return true;
         }
+        
+        // /api/auth/me và /api/auth/logout PHẢI qua filter để validate session
 
         // Cho phép callback từ VNPay (không chứa token)
         if (path.startsWith("/api/payments/vnpay-return")) {
@@ -90,6 +99,16 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             System.out.println("JWT Filter - UserDetails loaded: " + userDetails.getUsername());
 
             if (jwtUtil.validateToken(token, userDetails)) {
+                // Kiểm tra xem token có khớp với currentSessionToken trong database không
+                User user = userRepository.findByUsername(username);
+                if (user == null || !token.equals(user.getCurrentSessionToken())) {
+                    System.out.println("Session không hợp lệ - có thể đã đăng nhập từ nơi khác");
+                    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                    response.setContentType("application/json");
+                    response.getWriter().write("{\"error\": \"Session expired - logged in from another location\", \"code\": \"CONCURRENT_LOGIN\"}");
+                    return;
+                }
+                
                 // Extract role từ token
                 String role = jwtUtil.extractRole(token);
                 System.out.println("JWT Filter - Role from token: " + role);

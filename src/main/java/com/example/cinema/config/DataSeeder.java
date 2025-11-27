@@ -52,24 +52,28 @@ public class DataSeeder {
             admin.setPassword("$2a$10$bWK86rfYrdLDLtYh6lZ66eCUBo9G1.kpw7DUPTLP.KYav0Q4gONvC"); // 123456
             admin.setFullName("Admin Manager");
             admin.setRole(User.Role.ADMIN);
+            admin.setCurrentSessionToken(null); // Chưa đăng nhập
 
             User staff = new User();
             staff.setUsername("staff01");
             staff.setPassword("$2a$10$bWK86rfYrdLDLtYh6lZ66eCUBo9G1.kpw7DUPTLP.KYav0Q4gONvC");
             staff.setFullName("Nguyen Van Staff");
             staff.setRole(User.Role.STAFF);
+            staff.setCurrentSessionToken(null); // Chưa đăng nhập
 
             User cus1 = new User();
             cus1.setUsername("customer01");
             cus1.setPassword("$2a$10$bWK86rfYrdLDLtYh6lZ66eCUBo9G1.kpw7DUPTLP.KYav0Q4gONvC");
             cus1.setFullName("Le Thi Customer");
             cus1.setRole(User.Role.CUSTOMER);
+            cus1.setCurrentSessionToken(null); // Chưa đăng nhập
 
             User cus2 = new User();
             cus2.setUsername("customer02");
             cus2.setPassword("$2a$10$bWK86rfYrdLDLtYh6lZ66eCUBo9G1.kpw7DUPTLP.KYav0Q4gONvC");
             cus2.setFullName("Tran Minh User");
             cus2.setRole(User.Role.CUSTOMER);
+            cus2.setCurrentSessionToken(null); // Chưa đăng nhập
 
             userRepo.saveAll(List.of(admin, staff, cus1, cus2));
 

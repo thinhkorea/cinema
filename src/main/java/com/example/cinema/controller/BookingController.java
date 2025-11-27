@@ -13,6 +13,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import org.springframework.web.bind.annotation.*;
 import java.util.stream.Collectors;
 import java.security.Principal;
@@ -150,9 +152,24 @@ public class BookingController {
     }
 
     @GetMapping("/staff/sold")
-    public ResponseEntity<?> getSoldByStaff(@RequestParam String username) {
+    public ResponseEntity<?> getSoldByStaff(@RequestParam String username, @RequestParam(required = false) String date) {
         // Chỉ lấy các booking đã thanh toán (PAID) do nhân viên này bán
-        List<SoldTicketDTO> soldTickets = bookingService.findSoldTicketsByStaffUsername(username);
+        List<SoldTicketDTO> soldTickets;
+        
+        if (date != null && !date.isEmpty()) {
+            // Filter theo ngày nếu có
+            try {
+                LocalDate selectedDate = LocalDate.parse(date);
+                LocalDateTime dateStart = selectedDate.atStartOfDay();
+                LocalDateTime dateEnd = selectedDate.atTime(23, 59, 59);
+                soldTickets = bookingService.findSoldTicketsByStaffUsernameAndDate(username, dateStart, dateEnd);
+            } catch (Exception e) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Invalid date format"));
+            }
+        } else {
+            soldTickets = bookingService.findSoldTicketsByStaffUsername(username);
+        }
+        
         return ResponseEntity.ok(soldTickets);
     }
 

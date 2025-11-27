@@ -50,7 +50,14 @@ public class AuthController {
         if (!user.getIsActive()) {
             return ResponseEntity.badRequest().body(new LoginResponse(null, "Account is locked", null, null));
         }
+        
+        // Tạo token mới
         String token = jwtUtil.generateToken(user.getUsername(), user.getRole().name(), user.getFullName());
+        
+        // Lưu token vào database - điều này sẽ vô hiệu hóa session cũ (nếu có)
+        user.setCurrentSessionToken(token);
+        userRepository.save(user);
+        
         return ResponseEntity.ok(new LoginResponse(token, "OK", user.getRole().name(), user.getUserId()));
     }
 
@@ -132,6 +139,25 @@ public class AuthController {
         userInfo.put("isActive", user.getIsActive());
 
         return ResponseEntity.ok(userInfo);
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout(@RequestHeader("Authorization") String header) {
+        if (header == null || !header.startsWith("Bearer ")) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Missing token"));
+        }
+
+        String token = header.substring(7);
+        String username = jwtUtil.extractUsername(token);
+        User user = userRepository.findByUsername(username);
+
+        if (user != null) {
+            // Xóa currentSessionToken để vô hiệu hóa session
+            user.setCurrentSessionToken(null);
+            userRepository.save(user);
+        }
+
+        return ResponseEntity.ok(Map.of("message", "Logged out successfully"));
     }
 
     @PostMapping("/register-admin")

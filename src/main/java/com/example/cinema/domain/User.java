@@ -33,6 +33,9 @@ public class User {
     @Column(nullable = false)
     private Boolean isActive = true;
 
+    @Column(length = 1000)
+    private String currentSessionToken;
+
     public enum Role {
         ADMIN,
         STAFF,

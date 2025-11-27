@@ -43,6 +43,10 @@ public class AdminService {
                                                 (b.getCustomer() != null && b.getCustomer().getUser() != null)
                                                                 ? b.getCustomer().getUser().getUsername()
                                                                 : "-",
+                                                // Lấy staffName từ Staff -> User
+                                                (b.getSoldByStaff() != null && b.getSoldByStaff().getUser() != null)
+                                                                ? b.getSoldByStaff().getUser().getFullName()
+                                                                : null,
                                                 (b.getShowtime() != null && b.getShowtime().getMovie() != null)
                                                                 ? b.getShowtime().getMovie().getTitle()
                                                                 : "-",

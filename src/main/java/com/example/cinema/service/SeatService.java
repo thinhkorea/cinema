@@ -68,4 +68,31 @@ public class SeatService {
                 })
                 .collect(Collectors.toList());
     }
+
+    // Initialize seats for a room (10 rows x 10 columns)
+    public void initializeSeatsForRoom(Room room) {
+        // Check if seats already exist for this room
+        List<Seat> existingSeats = seatRepo.findByRoom_RoomId(room.getRoomId());
+        if (!existingSeats.isEmpty()) {
+            return; // Seats already exist
+        }
+
+        // Create seats: A-J rows, 1-10 columns
+        List<Seat> seatsToCreate = new ArrayList<>();
+        String[] rows = {"A", "B", "C", "D", "E", "F", "G", "H", "I", "J"};
+
+        for (String row : rows) {
+            for (int col = 1; col <= 10; col++) {
+                Seat seat = new Seat();
+                seat.setRoom(room);
+                seat.setSeatNumber(row + col);
+                seat.setSeatType(Seat.SeatType.NORMAL); // Default to NORMAL
+                seat.setBooking(false);
+                seatsToCreate.add(seat);
+            }
+        }
+
+        // Save all seats
+        seatRepo.saveAll(seatsToCreate);
+    }
 }
