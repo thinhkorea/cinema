@@ -39,9 +39,9 @@ public class AdminService {
                                 .stream()
                                 .map(b -> new BookingResponse(
                                                 b.getBookingId(),
-                                                // Lấy username từ Customer -> User
+                                                // Lấy email đăng nhập từ Customer -> User
                                                 (b.getCustomer() != null && b.getCustomer().getUser() != null)
-                                                                ? b.getCustomer().getUser().getUsername()
+                                                                ? b.getCustomer().getUser().getEmail()
                                                                 : "-",
                                                 // Lấy staffName từ Staff -> User
                                                 (b.getSoldByStaff() != null && b.getSoldByStaff().getUser() != null)

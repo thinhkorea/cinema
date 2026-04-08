@@ -18,13 +18,18 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
 
     public void registerCustomer(RegisterRequest req) {
-        if (userRepository.existsByUsername(req.getUsername())) {
-            throw new IllegalArgumentException("Tên đăng nhập đã tồn tại!");
+        if (userRepository.existsByEmail(req.getEmail())) {
+            throw new IllegalArgumentException("Email đã tồn tại!");
+        }
+
+        if (userRepository.existsByPhone(req.getPhone())) {
+            throw new IllegalArgumentException("Số điện thoại đã tồn tại!");
         }
 
         // Tạo User
         User user = new User();
-        user.setUsername(req.getUsername());
+        user.setEmail(req.getEmail());
+        user.setPhone(req.getPhone());
         user.setPassword(passwordEncoder.encode(req.getPassword()));
         user.setFullName(req.getFullName());
         user.setRole(User.Role.CUSTOMER);
@@ -34,8 +39,6 @@ public class AuthService {
         // Tạo Customer
         Customer customer = new Customer();
         customer.setUser(user);
-        customer.setEmail(req.getEmail());
-        customer.setPhone(req.getPhone());
         customer.setAddress(req.getAddress());
         customer.setGender(
                 req.getGender().equalsIgnoreCase("MALE")

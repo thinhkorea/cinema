@@ -68,13 +68,15 @@ public class MovieReviewService {
         Movie movie = movieRepo.findById(movieId)
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy phim"));
 
-        User user = userRepo.findByUsername(username);
+        User user = userRepo.findByEmailOrPhone(username, username);
         if (user == null) {
             throw new IllegalArgumentException("Không tìm thấy người dùng");
         }
 
-        boolean hasPaidBooking = bookingRepo.existsByCustomer_User_UsernameAndShowtime_Movie_MovieIdAndStatus(
-                username,
+        String userEmail = user.getEmail();
+
+        boolean hasPaidBooking = bookingRepo.existsByCustomer_User_EmailAndShowtime_Movie_MovieIdAndStatus(
+            userEmail,
                 movieId,
                 com.example.cinema.domain.Booking.Status.PAID);
 
@@ -84,7 +86,7 @@ public class MovieReviewService {
 
         // Kiểm tra xem có ít nhất 1 suất chiếu đã hoàn thành
         boolean hasCompletedShowtime = bookingRepo.existsCompletedShowtimeBooking(
-                username,
+            userEmail,
                 movieId,
                 com.example.cinema.domain.Booking.Status.PAID,
                 java.time.LocalDateTime.now());
@@ -115,8 +117,8 @@ public class MovieReviewService {
                 review.getReviewId(),
                 review.getRating(),
                 review.getComment(),
-                u != null ? u.getUsername() : "",
-                u != null && u.getFullName() != null ? u.getFullName() : (u != null ? u.getUsername() : ""),
+            u != null ? u.getEmail() : "",
+            u != null && u.getFullName() != null ? u.getFullName() : (u != null ? u.getEmail() : ""),
                 review.getCreatedAt());
     }
 }

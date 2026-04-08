@@ -43,7 +43,12 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody LoginRequest req) {
-        User user = userRepository.findByUsername(req.getUsername());
+        String identifier = req.getLoginIdentifier();
+        if (identifier == null || identifier.isBlank()) {
+            return ResponseEntity.badRequest().body(new LoginResponse(null, "Missing identifier", null, null));
+        }
+
+        User user = userRepository.findByEmailOrPhone(identifier, identifier);
         if (user == null || !passwordEncoder.matches(req.getPassword(), user.getPassword())) {
             return ResponseEntity.badRequest().body(new LoginResponse(null, "Bad credentials", null, null));
         }
@@ -52,7 +57,7 @@ public class AuthController {
         }
         
         // Tạo token mới
-        String token = jwtUtil.generateToken(user.getUsername(), user.getRole().name(), user.getFullName());
+        String token = jwtUtil.generateToken(user.getEmail(), user.getRole().name(), user.getFullName());
         
         // Lưu token vào database - điều này sẽ vô hiệu hóa session cũ (nếu có)
         user.setCurrentSessionToken(token);
@@ -64,23 +69,25 @@ public class AuthController {
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody RegisterRequest req) {
         try {
-            if (req.getUsername() == null || req.getUsername().trim().isEmpty() ||
-                    req.getPassword() == null || req.getPassword().trim().isEmpty() ||
-                    req.getFullName() == null || req.getFullName().trim().isEmpty()) {
+            if (req.getPassword() == null || req.getPassword().trim().isEmpty() ||
+                    req.getFullName() == null || req.getFullName().trim().isEmpty() ||
+                    req.getEmail() == null || req.getEmail().trim().isEmpty() ||
+                    req.getPhone() == null || req.getPhone().trim().isEmpty()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Thiếu thông tin bắt buộc!"));
             }
 
-            if (userRepository.findByUsername(req.getUsername()) != null) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Tên đăng nhập đã tồn tại!"));
+            if (userRepository.existsByEmail(req.getEmail())) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Email đã tồn tại!"));
             }
 
-            if (req.getEmail() != null && customerRepository.existsByEmail(req.getEmail())) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Email đã được sử dụng!"));
+            if (userRepository.existsByPhone(req.getPhone())) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Số điện thoại đã tồn tại!"));
             }
 
             // Tạo User (chung cho mọi loại tài khoản)
             User user = new User();
-            user.setUsername(req.getUsername());
+            user.setEmail(req.getEmail());
+            user.setPhone(req.getPhone());
             user.setPassword(passwordEncoder.encode(req.getPassword()));
             user.setFullName(req.getFullName());
             user.setRole(User.Role.CUSTOMER);
@@ -89,8 +96,6 @@ public class AuthController {
             // Tạo Customer riêng
             Customer customer = new Customer();
             customer.setUser(user);
-            customer.setPhone(req.getPhone());
-            customer.setEmail(req.getEmail());
             customer.setAddress(req.getAddress());
             if (req.getGender() != null) {
                 try {
@@ -103,7 +108,7 @@ public class AuthController {
 
             return ResponseEntity.ok(Map.of(
                     "message", "Đăng ký thành công!",
-                    "username", user.getUsername(),
+                    "username", user.getEmail(),
                     "role", user.getRole().name()));
 
         } catch (Exception e) {
@@ -119,11 +124,11 @@ public class AuthController {
         }
 
         String token = header.substring(7);
-        String username = jwtUtil.extractUsername(token);
-        User user = userRepository.findByUsername(username);
+        String identifier = jwtUtil.extractIdentifier(token);
+        User user = userRepository.findByEmail(identifier);
 
         if (user == null) {
-            throw new IllegalArgumentException("Invalid username or password");
+            throw new IllegalArgumentException("Invalid credentials");
         }
 
         if (!user.getIsActive()) {
@@ -133,7 +138,7 @@ public class AuthController {
         // Trả JSON đơn giản, không phụ thuộc entity
         Map<String, Object> userInfo = new HashMap<>();
         userInfo.put("userId", user.getUserId());
-        userInfo.put("username", user.getUsername());
+        userInfo.put("username", user.getEmail());
         userInfo.put("fullName", user.getFullName());
         userInfo.put("role", user.getRole().name());
         userInfo.put("isActive", user.getIsActive());
@@ -148,8 +153,8 @@ public class AuthController {
         }
 
         String token = header.substring(7);
-        String username = jwtUtil.extractUsername(token);
-        User user = userRepository.findByUsername(username);
+        String identifier = jwtUtil.extractIdentifier(token);
+        User user = userRepository.findByEmail(identifier);
 
         if (user != null) {
             // Xóa currentSessionToken để vô hiệu hóa session
@@ -162,18 +167,19 @@ public class AuthController {
 
     @PostMapping("/register-admin")
     public ResponseEntity<?> registerAdmin(@RequestBody RegisterRequest req) {
-        if (req.getUsername() == null || req.getUsername().trim().isEmpty() ||
+        if (req.getEmail() == null || req.getEmail().trim().isEmpty() ||
                 req.getPassword() == null || req.getPassword().trim().isEmpty() ||
                 req.getFullName() == null || req.getFullName().trim().isEmpty()) {
-            return ResponseEntity.badRequest().body("Username, password and full name cannot be empty!");
+            return ResponseEntity.badRequest().body("Email, password and full name cannot be empty!");
         }
 
-        if (userRepository.findByUsername(req.getUsername()) != null) {
-            return ResponseEntity.badRequest().body("Username already exists!");
+        if (userRepository.existsByEmail(req.getEmail())) {
+            return ResponseEntity.badRequest().body("Email already exists!");
         }
 
         User newUser = new User();
-        newUser.setUsername(req.getUsername());
+        newUser.setEmail(req.getEmail());
+        newUser.setPhone(req.getPhone());
         newUser.setPassword(passwordEncoder.encode(req.getPassword()));
         newUser.setFullName(req.getFullName());
         newUser.setRole(User.Role.ADMIN);
@@ -195,7 +201,7 @@ public class AuthController {
             }
             
             User user = userOpt.get();
-            System.out.println("DEBUG: Found user: " + user.getUsername() + ", role: " + user.getRole());
+            System.out.println("DEBUG: Found user: " + user.getEmail() + ", role: " + user.getRole());
 
             // Tìm customer tương ứng
             Optional<Customer> customerOpt = customerRepository.findByUserUserId(userId);
@@ -206,8 +212,8 @@ public class AuthController {
                 // Tạo response map để tránh circular reference
                 Map<String, Object> customerProfile = new HashMap<>();
                 customerProfile.put("customerId", customer.getCustomerId());
-                customerProfile.put("phone", customer.getPhone());
-                customerProfile.put("email", customer.getEmail());
+                customerProfile.put("phone", user.getPhone());
+                customerProfile.put("email", user.getEmail());
                 customerProfile.put("address", customer.getAddress());
                 customerProfile.put("gender", customer.getGender());
                 customerProfile.put("loyaltyPoints", customer.getLoyaltyPoints());
@@ -215,7 +221,9 @@ public class AuthController {
                 // User info
                 Map<String, Object> userInfo = new HashMap<>();
                 userInfo.put("userId", user.getUserId());
-                userInfo.put("username", user.getUsername());
+                userInfo.put("username", user.getEmail());
+                userInfo.put("email", user.getEmail());
+                userInfo.put("phone", user.getPhone());
                 userInfo.put("fullName", user.getFullName());
                 userInfo.put("role", user.getRole());
                 userInfo.put("isActive", user.getIsActive());
@@ -233,7 +241,9 @@ public class AuthController {
             
             Map<String, Object> userInfo = new HashMap<>();
             userInfo.put("userId", user.getUserId());
-            userInfo.put("username", user.getUsername());
+            userInfo.put("username", user.getEmail());
+            userInfo.put("email", user.getEmail());
+            userInfo.put("phone", user.getPhone());
             userInfo.put("fullName", user.getFullName());
             userInfo.put("role", user.getRole());
             userInfo.put("isActive", user.getIsActive());
@@ -254,28 +264,48 @@ public class AuthController {
         Customer customer = customerRepository.findByUserUserId(userId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy khách hàng"));
 
-        // Cập nhật các thông tin cá nhân
-        customer.setEmail(req.getEmail());
-        customer.setPhone(req.getPhone());
+        // Cập nhật thông tin customer-only
         customer.setAddress(req.getAddress());
         customer.setGender(req.getGender());
 
-        // Cập nhật tên trong bảng user (nếu có)
+        // Cập nhật thông tin định danh trong bảng users
         User user = customer.getUser();
         if (req.getUser() != null && req.getUser().getFullName() != null) {
             user.setFullName(req.getUser().getFullName());
-            userRepository.save(user);
         }
 
+        if (req.getUser() != null && req.getUser().getEmail() != null && !req.getUser().getEmail().isBlank()) {
+            User existingByEmail = userRepository.findByEmail(req.getUser().getEmail());
+            if (existingByEmail != null && !existingByEmail.getUserId().equals(userId)) {
+                return ResponseEntity.badRequest().body("Email đã được sử dụng bởi tài khoản khác");
+            }
+            user.setEmail(req.getUser().getEmail().trim());
+        }
+
+        if (req.getUser() != null && req.getUser().getPhone() != null && !req.getUser().getPhone().isBlank()) {
+            User existingByPhone = userRepository.findByPhone(req.getUser().getPhone());
+            if (existingByPhone != null && !existingByPhone.getUserId().equals(userId)) {
+                return ResponseEntity.badRequest().body("Số điện thoại đã được sử dụng bởi tài khoản khác");
+            }
+            user.setPhone(req.getUser().getPhone().trim());
+        }
+
+        userRepository.save(user);
         customerRepository.save(customer);
         return ResponseEntity.ok("Cập nhật hồ sơ thành công!");
     }
 
     @PostMapping("/register-staff")
     public ResponseEntity<?> registerStaff(@RequestBody RegisterRequest req) {
-        // Kiểm tra username & CCCD trùng
-        if (userRepository.findByUsername(req.getUsername()) != null) {
-            return ResponseEntity.badRequest().body("Tên đăng nhập đã tồn tại!");
+        // Kiểm tra email / phone / CCCD trùng
+        if (req.getEmail() == null || req.getEmail().isBlank()) {
+            return ResponseEntity.badRequest().body("Email là bắt buộc!");
+        }
+        if (userRepository.existsByEmail(req.getEmail())) {
+            return ResponseEntity.badRequest().body("Email đã tồn tại!");
+        }
+        if (req.getPhone() != null && !req.getPhone().isBlank() && userRepository.existsByPhone(req.getPhone())) {
+            return ResponseEntity.badRequest().body("Số điện thoại đã tồn tại!");
         }
         if (staffRepository.existsByCccd(req.getCccd())) {
             return ResponseEntity.badRequest().body("CCCD đã tồn tại!");
@@ -283,7 +313,8 @@ public class AuthController {
 
         // Tạo User mới
         User user = new User();
-        user.setUsername(req.getUsername());
+        user.setEmail(req.getEmail());
+        user.setPhone(req.getPhone());
         user.setPassword(passwordEncoder.encode(req.getPassword()));
         user.setFullName(req.getFullName());
         user.setRole(User.Role.STAFF);

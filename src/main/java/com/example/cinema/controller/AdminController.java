@@ -83,7 +83,7 @@ public class AdminController {
                     Map<String, Object> m = new HashMap<>();
                     m.put("staffId", s.getStaffId());
                     m.put("userId", s.getUser().getUserId());
-                    m.put("username", s.getUser().getUsername());
+                    m.put("username", s.getUser().getEmail());
                     m.put("fullName", s.getUser().getFullName());
                     m.put("email", s.getEmail());
                     m.put("phone", s.getPhone());
@@ -132,7 +132,7 @@ public class AdminController {
                 .map(u -> {
                     Map<String, Object> m = new HashMap<>();
                     m.put("userId", u.getUserId());
-                    m.put("username", u.getUsername());
+                    m.put("username", u.getEmail());
                     m.put("fullName", u.getFullName());
                     m.put("role", u.getRole());
                     m.put("isActive", u.getIsActive());

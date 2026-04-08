@@ -22,13 +22,13 @@ public class CustomerController {
         this.userRepo = userRepo;
     }
 
-    // 🟢 1️⃣ Lấy danh sách tất cả khách hàng
+    // Lấy danh sách tất cả khách hàng
     @GetMapping
     public ResponseEntity<List<Customer>> getAllCustomers() {
         return ResponseEntity.ok(customerRepo.findAll());
     }
 
-    // 🟢 2️⃣ Xem chi tiết 1 khách hàng
+    // Xem chi tiết 1 khách hàng
     @GetMapping("/{id}")
     public ResponseEntity<?> getCustomerById(@PathVariable Long id) {
         return customerRepo.findById(id)
@@ -36,7 +36,7 @@ public class CustomerController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // 🟢 3️⃣ Tạo khách hàng mới (thường dùng khi đăng ký user)
+    // Tạo khách hàng mới (thường dùng khi đăng ký user)
     @PostMapping
     public ResponseEntity<?> createCustomer(@RequestBody Customer customer) {
         if (customer.getUser() != null && customer.getUser().getUserId() != null) {
@@ -47,19 +47,19 @@ public class CustomerController {
         return ResponseEntity.ok(customerRepo.save(customer));
     }
 
-    // 🟢 4️⃣ Cập nhật thông tin khách hàng
+    // Cập nhật thông tin khách hàng
     @PutMapping("/{id}")
     public ResponseEntity<?> updateCustomer(@PathVariable Long id, @RequestBody Customer updated) {
         return customerRepo.findById(id)
                 .map(c -> {
                     c.setGender(updated.getGender());
-                    c.setPhone(updated.getPhone());
+                    c.setAddress(updated.getAddress());
                     return ResponseEntity.ok(customerRepo.save(c));
                 })
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // 🟢 5️⃣ Xóa khách hàng
+    // Xóa khách hàng
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteCustomer(@PathVariable Long id) {
         customerRepo.deleteById(id);

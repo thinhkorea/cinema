@@ -24,9 +24,9 @@ public class JwtUtil {
     }
 
     // generate token kèm role
-    public String generateToken(String username, String role, String fullName) {
+    public String generateToken(String identifier, String role, String fullName) {
         return Jwts.builder()
-                .setSubject(username)
+                .setSubject(identifier)
                 .claim("role", role)
                 .claim("fullName", fullName)
                 .setIssuedAt(new Date())
@@ -35,7 +35,7 @@ public class JwtUtil {
                 .compact();
     }
 
-    public String extractUsername(String token) {
+    public String extractIdentifier(String token) {
         return Jwts.parserBuilder()
                 .setSigningKey(getSigningKey())
                 .build()
@@ -61,8 +61,8 @@ public class JwtUtil {
                     .parseClaimsJws(token)
                     .getBody();
 
-            String username = claims.getSubject();
-            if (!username.equals(userDetails.getUsername())) {
+            String identifier = claims.getSubject();
+            if (!identifier.equals(userDetails.getUsername())) {
                 return false;
             }
 

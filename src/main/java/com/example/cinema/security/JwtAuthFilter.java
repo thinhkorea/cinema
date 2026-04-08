@@ -80,10 +80,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         }
 
         String token = header.substring(7);
-        String username = null;
+        String identifier = null;
 
         try {
-            username = jwtUtil.extractUsername(token);
+            identifier = jwtUtil.extractIdentifier(token);
         } catch (Exception e) {
             System.out.println("Token parsing error: " + e.getMessage());
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
@@ -92,15 +92,15 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return;
         }
 
-        if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-            UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+        if (identifier != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+            UserDetails userDetails = userDetailsService.loadUserByUsername(identifier);
 
-            System.out.println("JWT Filter - Username from token: " + username);
+            System.out.println("JWT Filter - Identifier from token: " + identifier);
             System.out.println("JWT Filter - UserDetails loaded: " + userDetails.getUsername());
 
             if (jwtUtil.validateToken(token, userDetails)) {
                 // Kiểm tra xem token có khớp với currentSessionToken trong database không
-                User user = userRepository.findByUsername(username);
+                User user = userRepository.findByEmail(userDetails.getUsername());
                 if (user == null || !token.equals(user.getCurrentSessionToken())) {
                     System.out.println("Session không hợp lệ - có thể đã đăng nhập từ nơi khác");
                     response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
@@ -141,7 +141,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 response.getWriter().write("{\"error\": \"Invalid JWT token\"}");
             }
         } else {
-            System.out.println("Username is null or authentication already exists");
+            System.out.println("Identifier is null or authentication already exists");
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.setContentType("application/json");
             response.getWriter().write("{\"error\": \"Authentication failed\"}");

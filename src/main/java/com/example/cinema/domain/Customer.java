@@ -23,8 +23,6 @@ public class Customer {
     @JsonIgnoreProperties({ "customer" })
     private User user;
 
-    private String phone;
-    private String email;
     private String address;
 
     @Enumerated(EnumType.STRING)

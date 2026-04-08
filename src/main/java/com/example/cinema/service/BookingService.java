@@ -42,7 +42,7 @@ public class BookingService {
                 .map(b -> new BookingResponse(
                         b.getBookingId(),
                         (b.getCustomer() != null && b.getCustomer().getUser() != null)
-                                ? b.getCustomer().getUser().getUsername()
+                        ? b.getCustomer().getUser().getEmail()
                                 : "-",
                         (b.getSoldByStaff() != null && b.getSoldByStaff().getUser() != null)
                                 ? b.getSoldByStaff().getUser().getFullName()
@@ -57,7 +57,7 @@ public class BookingService {
     }
 
     public List<Booking> findByUsername(String username) {
-        return bookingRepo.findByCustomer_User_Username(username);
+        return bookingRepo.findByCustomer_User_Email(username);
     }
 
     public List<Booking> findByShowtimeId(Long showtimeId) {
@@ -77,16 +77,16 @@ public class BookingService {
     }
 
     public List<Booking> findByStaffUsernameAndStatus(String username, Booking.Status status) {
-        return bookingRepo.findBySoldByStaff_User_UsernameAndStatus(username, status);
+        return bookingRepo.findBySoldByStaff_User_EmailAndStatus(username, status);
     }
 
     @Transactional(readOnly = true)
     public List<Booking> getBookingsByUsername(String username) {
-        User user = userRepository.findByUsername(username);
+        User user = userRepository.findByEmailOrPhone(username, username);
         if (user == null) {
             throw new RuntimeException("User not found: " + username);
         }
-        return bookingRepo.findByCustomer_User_Username(username);
+        return bookingRepo.findByCustomer_User_Email(user.getEmail());
     }
 
     // Phương thức mới để lấy Booking theo ID, xử lý logic tìm kiếm trong Service
@@ -97,7 +97,7 @@ public class BookingService {
 
     @Transactional(readOnly = true) // Thêm @Transactional để đảm bảo các lazy-loading hoạt động
     public List<SoldTicketDTO> findSoldTicketsByStaffUsername(String username) {
-        List<Booking> bookings = bookingRepo.findBySoldByStaff_User_UsernameAndStatus(username, Booking.Status.PAID);
+        List<Booking> bookings = bookingRepo.findBySoldByStaff_User_EmailAndStatus(username, Booking.Status.PAID);
         return bookings.stream()
                 .map(SoldTicketDTO::new) // Sử dụng constructor để chuyển đổi
                 .sorted(Comparator.comparing(SoldTicketDTO::getCreatedAt).reversed()) // Sắp xếp vé mới nhất lên đầu
@@ -106,7 +106,7 @@ public class BookingService {
 
     @Transactional(readOnly = true)
     public List<SoldTicketDTO> findSoldTicketsByStaffUsernameAndDate(String username, LocalDateTime dateStart, LocalDateTime dateEnd) {
-        List<Booking> bookings = bookingRepo.findBySoldByStaff_User_UsernameAndStatusAndDateRange(username, Booking.Status.PAID, dateStart, dateEnd);
+        List<Booking> bookings = bookingRepo.findBySoldByStaff_User_EmailAndStatusAndDateRange(username, Booking.Status.PAID, dateStart, dateEnd);
         return bookings.stream()
                 .map(SoldTicketDTO::new)
                 .sorted(Comparator.comparing(SoldTicketDTO::getCreatedAt).reversed())
@@ -127,7 +127,7 @@ public class BookingService {
                 .orElseThrow(() -> new IllegalArgumentException("Showtime not found"));
 
         // Tìm nhân viên bán vé dựa trên username
-        Staff staff = staffRepo.findByUser_Username(staffUsername)
+        Staff staff = staffRepo.findByUser_Email(staffUsername)
                 .orElseThrow(() -> new IllegalArgumentException("Staff not found with username: " + staffUsername));
 
         List<Booking> list = new ArrayList<>();
@@ -264,7 +264,7 @@ public class BookingService {
                 .orElseThrow(() -> new IllegalArgumentException("Showtime not found"));
 
         // Tìm khách hàng
-        Customer customer = customerRepo.findByUser_Username(customerUsername)
+        Customer customer = customerRepo.findByUser_Email(customerUsername)
                 .orElseThrow(
                         () -> new IllegalArgumentException("Customer not found with username: " + customerUsername));
 

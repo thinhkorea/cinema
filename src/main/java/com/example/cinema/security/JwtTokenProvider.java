@@ -19,12 +19,12 @@ public class JwtTokenProvider {
 
     private Key signingKey;
 
-    public String generateToken(String username, String role, String fullName) {
+    public String generateToken(String identifier, String role, String fullName) {
         if (signingKey == null) {
             signingKey = Keys.hmacShaKeyFor(jwtSecret.getBytes());
         }
         return Jwts.builder()
-                .setSubject(username)
+                .setSubject(identifier)
                 .claim("role", role)
                 .claim("fullName", fullName)
                 .setIssuedAt(new Date())

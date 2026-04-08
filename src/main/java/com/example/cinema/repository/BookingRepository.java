@@ -16,14 +16,14 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
        List<Booking> findAll();
 
        @EntityGraph(attributePaths = { "customer.user", "showtime.movie", "showtime.room", "seat" })
-       List<Booking> findByCustomer_User_Username(String username);
+       List<Booking> findByCustomer_User_Email(String email);
 
        @EntityGraph(attributePaths = { "soldByStaff.user", "showtime.movie", "showtime.room", "seat" })
-       List<Booking> findBySoldByStaff_User_UsernameAndStatus(String username, Booking.Status status);
+       List<Booking> findBySoldByStaff_User_EmailAndStatus(String email, Booking.Status status);
 
        @EntityGraph(attributePaths = { "soldByStaff.user", "showtime.movie", "showtime.room", "seat" })
-       @Query("SELECT b FROM Booking b WHERE b.soldByStaff.user.username = :username AND b.status = :status AND b.createdAt BETWEEN :dateStart AND :dateEnd ORDER BY b.createdAt DESC")
-       List<Booking> findBySoldByStaff_User_UsernameAndStatusAndDateRange(@Param("username") String username, @Param("status") Booking.Status status, @Param("dateStart") LocalDateTime dateStart, @Param("dateEnd") LocalDateTime dateEnd);
+       @Query("SELECT b FROM Booking b WHERE b.soldByStaff.user.email = :email AND b.status = :status AND b.createdAt BETWEEN :dateStart AND :dateEnd ORDER BY b.createdAt DESC")
+       List<Booking> findBySoldByStaff_User_EmailAndStatusAndDateRange(@Param("email") String email, @Param("status") Booking.Status status, @Param("dateStart") LocalDateTime dateStart, @Param("dateEnd") LocalDateTime dateEnd);
 
        @EntityGraph(attributePaths = { "customer.user", "showtime.movie", "showtime.room", "seat" })
        List<Booking> findByShowtime_ShowtimeId(Long showtimeId);
@@ -37,8 +37,8 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
        List<Booking> findByTxnRefAndStatus(String txnRef, Booking.Status status);
 
-       boolean existsByCustomer_User_UsernameAndShowtime_Movie_MovieIdAndStatus(
-                     String username,
+       boolean existsByCustomer_User_EmailAndShowtime_Movie_MovieIdAndStatus(
+                     String email,
                      Long movieId,
                      Booking.Status status);
 
@@ -46,13 +46,13 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
        @Query("""
               SELECT CASE WHEN COUNT(b) > 0 THEN true ELSE false END
               FROM Booking b
-              WHERE b.customer.user.username = :username
+                    WHERE b.customer.user.email = :email
               AND b.showtime.movie.movieId = :movieId
               AND b.status = :status
               AND b.showtime.endTime < :currentTime
               """)
        boolean existsCompletedShowtimeBooking(
-               @Param("username") String username,
+                     @Param("email") String email,
                @Param("movieId") Long movieId,
                @Param("status") Booking.Status status,
                @Param("currentTime") LocalDateTime currentTime);

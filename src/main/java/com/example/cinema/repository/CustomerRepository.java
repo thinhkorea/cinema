@@ -7,12 +7,9 @@ import java.util.Optional;
 
 public interface CustomerRepository extends JpaRepository<Customer, Long> {
 
-    // Tìm khách hàng thông qua username của user liên kết
-    Optional<Customer> findByUser_Username(String username);
+    // Tìm khách hàng thông qua email của user liên kết
+    Optional<Customer> findByUser_Email(String email);
 
     // Tìm khách hàng thông qua userId
     Optional<Customer> findByUserUserId(Long userId);
-
-    // Kiểm tra khách hàng có tồn tại bằng email không
-    boolean existsByEmail(String email);
 }
