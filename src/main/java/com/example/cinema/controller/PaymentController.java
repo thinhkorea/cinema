@@ -10,6 +10,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
+import java.text.Normalizer;
 import java.util.*;
 
 @RestController
@@ -50,27 +51,47 @@ public class PaymentController {
         }
     }
 
-    @PostMapping("/create-payment")
-    public ResponseEntity<?> createPayment(@RequestBody Map<String, Object> body) throws Exception {
-        // Nếu FE đã truyền txnRef thì dùng luôn, không tạo mới
-        String txnRef = String.valueOf(body.getOrDefault("txnRef", System.currentTimeMillis()));
-
-        // Lấy tổng tiền
-        long amount = ((Number) body.getOrDefault("amount", 100000)).longValue() * 100;
-        String orderDesc = String.valueOf(body.getOrDefault("orderDescription", "Thanh toan ve xem phim"));
-        String role = String.valueOf(body.getOrDefault("role", "customer")); // Thêm dòng này
-
-        String createDate = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
-
-        // Nếu role = staff → thêm ?role=staff vào return URL
-        String returnUrl = vnp_ReturnUrl;
-        if ("staff".equalsIgnoreCase(role)) {
-            if (returnUrl.contains("?")) {
-                returnUrl += "&role=staff";
-            } else {
-                returnUrl += "?role=staff";
-            }
+    private static String sanitizeOrderInfo(String input) {
+        if (input == null || input.isBlank()) {
+            return "Thanh toan ve xem phim";
         }
+
+        String noAccent = Normalizer.normalize(input, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "");
+
+        // VNPay order info should stay simple ASCII to avoid canonicalization mismatches.
+        String safe = noAccent
+                .replaceAll("[^A-Za-z0-9 _.,:/-]", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+
+        if (safe.isEmpty()) {
+            return "Thanh toan ve xem phim";
+        }
+
+        return safe.length() > 255 ? safe.substring(0, 255) : safe;
+    }
+
+        @PostMapping("/create-payment")
+    public ResponseEntity<?> createPayment(@RequestBody Map<String, Object> body) throws Exception {
+        String txnRef = String.valueOf(body.getOrDefault("txnRef", System.currentTimeMillis()));
+        long amount = ((Number) body.getOrDefault("amount", 100000)).longValue() * 100;
+        String orderDesc = sanitizeOrderInfo(
+                String.valueOf(body.getOrDefault("orderDescription", "Thanh toan ve xem phim"))
+        );
+        String role = String.valueOf(body.getOrDefault("role", "customer"));
+
+        TimeZone vnTimeZone = TimeZone.getTimeZone("Asia/Ho_Chi_Minh");
+        Calendar calendar = Calendar.getInstance(vnTimeZone);
+        SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMddHHmmss");
+        formatter.setTimeZone(vnTimeZone);
+        String createDate = formatter.format(calendar.getTime());
+        calendar.add(Calendar.MINUTE, 15);
+        String expireDate = formatter.format(calendar.getTime());
+
+        String returnUrl = vnp_ReturnUrl
+                + (vnp_ReturnUrl.contains("?") ? "&" : "?")
+                + "role=" + URLEncoder.encode(role, StandardCharsets.UTF_8);
 
         Map<String, String> vnp = new HashMap<>();
         vnp.put("vnp_Version", "2.1.0");
@@ -78,13 +99,14 @@ public class PaymentController {
         vnp.put("vnp_TmnCode", vnp_TmnCode);
         vnp.put("vnp_Amount", String.valueOf(amount));
         vnp.put("vnp_CurrCode", "VND");
-        vnp.put("vnp_TxnRef", txnRef); // Dùng chung txnRef với DB
+        vnp.put("vnp_TxnRef", txnRef);
         vnp.put("vnp_OrderInfo", orderDesc);
         vnp.put("vnp_OrderType", "billpayment");
         vnp.put("vnp_Locale", "vn");
-        vnp.put("vnp_ReturnUrl", returnUrl); // Dùng returnUrl có thể có ?role=staff
+        vnp.put("vnp_ReturnUrl", returnUrl);  // ← URL sạch, không có ?role=staff
         vnp.put("vnp_IpAddr", "127.0.0.1");
         vnp.put("vnp_CreateDate", createDate);
+        vnp.put("vnp_ExpireDate", expireDate);
 
         // Sort và ký hash
         List<String> keys = new ArrayList<>(vnp.keySet());
@@ -92,28 +114,30 @@ public class PaymentController {
         StringBuilder data = new StringBuilder();
         StringBuilder query = new StringBuilder();
 
-        for (Iterator<String> it = keys.iterator(); it.hasNext();) {
-            String k = it.next();
+        boolean first = true;
+        for (String k : keys) {
             String v = vnp.get(k);
             if (v != null && !v.isEmpty()) {
-                String enc = URLEncoder.encode(v, StandardCharsets.US_ASCII);
-                data.append(k).append('=').append(enc);
-                query.append(k).append('=').append(enc);
-                if (it.hasNext()) {
+                if (!first) {
                     data.append('&');
                     query.append('&');
                 }
+                String encodedKey = URLEncoder.encode(k, StandardCharsets.UTF_8);
+                String encodedValue = URLEncoder.encode(v, StandardCharsets.UTF_8);
+                data.append(encodedKey).append('=').append(encodedValue);
+                query.append(encodedKey).append('=').append(encodedValue);
+                first = false;
             }
         }
 
-        String secureHash = hmacSHA512(vnp_HashSecret, data.toString());
+        String vnpSecureHash = hmacSHA512(vnp_HashSecret.trim(), data.toString());
         String paymentUrl = vnp_Url + "?" + query +
-                "&vnp_SecureHashType=HmacSHA512&vnp_SecureHash=" + secureHash;
+                "&vnp_SecureHashType=HmacSHA512&vnp_SecureHash=" + vnpSecureHash;
 
-        // Log kiểm tra
+        System.out.println("Raw data for hash: " + data.toString());
+        System.out.println("Generated SecureHash: " + vnpSecureHash);
         System.out.println("VNPay URL (" + role + "): " + paymentUrl);
 
-        // Trả về để FE có thể mở VNPay
         return ResponseEntity.ok(Map.of(
                 "paymentUrl", paymentUrl,
                 "txnRef", txnRef,
@@ -138,22 +162,19 @@ public class PaymentController {
                 // Mặc định là khách hàng
                 redirectUrl = "http://localhost:5173/payment-result?vnp_ResponseCode=00&vnp_TxnRef=" + txnRef;
             }
-
-            return ResponseEntity.status(302)
-                    .header("Location", redirectUrl)
-                    .build();
-        }
-
-        // Nếu thất bại
-        if ("staff".equalsIgnoreCase(role)) {
-            redirectUrl = "http://localhost:5173/staff/payment-result?vnp_ResponseCode=" + responseCode
-                    + "&vnp_TxnRef=" + txnRef;
         } else {
-            redirectUrl = "http://localhost:5173/payment-result?vnp_ResponseCode=" + responseCode
-                    + "&vnp_TxnRef=" + txnRef;
+            System.out.println("VNPay thất bại, mã lỗi: " + responseCode);
+            
+            // Nếu thất bại
+            if ("staff".equalsIgnoreCase(role)) {
+                redirectUrl = "http://localhost:5173/staff/payment-result?vnp_ResponseCode=" + responseCode
+                        + "&vnp_TxnRef=" + txnRef;
+            } else {
+                redirectUrl = "http://localhost:5173/payment-result?vnp_ResponseCode=" + responseCode
+                        + "&vnp_TxnRef=" + txnRef;
+            }
         }
 
-        System.out.println("VNPay thất bại, mã lỗi: " + responseCode);
         return ResponseEntity.status(302)
                 .header("Location", redirectUrl)
                 .build();

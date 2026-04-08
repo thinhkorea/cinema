@@ -2,7 +2,6 @@ package com.example.cinema.config;
 
 import com.example.cinema.security.JwtAuthFilter;
 import com.example.cinema.security.JwtAuthenticationEntryPoint;
-import com.example.cinema.security.OAuth2SuccessHandler;
 import com.example.cinema.security.JwtAccessDeniedHandler;
 
 import java.util.List;
@@ -25,18 +24,15 @@ public class SecurityConfig {
         private final JwtAuthFilter jwtAuthFilter;
         private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
         private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
-        private final OAuth2SuccessHandler oAuth2SuccessHandler;
 
         public SecurityConfig(
                         JwtAuthFilter jwtAuthFilter,
                         JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint,
-                        JwtAccessDeniedHandler jwtAccessDeniedHandler,
-                        OAuth2SuccessHandler oAuth2SuccessHandler) {
+                        JwtAccessDeniedHandler jwtAccessDeniedHandler) {
 
                 this.jwtAuthFilter = jwtAuthFilter;
                 this.jwtAuthenticationEntryPoint = jwtAuthenticationEntryPoint;
                 this.jwtAccessDeniedHandler = jwtAccessDeniedHandler;
-                this.oAuth2SuccessHandler = oAuth2SuccessHandler;
         }
 
         @Bean
@@ -55,7 +51,7 @@ public class SecurityConfig {
                                 .authorizeHttpRequests(auth -> auth
 
                                                 // 1️PUBLIC – login & VNPay callback
-                                                .requestMatchers("/api/auth/**", "/oauth2/**", "/login/oauth2/**",
+                                                .requestMatchers("/api/auth/**",
                                                                 "/api/payments/vnpay-return")
                                                 .permitAll()
 
@@ -69,6 +65,10 @@ public class SecurityConfig {
                                                                 "/api/showtimes/**",
                                                                 "/api/seats/**")
                                                 .permitAll()
+
+                                                // Cho phép người dùng đã đăng nhập gửi review phim
+                                                .requestMatchers(HttpMethod.POST, "/api/movies/*/reviews")
+                                                .hasRole("CUSTOMER")
 
                                                 // 2️STAFF zone (chỉ STAFF mới được truy cập) - phải đặt sau rule cụ thể
                                                 // ở trên
@@ -114,10 +114,7 @@ public class SecurityConfig {
                                                 .accessDeniedHandler(jwtAccessDeniedHandler))
 
                                 .sessionManagement(s -> s
-                                                .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-
-                                .oauth2Login(oauth -> oauth
-                                                .successHandler(oAuth2SuccessHandler));
+                                                .sessionCreationPolicy(SessionCreationPolicy.STATELESS));
 
                 http.addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
                 return http.build();

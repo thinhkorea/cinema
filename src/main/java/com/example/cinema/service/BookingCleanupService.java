@@ -14,8 +14,8 @@ public class BookingCleanupService {
 
     private final BookingRepository bookingRepository;
 
-    // Thời gian giữ ghế (phút)
-    private static final int PENDING_BOOKING_TIMEOUT_MINUTES = 1;
+    // Thời gian giữ ghế (phút) - đủ thời gian để user chọn snacks và thanh toán
+    private static final int PENDING_BOOKING_TIMEOUT_MINUTES = 10;
 
     public BookingCleanupService(BookingRepository bookingRepository) {
         this.bookingRepository = bookingRepository;

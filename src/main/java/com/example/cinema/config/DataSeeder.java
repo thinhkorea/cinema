@@ -29,7 +29,9 @@ public class DataSeeder {
             RoomRepository roomRepo,
             SeatRepository seatRepo,
             ShowtimeRepository showtimeRepo,
-            BookingRepository bookingRepo) {
+            BookingRepository bookingRepo,
+            SnackRepository snackRepo,
+            BookingSnackRepository bookingSnackRepo) {
         return args -> {
 
             if (!seedEnabled) {
@@ -37,11 +39,13 @@ public class DataSeeder {
                 return;
             }
             // Xóa dữ liệu cũ
+            bookingSnackRepo.deleteAll();
             bookingRepo.deleteAll();
             showtimeRepo.deleteAll();
             seatRepo.deleteAll();
             roomRepo.deleteAll();
             movieRepo.deleteAll();
+            snackRepo.deleteAll();
             staffRepo.deleteAll();
             customerRepo.deleteAll();
             userRepo.deleteAll();
@@ -409,6 +413,158 @@ public class DataSeeder {
             s04.setPrice(120000.0);
 
             showtimeRepo.saveAll(List.of(s01, s02, s03, s04));
+
+            // ========================================
+            // SEED SNACKS DATA (Bắp nước)
+            // ========================================
+            System.out.println("Seeding snacks data...");
+
+            // COMBO
+            Snack comboGau = new Snack();
+            comboGau.setSnackName("Combo Gấu");
+            comboGau.setDescription("1 Coke 32oz + 1 Bắp 2 Ngăn 64OZ Phô Mai + Caramel");
+            comboGau.setPrice(119000.0);
+            comboGau.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/PICCONNEW/CNS035_COMBO_GAU.png?rand=1723084117");
+            comboGau.setStock(100);
+            comboGau.setCategory(Snack.SnackCategory.COMBO);
+            comboGau.setAvailable(true);
+
+            Snack comboCoGau = new Snack();
+            comboCoGau.setSnackName("Combo Có Gấu");
+            comboCoGau.setDescription("2 Coke 32oz + 1 Bắp 2 Ngăn 64OZ Phô Mai + Caramel");
+            comboCoGau.setPrice(129000.0);
+            comboCoGau.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/PICCONNEW/CNS036_COMBO_CO_GAU.png?rand=1723084117");
+            comboCoGau.setStock(100);
+            comboCoGau.setCategory(Snack.SnackCategory.COMBO);
+            comboCoGau.setAvailable(true);
+
+            Snack comboNhaGau = new Snack();
+            comboNhaGau.setSnackName("Combo Nhà Gấu");
+            comboNhaGau.setDescription("4 Coke 22oz + 2 Bắp 2 Ngăn 64OZ Phô Mai + Caramel");
+            comboNhaGau.setPrice(259000.0);
+            comboNhaGau.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/PICCONNEW/CNS037_COMBO_NHA_GAU.png?rand=1723084117");
+            comboNhaGau.setStock(100);
+            comboNhaGau.setCategory(Snack.SnackCategory.COMBO);
+            comboNhaGau.setAvailable(true);
+
+            // DRINKS
+            Snack dasani = new Snack();
+            dasani.setSnackName("Nước Suối Dasani 500/510ml");
+            dasani.setDescription("");
+            dasani.setPrice(20000.0);
+            dasani.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/HinhQuayconnew/dasani.png?rand=1731053064");
+            dasani.setStock(100);
+            dasani.setCategory(Snack.SnackCategory.DRINK);
+            dasani.setAvailable(true);
+
+            Snack nutriboost = new Snack();
+            nutriboost.setSnackName("Nước trái cây Nutriboost 297ml");
+            nutriboost.setDescription("");
+            nutriboost.setPrice(28000.0);
+            nutriboost.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/HinhQuayconnew/NUTRI.png?rand=1719572506");
+            nutriboost.setStock(100);
+            nutriboost.setCategory(Snack.SnackCategory.DRINK);
+            nutriboost.setAvailable(true);
+
+            Snack teppy = new Snack();
+            teppy.setSnackName("Nước cam Teppy 327ml");
+            teppy.setDescription("");
+            teppy.setPrice(28000.0);
+            teppy.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/HinhQuayconnew/TEPPY.png?rand=1719572506");
+            teppy.setStock(100);
+            teppy.setCategory(Snack.SnackCategory.DRINK);
+            teppy.setAvailable(true);
+
+            Snack cokeZero = new Snack();
+            cokeZero.setSnackName("Coke Zero 32oz");
+            cokeZero.setDescription("");
+            cokeZero.setPrice(37000.0);
+            cokeZero.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/HinhQuayconnew/COKE-ZERO.png?rand=1719573157");
+            cokeZero.setStock(100);
+            cokeZero.setCategory(Snack.SnackCategory.DRINK);
+            cokeZero.setAvailable(true);
+
+            Snack fanta = new Snack();
+            fanta.setSnackName("Fanta 32oz");
+            fanta.setDescription("");
+            fanta.setPrice(37000.0);
+            fanta.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/HinhQuayconnew/fanta.jpg?rand=1719572506");
+            fanta.setStock(100);
+            fanta.setCategory(Snack.SnackCategory.DRINK);
+            fanta.setAvailable(true);
+
+            Snack coke = new Snack();
+            coke.setSnackName("Coke 32oz");
+            coke.setDescription("");
+            coke.setPrice(37000.0);
+            coke.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/HinhQuayconnew/coca.png?rand=1719572301");
+            coke.setStock(100);
+            coke.setCategory(Snack.SnackCategory.DRINK);
+            coke.setAvailable(true);
+
+            Snack sprite = new Snack();
+            sprite.setSnackName("Sprite 32oz");
+            sprite.setDescription("");
+            sprite.setPrice(37000.0);
+            sprite.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/HinhQuayconnew/sprite.png?rand=1719572953");
+            sprite.setStock(100);
+            sprite.setCategory(Snack.SnackCategory.DRINK);
+            sprite.setAvailable(true);
+
+            // SNACKS
+            Snack snackThai = new Snack();
+            snackThai.setSnackName("Snack Thái");
+            snackThai.setDescription("");
+            snackThai.setPrice(25000.0);
+            snackThai.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/HinhQuayconnew/snack-que-thai.png?rand=1718957425");
+            snackThai.setStock(100);
+            snackThai.setCategory(Snack.SnackCategory.SNACK);
+            snackThai.setAvailable(true);
+
+            Snack laysStax = new Snack();
+            laysStax.setSnackName("Khoai Tây Lay's Stax 100g");
+            laysStax.setDescription("");
+            laysStax.setPrice(59000.0);
+            laysStax.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/HinhQuayconnew/laystax.png?rand=1719632844");
+            laysStax.setStock(100);
+            laysStax.setCategory(Snack.SnackCategory.SNACK);
+            laysStax.setAvailable(true);
+
+            Snack pocaKhoaiTay = new Snack();
+            pocaKhoaiTay.setSnackName("Poca Khoai Tây 54gr");
+            pocaKhoaiTay.setDescription("");
+            pocaKhoaiTay.setPrice(28000.0);
+            pocaKhoaiTay.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/HinhQuayconnew/lays-khoai-tay.png?rand=1719572623");
+            pocaKhoaiTay.setStock(100);
+            pocaKhoaiTay.setCategory(Snack.SnackCategory.SNACK);
+            pocaKhoaiTay.setAvailable(true);
+
+            Snack snackPartyz = new Snack();
+            snackPartyz.setSnackName("SNACK PARTYZ 30-33GR");
+            snackPartyz.setDescription("");
+            snackPartyz.setPrice(20000.0);
+            snackPartyz.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/HinhQuayconnew/poca-partyz.png?rand=1719633509");
+            snackPartyz.setStock(100);
+            snackPartyz.setCategory(Snack.SnackCategory.SNACK);
+            snackPartyz.setAvailable(true);
+
+            Snack pocaWavy = new Snack();
+            pocaWavy.setSnackName("Poca Wavy 54gr");
+            pocaWavy.setDescription("");
+            pocaWavy.setPrice(28000.0);
+            pocaWavy.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/HinhQuayconnew/lays-vi-bo_1_.png?rand=1719632844");
+            pocaWavy.setStock(100);
+            pocaWavy.setCategory(Snack.SnackCategory.SNACK);
+            pocaWavy.setAvailable(true);
+
+            // Save all snacks
+            snackRepo.saveAll(List.of(
+                comboGau, comboCoGau, comboNhaGau,
+                dasani, nutriboost, teppy, cokeZero, fanta, coke, sprite,
+                snackThai, laysStax, pocaKhoaiTay, snackPartyz, pocaWavy
+            ));
+
+            System.out.println("Seeded 15 snacks successfully!");
             System.out.println("Database seeded successfully!");
         };
     }

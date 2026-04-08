@@ -37,6 +37,26 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
        List<Booking> findByTxnRefAndStatus(String txnRef, Booking.Status status);
 
+       boolean existsByCustomer_User_UsernameAndShowtime_Movie_MovieIdAndStatus(
+                     String username,
+                     Long movieId,
+                     Booking.Status status);
+
+       // Kiểm tra xem user có booking PAID cho phim này với showtime đã kết thúc
+       @Query("""
+              SELECT CASE WHEN COUNT(b) > 0 THEN true ELSE false END
+              FROM Booking b
+              WHERE b.customer.user.username = :username
+              AND b.showtime.movie.movieId = :movieId
+              AND b.status = :status
+              AND b.showtime.endTime < :currentTime
+              """)
+       boolean existsCompletedShowtimeBooking(
+               @Param("username") String username,
+               @Param("movieId") Long movieId,
+               @Param("status") Booking.Status status,
+               @Param("currentTime") LocalDateTime currentTime);
+
        List<Booking> findAllByStatusAndCreatedAtBefore(Booking.Status status, LocalDateTime timestamp);
 
        // ===================== THỐNG KÊ =====================

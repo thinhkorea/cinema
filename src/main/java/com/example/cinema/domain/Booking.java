@@ -7,6 +7,8 @@ import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "bookings", uniqueConstraints = {
@@ -61,11 +63,40 @@ public class Booking {
     @Column(nullable = false)
     private boolean printed = false;
 
+    // Quan hệ với BookingSnacks (bắp nước đã chọn)
+    @OneToMany(mappedBy = "booking", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<BookingSnack> snacks = new ArrayList<>();
+
     @PrePersist
     protected void onCreate() {
         if (this.status == null) {
             this.status = Status.PENDING;
         }
+    }
+
+    /**
+     * Tính tổng tiền snacks
+     */
+    public Double getSnacksTotal() {
+        return snacks.stream()
+                .mapToDouble(BookingSnack::getSubtotal)
+                .sum();
+    }
+
+    /**
+     * Thêm snack vào booking
+     */
+    public void addSnack(BookingSnack bookingSnack) {
+        snacks.add(bookingSnack);
+        bookingSnack.setBooking(this);
+    }
+
+    /**
+     * Xóa snack khỏi booking
+     */
+    public void removeSnack(BookingSnack bookingSnack) {
+        snacks.remove(bookingSnack);
+        bookingSnack.setBooking(null);
     }
 
     public enum Status {
