@@ -56,14 +56,13 @@ public class TicketPDFService {
         return s == null ? "" : s.replace(";", ",");
     }
 
-    private String buildQrPayload(Booking b) {
-        return "TICKET|" +
-                "ID=" + b.getBookingId() +
+    private String buildTxnQrPayload(Booking b) {
+        String txnRef = b.getTxnRef() != null ? b.getTxnRef() : "BOOKING-" + b.getBookingId();
+        return "TXN_TICKET|" +
+                "TXN=" + txnRef +
                 ";MOVIE=" + safe(b.getShowtime().getMovie().getTitle()) +
                 ";ROOM=" + safe(b.getShowtime().getRoom().getRoomName()) +
-                ";SEAT=" + b.getSeat().getSeatNumber() +
-                ";TIME=" + b.getShowtime().getStartTime() +
-                (b.getTxnRef() != null ? ";TXN=" + b.getTxnRef() : "");
+                ";TIME=" + b.getShowtime().getStartTime();
     }
 
     private Image qrImage(String data, int w, int h) throws Exception {
@@ -73,6 +72,20 @@ public class TicketPDFService {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         javax.imageio.ImageIO.write(bi, "png", out);
         return Image.getInstance(out.toByteArray());
+    }
+
+    public byte[] generateTxnQrPng(Booking booking, int size) {
+        try {
+            String qrData = buildTxnQrPayload(booking);
+            var writer = new QRCodeWriter();
+            var matrix = writer.encode(qrData, BarcodeFormat.QR_CODE, size, size);
+            BufferedImage bi = MatrixToImageWriter.toBufferedImage(matrix);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(bi, "png", out);
+            return out.toByteArray();
+        } catch (Exception e) {
+            throw new RuntimeException("Lỗi tạo QR PNG: " + e.getMessage(), e);
+        }
     }
 
     // ===========================================
@@ -144,7 +157,7 @@ public class TicketPDFService {
             document.add(info);
 
             // QR
-            String qrData = buildQrPayload(b);
+            String qrData = buildTxnQrPayload(b);
             Image qr = qrImage(qrData, 100, 100);
             qr.scaleToFit(100, 100);
             qr.setAlignment(Element.ALIGN_CENTER);
@@ -206,20 +219,24 @@ public class TicketPDFService {
             header.addCell(lineCell);
             doc.add(header);
 
+            // QR chung cho cả giao dịch (theo txnRef)
+            String sharedQrData = buildTxnQrPayload(first);
+            Image sharedQr = qrImage(sharedQrData, 100, 100);
+            sharedQr.scaleToFit(100, 100);
+            sharedQr.setAlignment(Element.ALIGN_CENTER);
+            doc.add(sharedQr);
+
+            Paragraph sharedQrTitle = new Paragraph("QR giao dịch chung / Shared transaction QR", f(9, Font.ITALIC));
+            sharedQrTitle.setAlignment(Element.ALIGN_CENTER);
+            sharedQrTitle.setSpacingBefore(2f);
+            sharedQrTitle.setSpacingAfter(4f);
+            doc.add(sharedQrTitle);
+
             // DANH SÁCH GHẾ
             for (Booking b : bookings) {
-                PdfPTable ticket = new PdfPTable(new float[] { 1, 2 });
+                PdfPTable ticket = new PdfPTable(1);
                 ticket.setWidthPercentage(100);
                 ticket.setSpacingBefore(8f);
-
-                // QR code từng vé
-                String qrData = buildQrPayload(b);
-                Image qr = qrImage(qrData, 80, 80);
-                qr.scaleToFit(80, 80);
-                PdfPCell qrCell = new PdfPCell(qr);
-                qrCell.setBorder(Rectangle.NO_BORDER);
-                qrCell.setRowspan(4);
-                ticket.addCell(qrCell);
 
                 ticket.addCell(cell("Ghế / Seat: " + b.getSeat().getSeatNumber(), 12, Font.BOLD));
                 ticket.addCell(cell("Giá: " + money(showtime.getPrice()) + " VND", 11, Font.NORMAL));

@@ -4,16 +4,22 @@ import com.example.cinema.domain.*;
 import com.example.cinema.dto.BookingResponse;
 import com.example.cinema.dto.SoldTicketDTO;
 import com.example.cinema.repository.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
 import java.util.stream.Collectors;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class BookingService {
+
+    private static final Logger log = LoggerFactory.getLogger(BookingService.class);
+    private static final Pattern SEAT_PATTERN = Pattern.compile("^([A-Za-z]+)(\\d+)");
 
     private final BookingRepository bookingRepo;
     private final ShowtimeRepository showtimeRepo;
@@ -21,19 +27,22 @@ public class BookingService {
     private final StaffRepository staffRepo;
     private final CustomerRepository customerRepo;
     private final UserRepository userRepository;
+    private final TicketEmailService ticketEmailService;
 
     public BookingService(BookingRepository bookingRepo,
             ShowtimeRepository showtimeRepo,
             SeatRepository seatRepo,
             StaffRepository staffRepo, 
             CustomerRepository customerRepo,
-            UserRepository userRepository) {
+            UserRepository userRepository,
+            TicketEmailService ticketEmailService) {
         this.bookingRepo = bookingRepo;
         this.showtimeRepo = showtimeRepo;
         this.seatRepo = seatRepo;
         this.staffRepo = staffRepo;
         this.customerRepo = customerRepo;
         this.userRepository = userRepository;
+        this.ticketEmailService = ticketEmailService;
     }
 
     // ==================== ADMIN / USER ====================
@@ -130,16 +139,24 @@ public class BookingService {
         Staff staff = staffRepo.findByUser_Email(staffUsername)
                 .orElseThrow(() -> new IllegalArgumentException("Staff not found with username: " + staffUsername));
 
+        List<Seat> selectedSeats = seatIds.stream()
+                .map(seatId -> seatRepo.findById(seatId)
+                        .orElseThrow(() -> new IllegalArgumentException("Seat not found: " + seatId)))
+                .collect(Collectors.toList());
+
+        for (Seat seat : selectedSeats) {
+            if (!seat.getRoom().getRoomId().equals(showtime.getRoom().getRoomId())) {
+                throw new IllegalStateException("Seat not in showtime room");
+            }
+        }
+
+        validateSeatSelectionRules(showtimeId, showtime, selectedSeats);
+
         List<Booking> list = new ArrayList<>();
 
-        for (Long seatId : seatIds) {
-            Seat seat = seatRepo.findById(seatId)
-                    .orElseThrow(() -> new IllegalArgumentException("Seat not found: " + seatId));
+        for (Seat seat : selectedSeats) {
 
-            if (!seat.getRoom().getRoomId().equals(showtime.getRoom().getRoomId()))
-                throw new IllegalStateException("Seat not in showtime room");
-
-            if (bookingRepo.existsByShowtime_ShowtimeIdAndSeat_SeatId(showtimeId, seatId))
+            if (bookingRepo.existsByShowtime_ShowtimeIdAndSeat_SeatId(showtimeId, seat.getSeatId()))
                 throw new IllegalStateException("Seat already booked: " + seat.getSeatNumber());
 
             seat.setBooking(true);
@@ -175,12 +192,16 @@ public class BookingService {
         }
         
         List<Booking> updatedBookings = new ArrayList<>();
+        boolean hasNewlyPaidBooking = false;
         
         // Tính tổng tiền của toàn bộ giao dịch
         Double totalAmount = 0.0;
         Customer customer = null;
         
         for (Booking b : bookings) {
+            if (b.getStatus() != Booking.Status.PAID) {
+                hasNewlyPaidBooking = true;
+            }
             b.setStatus(Booking.Status.PAID);
             if (b.getPaymentMethod() == null || b.getPaymentMethod().isBlank()) {
                 b.setPaymentMethod(paymentMethod != null ? paymentMethod : "CASH");
@@ -216,6 +237,16 @@ public class BookingService {
             Integer newPoints = currentPoints - pointsUsed + points;
             customer.setLoyaltyPoints(newPoints);
             customerRepo.save(customer);
+        }
+
+        // Gửi email vé cho khách sau khi thanh toán thành công.
+        // Không rollback thanh toán nếu gửi mail thất bại.
+        if (hasNewlyPaidBooking && customer != null && customer.getUser() != null) {
+            try {
+                ticketEmailService.sendPaidTicketEmail(updatedBookings);
+            } catch (Exception ex) {
+                log.warn("Không thể gửi email vé cho txnRef={}: {}", txnRef, ex.getMessage());
+            }
         }
         
         return updatedBookings;
@@ -271,16 +302,24 @@ public class BookingService {
         // Lấy giá vé từ showtime (hoặc dùng mặc định nếu null)
         double basePrice = showtime.getPrice() != null ? showtime.getPrice() : 95000.0;
 
+        List<Seat> selectedSeats = seatIds.stream()
+                .map(seatId -> seatRepo.findById(seatId)
+                        .orElseThrow(() -> new IllegalArgumentException("Seat not found: " + seatId)))
+                .collect(Collectors.toList());
+
+        for (Seat seat : selectedSeats) {
+            if (!seat.getRoom().getRoomId().equals(showtime.getRoom().getRoomId())) {
+                throw new IllegalStateException("Seat not in showtime room");
+            }
+        }
+
+        validateSeatSelectionRules(showtimeId, showtime, selectedSeats);
+
         List<Booking> list = new ArrayList<>();
 
-        for (Long seatId : seatIds) {
-            Seat seat = seatRepo.findById(seatId)
-                    .orElseThrow(() -> new IllegalArgumentException("Seat not found: " + seatId));
+        for (Seat seat : selectedSeats) {
 
-            if (!seat.getRoom().getRoomId().equals(showtime.getRoom().getRoomId()))
-                throw new IllegalStateException("Seat not in showtime room");
-
-            if (bookingRepo.existsByShowtime_ShowtimeIdAndSeat_SeatId(showtimeId, seatId))
+            if (bookingRepo.existsByShowtime_ShowtimeIdAndSeat_SeatId(showtimeId, seat.getSeatId()))
                 throw new IllegalStateException("Seat already booked: " + seat.getSeatNumber());
 
             seat.setBooking(true);
@@ -315,6 +354,78 @@ public class BookingService {
             default:
                 return basePrice; // Giá cơ bản
         }
+    }
+
+    private void validateSeatSelectionRules(Long showtimeId, Showtime showtime, List<Seat> selectedSeats) {
+        if (selectedSeats == null || selectedSeats.isEmpty()) {
+            throw new IllegalStateException("Bạn chưa chọn ghế.");
+        }
+
+        if (selectedSeats.size() > 5) {
+            throw new IllegalStateException("Mỗi lần đặt chỉ tối đa 5 ghế. Vui lòng bỏ bớt ghế.");
+        }
+
+        Set<Long> uniqueSeatIds = selectedSeats.stream().map(Seat::getSeatId).collect(Collectors.toSet());
+        if (uniqueSeatIds.size() != selectedSeats.size()) {
+            throw new IllegalStateException("Danh sách ghế không hợp lệ (trùng ghế).");
+        }
+
+        Set<String> rowLabels = selectedSeats.stream()
+                .map(this::extractSeatRow)
+                .collect(Collectors.toSet());
+        if (rowLabels.size() != 1) {
+            throw new IllegalStateException("Bạn chỉ có thể chọn ghế trong cùng một hàng.");
+        }
+
+        List<Integer> selectedOrders = selectedSeats.stream()
+                .map(this::extractSeatOrder)
+                .sorted()
+                .collect(Collectors.toList());
+
+        for (int i = 1; i < selectedOrders.size(); i++) {
+            if (selectedOrders.get(i) - selectedOrders.get(i - 1) != 1) {
+                throw new IllegalStateException("Ghế cần liền kề nhau (ví dụ D1-D2 hoặc D2-D3).");
+            }
+        }
+
+        String rowLabel = rowLabels.iterator().next();
+        Set<Integer> selectedOrderSet = new HashSet<>(selectedOrders);
+
+        Set<Integer> bookedOrdersInRow = seatRepo.findByRoom_RoomId(showtime.getRoom().getRoomId()).stream()
+                .filter(seat -> rowLabel.equals(extractSeatRow(seat)))
+                .filter(seat -> bookingRepo.existsByShowtime_ShowtimeIdAndSeat_SeatId(showtimeId, seat.getSeatId()))
+                .map(this::extractSeatOrder)
+                .collect(Collectors.toSet());
+
+        for (Integer bookedOrder : bookedOrdersInRow) {
+            for (Integer selectedOrder : selectedOrderSet) {
+                if (Math.abs(bookedOrder - selectedOrder) == 2) {
+                    int middle = (bookedOrder + selectedOrder) / 2;
+                    if (!bookedOrdersInRow.contains(middle) && !selectedOrderSet.contains(middle)) {
+                        throw new IllegalStateException(
+                                "Không thể để trống 1 ghế lẻ giữa ghế đã đặt và ghế bạn chọn.");
+                    }
+                }
+            }
+        }
+    }
+
+    private String extractSeatRow(Seat seat) {
+        String seatNumber = seat != null && seat.getSeatNumber() != null ? seat.getSeatNumber().trim() : "";
+        Matcher matcher = SEAT_PATTERN.matcher(seatNumber);
+        if (!matcher.find()) {
+            throw new IllegalStateException("Định dạng số ghế không hợp lệ: " + seatNumber);
+        }
+        return matcher.group(1).toUpperCase();
+    }
+
+    private int extractSeatOrder(Seat seat) {
+        String seatNumber = seat != null && seat.getSeatNumber() != null ? seat.getSeatNumber().trim() : "";
+        Matcher matcher = SEAT_PATTERN.matcher(seatNumber);
+        if (!matcher.find()) {
+            throw new IllegalStateException("Định dạng số ghế không hợp lệ: " + seatNumber);
+        }
+        return Integer.parseInt(matcher.group(2));
     }
 
     // Dùng điểm để giảm giá trước khi thanh toán
