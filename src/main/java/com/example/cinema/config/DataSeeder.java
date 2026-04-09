@@ -355,22 +355,22 @@ public class DataSeeder {
             // Rooms
             Room r1 = new Room();
             r1.setRoomName("Room 1");
-            r1.setCapacity(50);
+            r1.setCapacity(128);
             r1.setRoomType("2D");
 
             Room r2 = new Room();
             r2.setRoomName("Room 2");
-            r2.setCapacity(50);
+            r2.setCapacity(128);
             r2.setRoomType("3D");
 
             Room r3 = new Room();
             r3.setRoomName("Room 3");
-            r3.setCapacity(50);
+            r3.setCapacity(128);
             r3.setRoomType("2D");
 
             Room r4 = new Room();
             r4.setRoomName("Room 4");
-            r4.setCapacity(60);
+            r4.setCapacity(144);
             r4.setRoomType("IMAX");
 
             roomRepo.saveAll(List.of(r1, r2, r3, r4));
@@ -589,28 +589,31 @@ public class DataSeeder {
 
     // Ghế tự động (NORMAL, VIP, SWEETBOX)
     private void generateSeats(Room room, SeatRepository seatRepo, boolean includeSweetbox) {
-        String[] rows = { "A", "B", "C", "D", "E" };
+        String[] normalRows = { "A", "B", "C", "D", "E", "F", "G", "H" };
 
-        for (String row : rows) {
-            for (int col = 1; col <= 10; col++) {
+        for (String row : normalRows) {
+            for (int col = 1; col <= 16; col++) {
                 Seat seat = new Seat();
                 seat.setSeatNumber(row + col);
                 seat.setBooking(false);
                 seat.setRoom(room);
 
-                if (row.equals("C"))
-                    seat.setSeatType(Seat.SeatType.VIP);
-                else
+                // 3 hàng đầu (A, B, C) là ghế thường; các hàng còn lại là VIP
+                if (row.equals("A") || row.equals("B") || row.equals("C")) {
                     seat.setSeatType(Seat.SeatType.NORMAL);
+                } else {
+                    seat.setSeatType(Seat.SeatType.VIP);
+                }
 
                 seatRepo.save(seat);
             }
         }
 
         if (includeSweetbox) {
-            for (int col = 1; col <= 10; col += 2) {
+            // Row I: 8 ghế đôi => 16 chỗ, tổng capacity phòng = 128 + 16 = 144
+            for (int col = 1; col <= 16; col += 2) {
                 Seat seat = new Seat();
-                seat.setSeatNumber("F" + col + "-" + (col + 1));
+                seat.setSeatNumber("I" + col + "-" + (col + 1));
                 seat.setBooking(false);
                 seat.setRoom(room);
                 seat.setSeatType(Seat.SeatType.SWEETBOX);

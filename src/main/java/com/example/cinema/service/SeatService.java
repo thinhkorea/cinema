@@ -69,7 +69,7 @@ public class SeatService {
                 .collect(Collectors.toList());
     }
 
-    // Initialize seats for a room (10 rows x 10 columns)
+    // Initialize seats for a room (128 standard seats, optional sweetbox to 144)
     public void initializeSeatsForRoom(Room room) {
         // Check if seats already exist for this room
         List<Seat> existingSeats = seatRepo.findByRoom_RoomId(room.getRoomId());
@@ -77,18 +77,33 @@ public class SeatService {
             return; // Seats already exist
         }
 
-        // Create seats: A-J rows, 1-10 columns
+        // Create seats: A-H rows, 1-16 columns
         List<Seat> seatsToCreate = new ArrayList<>();
-        String[] rows = {"A", "B", "C", "D", "E", "F", "G", "H", "I", "J"};
+        String[] rows = {"A", "B", "C", "D", "E", "F", "G", "H"};
 
         for (String row : rows) {
-            for (int col = 1; col <= 10; col++) {
+            for (int col = 1; col <= 16; col++) {
                 Seat seat = new Seat();
                 seat.setRoom(room);
                 seat.setSeatNumber(row + col);
-                seat.setSeatType(Seat.SeatType.NORMAL); // Default to NORMAL
+                // 3 hàng đầu (A, B, C) là NORMAL; các hàng còn lại là VIP
+                seat.setSeatType((row.equals("A") || row.equals("B") || row.equals("C"))
+                        ? Seat.SeatType.NORMAL
+                        : Seat.SeatType.VIP);
                 seat.setBooking(false);
                 seatsToCreate.add(seat);
+            }
+        }
+
+        // Nếu phòng có capacity >= 144 thì bổ sung 8 ghế đôi (row I)
+        if (room.getCapacity() != null && room.getCapacity() >= 144) {
+            for (int col = 1; col <= 16; col += 2) {
+                Seat sweetbox = new Seat();
+                sweetbox.setRoom(room);
+                sweetbox.setSeatNumber("I" + col + "-" + (col + 1));
+                sweetbox.setSeatType(Seat.SeatType.SWEETBOX);
+                sweetbox.setBooking(false);
+                seatsToCreate.add(sweetbox);
             }
         }
 

@@ -6,10 +6,12 @@ import com.example.cinema.domain.User;
 import com.example.cinema.dto.LoginRequest;
 import com.example.cinema.dto.LoginResponse;
 import com.example.cinema.dto.RegisterRequest;
+import com.example.cinema.dto.VerifyOtpRequest;
 import com.example.cinema.repository.CustomerRepository;
 import com.example.cinema.repository.StaffRepository;
 import com.example.cinema.repository.UserRepository;
 import com.example.cinema.security.JwtUtil;
+import com.example.cinema.service.RegistrationOtpService;
 
 import jakarta.transaction.Transactional;
 
@@ -29,14 +31,17 @@ public class AuthController {
     private final JwtUtil jwtUtil;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final RegistrationOtpService registrationOtpService;
     private CustomerRepository customerRepository;
     private StaffRepository staffRepository;
 
     public AuthController(JwtUtil jwtUtil, UserRepository userRepository, PasswordEncoder passwordEncoder,
+            RegistrationOtpService registrationOtpService,
             CustomerRepository customerRepository, StaffRepository staffRepository) {
         this.jwtUtil = jwtUtil;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.registrationOtpService = registrationOtpService;
         this.customerRepository = customerRepository;
         this.staffRepository = staffRepository;
     }
@@ -69,48 +74,41 @@ public class AuthController {
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody RegisterRequest req) {
         try {
-            if (req.getPassword() == null || req.getPassword().trim().isEmpty() ||
-                    req.getFullName() == null || req.getFullName().trim().isEmpty() ||
-                    req.getEmail() == null || req.getEmail().trim().isEmpty() ||
-                    req.getPhone() == null || req.getPhone().trim().isEmpty()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Thiếu thông tin bắt buộc!"));
-            }
+            registrationOtpService.sendOtp(req);
 
-            if (userRepository.existsByEmail(req.getEmail())) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Email đã tồn tại!"));
-            }
+            return ResponseEntity.ok(Map.of(
+                    "message", "OTP đã được gửi về email. Vui lòng xác thực để hoàn tất đăng ký."));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
 
-            if (userRepository.existsByPhone(req.getPhone())) {
-                return ResponseEntity.badRequest().body(Map.of("error", "Số điện thoại đã tồn tại!"));
-            }
+    @PostMapping("/register/send-otp")
+    public ResponseEntity<?> sendRegisterOtp(@RequestBody RegisterRequest req) {
+        try {
+            registrationOtpService.sendOtp(req);
+            return ResponseEntity.ok(Map.of("message", "OTP đã được gửi về email."));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
 
-            // Tạo User (chung cho mọi loại tài khoản)
-            User user = new User();
-            user.setEmail(req.getEmail());
-            user.setPhone(req.getPhone());
-            user.setPassword(passwordEncoder.encode(req.getPassword()));
-            user.setFullName(req.getFullName());
-            user.setRole(User.Role.CUSTOMER);
-            userRepository.save(user);
-
-            // Tạo Customer riêng
-            Customer customer = new Customer();
-            customer.setUser(user);
-            customer.setAddress(req.getAddress());
-            if (req.getGender() != null) {
-                try {
-                    customer.setGender(Customer.Gender.valueOf(req.getGender().toUpperCase()));
-                } catch (IllegalArgumentException e) {
-                    customer.setGender(Customer.Gender.MALE);
-                }
-            }
-            customerRepository.save(customer);
-
+    @PostMapping("/register/verify-otp")
+    public ResponseEntity<?> verifyRegisterOtp(@RequestBody VerifyOtpRequest req) {
+        try {
+            User user = registrationOtpService.verifyOtpAndRegister(req);
             return ResponseEntity.ok(Map.of(
                     "message", "Đăng ký thành công!",
                     "username", user.getEmail(),
                     "role", user.getRole().name()));
-
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             e.printStackTrace();
             return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));

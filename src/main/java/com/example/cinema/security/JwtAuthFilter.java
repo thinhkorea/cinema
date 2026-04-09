@@ -38,10 +38,17 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
         String method = request.getMethod();
 
-        // Cho phép ONLY login, register và register-admin bỏ qua filter
-        if (path.equals("/api/auth/login") || 
-            path.equals("/api/auth/register") || 
-            path.equals("/api/auth/register-admin")) {
+        // Các endpoint đăng nhập/đăng ký public không yêu cầu JWT
+        if (path.equals("/api/auth/login") ||
+                path.equals("/api/auth/register") ||
+                path.equals("/api/auth/register-admin") ||
+                path.equals("/api/auth/register/send-otp") ||
+                path.equals("/api/auth/register/verify-otp")) {
+            return true;
+        }
+
+        // Preflight CORS luôn cho qua
+        if ("OPTIONS".equals(method)) {
             return true;
         }
         
