@@ -12,10 +12,14 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.time.DayOfWeek;
 
 @RestController
 @RequestMapping("/api/showtimes")
 public class ShowtimeController {
+
+    private static final double WEEKDAY_PRICE = 65000.0;
+    private static final double WEEKEND_PRICE = 80000.0;
 
     private final ShowtimeRepository showtimeRepository;
     private final MovieRepository movieRepository;
@@ -69,7 +73,7 @@ public class ShowtimeController {
         showtime.setRoom(room);
         showtime.setStartTime(req.getStartTime());
         showtime.setEndTime(req.getEndTime());
-        showtime.setPrice(req.getPrice());
+        showtime.setPrice(resolvePrice(req));
 
         Showtime saved = showtimeRepository.save(showtime);
         return ResponseEntity.ok(saved);
@@ -89,7 +93,7 @@ public class ShowtimeController {
                     existing.setRoom(room);
                     existing.setStartTime(req.getStartTime());
                     existing.setEndTime(req.getEndTime());
-                    existing.setPrice(req.getPrice());
+                    existing.setPrice(resolvePrice(req));
 
                     Showtime updated = showtimeRepository.save(existing);
                     return ResponseEntity.ok(updated);
@@ -106,5 +110,19 @@ public class ShowtimeController {
         } else {
             return ResponseEntity.notFound().build();
         }
+    }
+
+    private Double resolvePrice(ShowtimeRequest req) {
+        if (req.getPrice() != null && req.getPrice() > 0) {
+            return req.getPrice();
+        }
+
+        if (req.getStartTime() == null) {
+            return WEEKDAY_PRICE;
+        }
+
+        DayOfWeek day = req.getStartTime().getDayOfWeek();
+        boolean isWeekday = day.getValue() >= DayOfWeek.MONDAY.getValue() && day.getValue() <= DayOfWeek.THURSDAY.getValue();
+        return isWeekday ? WEEKDAY_PRICE : WEEKEND_PRICE;
     }
 }
