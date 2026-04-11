@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.time.LocalDateTime;
+import java.util.concurrent.CompletableFuture;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -239,14 +240,15 @@ public class BookingService {
             customerRepo.save(customer);
         }
 
-        // Gửi email vé cho khách sau khi thanh toán thành công.
-        // Không rollback thanh toán nếu gửi mail thất bại.
+        // Gửi email vé bất đồng bộ để tránh làm chậm response xác nhận thanh toán.
         if (hasNewlyPaidBooking && customer != null && customer.getUser() != null) {
-            try {
-                ticketEmailService.sendPaidTicketEmail(updatedBookings);
-            } catch (Exception ex) {
-                log.warn("Không thể gửi email vé cho txnRef={}: {}", txnRef, ex.getMessage());
-            }
+            CompletableFuture.runAsync(() -> {
+                try {
+                    ticketEmailService.sendPaidTicketEmail(updatedBookings);
+                } catch (Exception ex) {
+                    log.warn("Không thể gửi email vé cho txnRef={}: {}", txnRef, ex.getMessage());
+                }
+            });
         }
         
         return updatedBookings;
@@ -294,10 +296,8 @@ public class BookingService {
         Showtime showtime = showtimeRepo.findById(showtimeId)
                 .orElseThrow(() -> new IllegalArgumentException("Showtime not found"));
 
-        // Tìm khách hàng
-        Customer customer = customerRepo.findByUser_Email(customerUsername)
-                .orElseThrow(
-                        () -> new IllegalArgumentException("Customer not found with username: " + customerUsername));
+        // Tìm khách hàng theo principal đăng nhập (email/phone) và fallback theo userId.
+        Customer customer = resolveCustomerByPrincipal(customerUsername);
 
         // Lấy giá vé từ showtime (hoặc dùng mặc định nếu null)
         double basePrice = showtime.getPrice() != null ? showtime.getPrice() : 95000.0;
@@ -343,6 +343,26 @@ public class BookingService {
         return bookingRepo.saveAll(list);
     }
 
+    private Customer resolveCustomerByPrincipal(String principal) {
+        if (principal == null || principal.isBlank()) {
+            throw new IllegalArgumentException("Không xác định được người dùng đăng nhập.");
+        }
+
+        Optional<Customer> customerByEmail = customerRepo.findByUser_Email(principal);
+        if (customerByEmail.isPresent()) {
+            return customerByEmail.get();
+        }
+
+        User user = userRepository.findByEmailOrPhone(principal, principal);
+        if (user == null) {
+            throw new IllegalArgumentException("Không tìm thấy user đăng nhập: " + principal);
+        }
+
+        return customerRepo.findByUserUserId(user.getUserId())
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Tài khoản chưa có hồ sơ khách hàng. Vui lòng cập nhật hồ sơ trước khi đặt vé."));
+    }
+
     // Tính giá vé dựa trên loại ghế
     private double calculateSeatPrice(double basePrice, Seat.SeatType seatType) {
         switch (seatType) {
@@ -378,7 +398,8 @@ public class BookingService {
         }
 
         List<Integer> selectedOrders = selectedSeats.stream()
-                .map(this::extractSeatOrder)
+            .flatMap(seat -> extractSeatOrders(seat).stream())
+            .distinct()
                 .sorted()
                 .collect(Collectors.toList());
 
@@ -394,7 +415,7 @@ public class BookingService {
         Set<Integer> bookedOrdersInRow = seatRepo.findByRoom_RoomId(showtime.getRoom().getRoomId()).stream()
                 .filter(seat -> rowLabel.equals(extractSeatRow(seat)))
                 .filter(seat -> bookingRepo.existsByShowtime_ShowtimeIdAndSeat_SeatId(showtimeId, seat.getSeatId()))
-                .map(this::extractSeatOrder)
+            .flatMap(seat -> extractSeatOrders(seat).stream())
                 .collect(Collectors.toSet());
 
         for (Integer bookedOrder : bookedOrdersInRow) {
@@ -419,13 +440,45 @@ public class BookingService {
         return matcher.group(1).toUpperCase();
     }
 
-    private int extractSeatOrder(Seat seat) {
+    // private int extractSeatOrder(Seat seat) {
+    //     String seatNumber = seat != null && seat.getSeatNumber() != null ? seat.getSeatNumber().trim() : "";
+    //     Matcher matcher = SEAT_PATTERN.matcher(seatNumber);
+    //     if (!matcher.find()) {
+    //         throw new IllegalStateException("Định dạng số ghế không hợp lệ: " + seatNumber);
+    //     }
+    //     return Integer.parseInt(matcher.group(2));
+    // }
+
+    private List<Integer> extractSeatOrders(Seat seat) {
         String seatNumber = seat != null && seat.getSeatNumber() != null ? seat.getSeatNumber().trim() : "";
-        Matcher matcher = SEAT_PATTERN.matcher(seatNumber);
-        if (!matcher.find()) {
+
+        Matcher singleSeatMatcher = SEAT_PATTERN.matcher(seatNumber);
+        if (!seatNumber.contains("-")) {
+            if (!singleSeatMatcher.find()) {
+                throw new IllegalStateException("Định dạng số ghế không hợp lệ: " + seatNumber);
+            }
+            return List.of(Integer.parseInt(singleSeatMatcher.group(2)));
+        }
+
+        // Hỗ trợ ghế dải như F1-2, F11-12 để validation liền kề/ghế lẻ chính xác.
+        Matcher rangeSeatMatcher = Pattern.compile("^[A-Za-z]+(\\d+)-(\\d+)$").matcher(seatNumber);
+        if (!rangeSeatMatcher.find()) {
             throw new IllegalStateException("Định dạng số ghế không hợp lệ: " + seatNumber);
         }
-        return Integer.parseInt(matcher.group(2));
+
+        int start = Integer.parseInt(rangeSeatMatcher.group(1));
+        int end = Integer.parseInt(rangeSeatMatcher.group(2));
+        if (end < start) {
+            int temp = start;
+            start = end;
+            end = temp;
+        }
+
+        List<Integer> orders = new ArrayList<>();
+        for (int order = start; order <= end; order++) {
+            orders.add(order);
+        }
+        return orders;
     }
 
     // Dùng điểm để giảm giá trước khi thanh toán

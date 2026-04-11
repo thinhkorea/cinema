@@ -1,4 +1,4 @@
-package com.example.cinema.controller.staff;
+package com.example.cinema.controller;
 
 import com.example.cinema.dto.SeatStatusDTO;
 import com.example.cinema.service.SeatService;

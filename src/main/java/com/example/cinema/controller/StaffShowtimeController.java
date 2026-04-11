@@ -1,4 +1,4 @@
-package com.example.cinema.controller.staff;
+package com.example.cinema.controller;
 
 import com.example.cinema.domain.Movie;
 import com.example.cinema.domain.Showtime;

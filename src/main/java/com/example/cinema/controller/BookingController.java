@@ -217,6 +217,8 @@ public class BookingController {
             return ResponseEntity.ok(Map.of(
                     "message", "Đã tạo " + bookings.size() + " booking, chờ thanh toán!",
                     "txnRef", txnRef));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             e.printStackTrace();
             return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
