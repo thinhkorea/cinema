@@ -1,11 +1,13 @@
 package com.example.cinema.dto;
 
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 
 @Data
 @AllArgsConstructor
-public class LoginResponse {
+@Builder
+public class LoginResponseDTO {
     private String token;
     private String message;
     private String role;

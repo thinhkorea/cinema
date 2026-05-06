@@ -3,10 +3,10 @@ package com.example.cinema.controller;
 import com.example.cinema.domain.Customer;
 import com.example.cinema.domain.Staff;
 import com.example.cinema.domain.User;
-import com.example.cinema.dto.LoginRequest;
-import com.example.cinema.dto.LoginResponse;
-import com.example.cinema.dto.RegisterRequest;
-import com.example.cinema.dto.VerifyOtpRequest;
+import com.example.cinema.dto.LoginRequestDTO;
+import com.example.cinema.dto.LoginResponseDTO;
+import com.example.cinema.dto.RegisterRequestDTO;
+import com.example.cinema.dto.VerifyOtpRequestDTO;
 import com.example.cinema.repository.CustomerRepository;
 import com.example.cinema.repository.StaffRepository;
 import com.example.cinema.repository.UserRepository;
@@ -47,18 +47,18 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestBody LoginRequest req) {
+    public ResponseEntity<?> login(@RequestBody LoginRequestDTO req) {
         String identifier = req.getLoginIdentifier();
         if (identifier == null || identifier.isBlank()) {
-            return ResponseEntity.badRequest().body(new LoginResponse(null, "Missing identifier", null, null));
+            return ResponseEntity.badRequest().body(LoginResponseDTO.builder().token(null).message("Missing identifier").role(null).userId(null).build());
         }
 
         User user = userRepository.findByEmailOrPhone(identifier, identifier);
         if (user == null || !passwordEncoder.matches(req.getPassword(), user.getPassword())) {
-            return ResponseEntity.badRequest().body(new LoginResponse(null, "Bad credentials", null, null));
+            return ResponseEntity.badRequest().body(LoginResponseDTO.builder().token(null).message("Bad credentials").role(null).userId(null).build());
         }
         if (!user.getIsActive()) {
-            return ResponseEntity.badRequest().body(new LoginResponse(null, "Account is locked", null, null));
+            return ResponseEntity.badRequest().body(LoginResponseDTO.builder().token(null).message("Account is locked").role(null).userId(null).build());
         }
         
         // Tạo token mới
@@ -68,11 +68,11 @@ public class AuthController {
         user.setCurrentSessionToken(token);
         userRepository.save(user);
         
-        return ResponseEntity.ok(new LoginResponse(token, "OK", user.getRole().name(), user.getUserId()));
+        return ResponseEntity.ok(LoginResponseDTO.builder().token(token).message("OK").role(user.getRole().name()).userId(user.getUserId()).build());
     }
 
     @PostMapping("/register")
-    public ResponseEntity<?> register(@RequestBody RegisterRequest req) {
+    public ResponseEntity<?> register(@RequestBody RegisterRequestDTO req) {
         try {
             registrationOtpService.sendOtp(req);
 
@@ -87,7 +87,7 @@ public class AuthController {
     }
 
     @PostMapping("/register/send-otp")
-    public ResponseEntity<?> sendRegisterOtp(@RequestBody RegisterRequest req) {
+    public ResponseEntity<?> sendRegisterOtp(@RequestBody RegisterRequestDTO req) {
         try {
             registrationOtpService.sendOtp(req);
             return ResponseEntity.ok(Map.of("message", "OTP đã được gửi về email."));
@@ -100,7 +100,7 @@ public class AuthController {
     }
 
     @PostMapping("/register/verify-otp")
-    public ResponseEntity<?> verifyRegisterOtp(@RequestBody VerifyOtpRequest req) {
+    public ResponseEntity<?> verifyRegisterOtp(@RequestBody VerifyOtpRequestDTO req) {
         try {
             User user = registrationOtpService.verifyOtpAndRegister(req);
             return ResponseEntity.ok(Map.of(
@@ -164,7 +164,7 @@ public class AuthController {
     }
 
     @PostMapping("/register-admin")
-    public ResponseEntity<?> registerAdmin(@RequestBody RegisterRequest req) {
+    public ResponseEntity<?> registerAdmin(@RequestBody RegisterRequestDTO req) {
         if (req.getEmail() == null || req.getEmail().trim().isEmpty() ||
                 req.getPassword() == null || req.getPassword().trim().isEmpty() ||
                 req.getFullName() == null || req.getFullName().trim().isEmpty()) {
@@ -294,7 +294,7 @@ public class AuthController {
     }
 
     @PostMapping("/register-staff")
-    public ResponseEntity<?> registerStaff(@RequestBody RegisterRequest req) {
+    public ResponseEntity<?> registerStaff(@RequestBody RegisterRequestDTO req) {
         // Kiểm tra email / phone / CCCD trùng
         if (req.getEmail() == null || req.getEmail().isBlank()) {
             return ResponseEntity.badRequest().body("Email là bắt buộc!");

@@ -1,9 +1,11 @@
 package com.example.cinema.dto;
 
+import lombok.Builder;
 import lombok.Data;
 
 @Data
-public class LoginRequest {
+@Builder
+public class LoginRequestDTO {
     private String identifier;
     private String username;
     private String password;

@@ -1,6 +1,6 @@
 package com.example.cinema.controller;
 
-import com.example.cinema.dto.MovieReviewRequest;
+import com.example.cinema.dto.MovieReviewRequestDTO;
 import com.example.cinema.service.MovieReviewService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -27,9 +27,9 @@ public class MovieReviewController {
     }
 
     @PostMapping
-    public ResponseEntity<?> createReview(
+        public ResponseEntity<?> createReview(
             @PathVariable Long movieId,
-            @RequestBody MovieReviewRequest request,
+            @RequestBody MovieReviewRequestDTO request,
             Authentication authentication) {
         try {
             if (authentication == null) {

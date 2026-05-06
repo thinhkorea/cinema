@@ -7,7 +7,8 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class RedeemPointsRequest {
+public class VoucherRedeemRequestDTO {
     private String txnRef;
-    private Integer pointsToUse;  // Số điểm khách muốn dùng
+    private String code;
+    private Double totalAmount;
 }

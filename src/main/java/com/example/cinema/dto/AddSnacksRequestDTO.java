@@ -1,13 +1,17 @@
 package com.example.cinema.dto;
 
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+
+import java.util.List;
 
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class SnackItemRequest {
-    private Long snackId;
-    private Integer quantity;
+@Builder
+public class AddSnacksRequestDTO {
+    private String txnRef;
+    private List<SnackItemRequestDTO> snacks;
 }

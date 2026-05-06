@@ -8,10 +8,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.jdbc.core.JdbcTemplate;
 
-import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @Configuration
@@ -19,6 +21,9 @@ public class DataSeeder {
 
     @Value("${app.seed.enabled:true}")
     private boolean seedEnabled;
+
+    @Value("${app.seed.reset:false}")
+    private boolean seedReset;
 
     @Bean
     CommandLineRunner initData(
@@ -31,24 +36,54 @@ public class DataSeeder {
             ShowtimeRepository showtimeRepo,
             BookingRepository bookingRepo,
             SnackRepository snackRepo,
-            BookingSnackRepository bookingSnackRepo) {
+            BookingSnackRepository bookingSnackRepo,
+            IngredientRepository ingredientRepo,
+            IngredientBatchRepository ingredientBatchRepo,
+            IngredientStockMovementRepository ingredientStockMovementRepo,
+            SnackRecipeItemRepository snackRecipeItemRepo,
+            SupplyItemRepository supplyItemRepo,
+            JdbcTemplate jdbcTemplate) {
         return args -> {
 
             if (!seedEnabled) {
                 System.out.println("DataSeeder skipped (app.seed.enabled=false)");
                 return;
             }
-            // Xóa dữ liệu cũ
-            bookingSnackRepo.deleteAll();
-            bookingRepo.deleteAll();
-            showtimeRepo.deleteAll();
-            seatRepo.deleteAll();
-            roomRepo.deleteAll();
-            movieRepo.deleteAll();
-            snackRepo.deleteAll();
-            staffRepo.deleteAll();
-            customerRepo.deleteAll();
-            userRepo.deleteAll();
+
+            if (seedReset) {
+                // Xóa dữ liệu cũ khi chủ động bật chế độ reset
+                bookingSnackRepo.deleteAll();
+                bookingRepo.deleteAll();
+                showtimeRepo.deleteAll();
+                seatRepo.deleteAll();
+                roomRepo.deleteAll();
+                movieRepo.deleteAll();
+                ingredientStockMovementRepo.deleteAll();
+                snackRecipeItemRepo.deleteAll();
+                ingredientBatchRepo.deleteAll();
+                ingredientRepo.deleteAll();
+                supplyItemRepo.deleteAll();
+                snackRepo.deleteAll();
+                staffRepo.deleteAll();
+                customerRepo.deleteAll();
+                userRepo.deleteAll();
+
+                resetIngredientAutoIncrement(jdbcTemplate);
+            } else if (userRepo.count() > 0 || movieRepo.count() > 0 || snackRepo.count() > 0) {
+                if (ingredientRepo.count() == 0) {
+                    resetIngredientAutoIncrement(jdbcTemplate);
+                    seedIngredientDataWithExistingSnacks(snackRepo, ingredientRepo, ingredientBatchRepo, snackRecipeItemRepo);
+                } else {
+                    System.out.println("Ingredient data already exists, skipping ingredient seed.");
+                }
+                if (supplyItemRepo.count() == 0) {
+                    seedSupplyData(supplyItemRepo);
+                } else {
+                    System.out.println("Supply data already exists, skipping supply seed.");
+                }
+                System.out.println("DataSeeder skipped core reseed to preserve existing data (set app.seed.reset=true to reseed all)");
+                return;
+            }
 
             // Users
             User admin = new User();
@@ -427,7 +462,6 @@ public class DataSeeder {
             comboGau.setDescription("1 Coke 32oz + 1 Bắp 2 Ngăn 64OZ Phô Mai + Caramel");
             comboGau.setPrice(119000.0);
             comboGau.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/PICCONNEW/CNS035_COMBO_GAU.png?rand=1723084117");
-            comboGau.setStock(100);
             comboGau.setCategory(Snack.SnackCategory.COMBO);
             comboGau.setAvailable(true);
 
@@ -436,7 +470,6 @@ public class DataSeeder {
             comboCoGau.setDescription("2 Coke 32oz + 1 Bắp 2 Ngăn 64OZ Phô Mai + Caramel");
             comboCoGau.setPrice(129000.0);
             comboCoGau.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/PICCONNEW/CNS036_COMBO_CO_GAU.png?rand=1723084117");
-            comboCoGau.setStock(100);
             comboCoGau.setCategory(Snack.SnackCategory.COMBO);
             comboCoGau.setAvailable(true);
 
@@ -445,7 +478,6 @@ public class DataSeeder {
             comboNhaGau.setDescription("4 Coke 22oz + 2 Bắp 2 Ngăn 64OZ Phô Mai + Caramel");
             comboNhaGau.setPrice(259000.0);
             comboNhaGau.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/PICCONNEW/CNS037_COMBO_NHA_GAU.png?rand=1723084117");
-            comboNhaGau.setStock(100);
             comboNhaGau.setCategory(Snack.SnackCategory.COMBO);
             comboNhaGau.setAvailable(true);
 
@@ -455,7 +487,6 @@ public class DataSeeder {
             dasani.setDescription("");
             dasani.setPrice(20000.0);
             dasani.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/HinhQuayconnew/dasani.png?rand=1731053064");
-            dasani.setStock(100);
             dasani.setCategory(Snack.SnackCategory.DRINK);
             dasani.setAvailable(true);
 
@@ -464,7 +495,6 @@ public class DataSeeder {
             nutriboost.setDescription("");
             nutriboost.setPrice(28000.0);
             nutriboost.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/HinhQuayconnew/NUTRI.png?rand=1719572506");
-            nutriboost.setStock(100);
             nutriboost.setCategory(Snack.SnackCategory.DRINK);
             nutriboost.setAvailable(true);
 
@@ -473,7 +503,6 @@ public class DataSeeder {
             teppy.setDescription("");
             teppy.setPrice(28000.0);
             teppy.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/HinhQuayconnew/TEPPY.png?rand=1719572506");
-            teppy.setStock(100);
             teppy.setCategory(Snack.SnackCategory.DRINK);
             teppy.setAvailable(true);
 
@@ -482,7 +511,6 @@ public class DataSeeder {
             cokeZero.setDescription("");
             cokeZero.setPrice(37000.0);
             cokeZero.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/HinhQuayconnew/COKE-ZERO.png?rand=1719573157");
-            cokeZero.setStock(100);
             cokeZero.setCategory(Snack.SnackCategory.DRINK);
             cokeZero.setAvailable(true);
 
@@ -491,7 +519,6 @@ public class DataSeeder {
             fanta.setDescription("");
             fanta.setPrice(37000.0);
             fanta.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/HinhQuayconnew/fanta.jpg?rand=1719572506");
-            fanta.setStock(100);
             fanta.setCategory(Snack.SnackCategory.DRINK);
             fanta.setAvailable(true);
 
@@ -500,7 +527,6 @@ public class DataSeeder {
             coke.setDescription("");
             coke.setPrice(37000.0);
             coke.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/HinhQuayconnew/coca.png?rand=1719572301");
-            coke.setStock(100);
             coke.setCategory(Snack.SnackCategory.DRINK);
             coke.setAvailable(true);
 
@@ -509,7 +535,6 @@ public class DataSeeder {
             sprite.setDescription("");
             sprite.setPrice(37000.0);
             sprite.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/HinhQuayconnew/sprite.png?rand=1719572953");
-            sprite.setStock(100);
             sprite.setCategory(Snack.SnackCategory.DRINK);
             sprite.setAvailable(true);
 
@@ -519,7 +544,6 @@ public class DataSeeder {
             snackThai.setDescription("");
             snackThai.setPrice(25000.0);
             snackThai.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/HinhQuayconnew/snack-que-thai.png?rand=1718957425");
-            snackThai.setStock(100);
             snackThai.setCategory(Snack.SnackCategory.SNACK);
             snackThai.setAvailable(true);
 
@@ -528,7 +552,6 @@ public class DataSeeder {
             laysStax.setDescription("");
             laysStax.setPrice(59000.0);
             laysStax.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/HinhQuayconnew/laystax.png?rand=1719632844");
-            laysStax.setStock(100);
             laysStax.setCategory(Snack.SnackCategory.SNACK);
             laysStax.setAvailable(true);
 
@@ -537,7 +560,6 @@ public class DataSeeder {
             pocaKhoaiTay.setDescription("");
             pocaKhoaiTay.setPrice(28000.0);
             pocaKhoaiTay.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/HinhQuayconnew/lays-khoai-tay.png?rand=1719572623");
-            pocaKhoaiTay.setStock(100);
             pocaKhoaiTay.setCategory(Snack.SnackCategory.SNACK);
             pocaKhoaiTay.setAvailable(true);
 
@@ -546,7 +568,6 @@ public class DataSeeder {
             snackPartyz.setDescription("");
             snackPartyz.setPrice(20000.0);
             snackPartyz.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/HinhQuayconnew/poca-partyz.png?rand=1719633509");
-            snackPartyz.setStock(100);
             snackPartyz.setCategory(Snack.SnackCategory.SNACK);
             snackPartyz.setAvailable(true);
 
@@ -555,9 +576,27 @@ public class DataSeeder {
             pocaWavy.setDescription("");
             pocaWavy.setPrice(28000.0);
             pocaWavy.setImageUrl("https://api-website.cinestar.com.vn/media/.thumbswysiwyg/pictures/HinhQuayconnew/lays-vi-bo_1_.png?rand=1719632844");
-            pocaWavy.setStock(100);
             pocaWavy.setCategory(Snack.SnackCategory.SNACK);
             pocaWavy.setAvailable(true);
+
+            // Combo va do pha che tai quay: khong theo ton kho thanh pham
+            setSnackWarehouse(comboGau, false, 0.0, 0.0);
+            setSnackWarehouse(comboCoGau, false, 0.0, 0.0);
+            setSnackWarehouse(comboNhaGau, false, 0.0, 0.0);
+            setSnackWarehouse(cokeZero, false, 0.0, 0.0);
+            setSnackWarehouse(fanta, false, 0.0, 0.0);
+            setSnackWarehouse(coke, false, 0.0, 0.0);
+            setSnackWarehouse(sprite, false, 0.0, 0.0);
+
+            // Do dong chai/dong goi: co theo ton kho thanh pham
+            setSnackWarehouse(dasani, true, 90.0, 25.0);
+            setSnackWarehouse(nutriboost, true, 70.0, 20.0);
+            setSnackWarehouse(teppy, true, 70.0, 20.0);
+            setSnackWarehouse(snackThai, true, 60.0, 20.0);
+            setSnackWarehouse(laysStax, true, 50.0, 15.0);
+            setSnackWarehouse(pocaKhoaiTay, true, 80.0, 25.0);
+            setSnackWarehouse(snackPartyz, true, 100.0, 30.0);
+            setSnackWarehouse(pocaWavy, true, 70.0, 20.0);
 
             // Save all snacks
             snackRepo.saveAll(List.of(
@@ -566,9 +605,197 @@ public class DataSeeder {
                 snackThai, laysStax, pocaKhoaiTay, snackPartyz, pocaWavy
             ));
 
+            seedIngredientAndRecipeData(
+                    ingredientRepo,
+                    ingredientBatchRepo,
+                    snackRecipeItemRepo,
+                    comboGau,
+                    comboCoGau,
+                    comboNhaGau,
+                    cokeZero,
+                    coke,
+                    sprite,
+                    fanta);
+                    seedSupplyData(supplyItemRepo);
+
             System.out.println("Seeded 15 snacks successfully!");
             System.out.println("Database seeded successfully!");
         };
+    }
+
+    private void seedIngredientAndRecipeData(
+            IngredientRepository ingredientRepo,
+            IngredientBatchRepository ingredientBatchRepo,
+            SnackRecipeItemRepository snackRecipeItemRepo,
+            Snack comboGau,
+            Snack comboCoGau,
+            Snack comboNhaGau,
+            Snack cokeZero,
+            Snack coke,
+            Snack sprite,
+            Snack fanta) {
+        System.out.println("Seeding ingredients, batches, and snack recipes...");
+
+        Ingredient ice = createIngredient("Đá viên", "bao", 10.0);
+        Ingredient cokeSyrup = createIngredient("Syrup Coke", "ml", 30000.0);
+        Ingredient spriteSyrup = createIngredient("Syrup Sprite", "ml", 25000.0);
+        Ingredient fantaSyrup = createIngredient("Syrup Fanta", "ml", 22000.0);
+        Ingredient cornKernel = createIngredient("Hạt bắp nổ", "gram", 12000.0);
+        Ingredient popcornOil = createIngredient("Dầu nổ bắp", "ml", 8000.0);
+        Ingredient sugar = createIngredient("Đường", "kg", 120.0);
+        Ingredient butterFlavor = createIngredient("Bơ nổ bắp", "gram", 5000.0);
+        Ingredient caramelPowder = createIngredient("Bột caramel", "gram", 4000.0);
+        Ingredient cheesePowder = createIngredient("Bột phô mai", "gram", 4000.0);
+
+        ingredientRepo.saveAll(List.of(
+            ice,
+            cokeSyrup,
+            spriteSyrup,
+            fantaSyrup,
+            cornKernel,
+            popcornOil,
+            sugar,
+            butterFlavor,
+            caramelPowder,
+            cheesePowder));
+
+        LocalDate today = LocalDate.now();
+        List<IngredientBatch> batches = new ArrayList<>();
+        // Da vien nhap moi ngay, han su dung rat ngan
+        batches.add(createBatch(ice, 10.0, 10.0, 45000.0, "Nhà cung cấp đá D", today.minusDays(1), today, "Đá giao theo ngày (hôm nay)"));
+        batches.add(createBatch(cokeSyrup, 30000.0, 30000.0, 0.8, "Coca-Cola VN", today.minusDays(10), today.plusMonths(6), "Syrup Coke"));
+        batches.add(createBatch(spriteSyrup, 25000.0, 25000.0, 0.8, "Coca-Cola VN", today.minusDays(10), today.plusMonths(6), "Syrup Sprite"));
+        batches.add(createBatch(fantaSyrup, 22000.0, 22000.0, 0.8, "Coca-Cola VN", today.minusDays(10), today.plusMonths(6), "Syrup Fanta"));
+        batches.add(createBatch(cornKernel, 12000.0, 12000.0, 0.04, "Nhà cung cấp bắp F", today.minusDays(12), today.plusMonths(4), "Hạt bắp cho máy nổ"));
+        batches.add(createBatch(popcornOil, 8000.0, 8000.0, 0.06, "Nhà cung cấp dầu G", today.minusDays(12), today.plusMonths(4), "Dầu nổ bắp"));
+        batches.add(createBatch(sugar, 120.0, 120.0, 18000.0, "Nhà cung cấp đường K", today.minusDays(6), today.plusMonths(6), "Đường dùng pha chế"));
+        batches.add(createBatch(butterFlavor, 5000.0, 5000.0, 0.12, "Nhà cung cấp bơ H", today.minusDays(12), today.plusMonths(4), "Bơ tạo mùi bắp"));
+        batches.add(createBatch(caramelPowder, 4000.0, 4000.0, 0.10, "Nhà cung cấp vị I", today.minusDays(8), today.plusMonths(5), "Bột caramel"));
+        batches.add(createBatch(cheesePowder, 4000.0, 4000.0, 0.10, "Nhà cung cấp vị I", today.minusDays(8), today.plusMonths(5), "Bột phô mai"));
+        ingredientBatchRepo.saveAll(batches);
+
+        List<SnackRecipeItem> recipeItems = new ArrayList<>();
+        recipeItems.add(createRecipeItem(coke, ice, 0.03));
+        recipeItems.add(createRecipeItem(coke, cokeSyrup, 90.0));
+
+        recipeItems.add(createRecipeItem(cokeZero, ice, 0.03));
+        recipeItems.add(createRecipeItem(cokeZero, cokeSyrup, 85.0));
+
+        recipeItems.add(createRecipeItem(sprite, ice, 0.03));
+        recipeItems.add(createRecipeItem(sprite, spriteSyrup, 90.0));
+
+        recipeItems.add(createRecipeItem(fanta, ice, 0.03));
+        recipeItems.add(createRecipeItem(fanta, fantaSyrup, 90.0));
+
+        // 1 bắp 2 ngăn 64oz vị phô mai + caramel cho combo
+        recipeItems.add(createRecipeItem(comboGau, ice, 0.03));
+        recipeItems.add(createRecipeItem(comboGau, cokeSyrup, 90.0));
+        recipeItems.add(createRecipeItem(comboGau, cornKernel, 160.0));
+        recipeItems.add(createRecipeItem(comboGau, popcornOil, 35.0));
+        recipeItems.add(createRecipeItem(comboGau, butterFlavor, 20.0));
+        recipeItems.add(createRecipeItem(comboGau, caramelPowder, 18.0));
+        recipeItems.add(createRecipeItem(comboGau, cheesePowder, 18.0));
+
+        // 2 coke + 1 bắp 2 ngăn
+        recipeItems.add(createRecipeItem(comboCoGau, ice, 0.06));
+        recipeItems.add(createRecipeItem(comboCoGau, cokeSyrup, 180.0));
+        recipeItems.add(createRecipeItem(comboCoGau, cornKernel, 160.0));
+        recipeItems.add(createRecipeItem(comboCoGau, popcornOil, 35.0));
+        recipeItems.add(createRecipeItem(comboCoGau, butterFlavor, 20.0));
+        recipeItems.add(createRecipeItem(comboCoGau, caramelPowder, 18.0));
+        recipeItems.add(createRecipeItem(comboCoGau, cheesePowder, 18.0));
+
+        // 4 coke + 2 bắp 2 ngăn
+        recipeItems.add(createRecipeItem(comboNhaGau, ice, 0.12));
+        recipeItems.add(createRecipeItem(comboNhaGau, cokeSyrup, 360.0));
+        recipeItems.add(createRecipeItem(comboNhaGau, cornKernel, 320.0));
+        recipeItems.add(createRecipeItem(comboNhaGau, popcornOil, 70.0));
+        recipeItems.add(createRecipeItem(comboNhaGau, butterFlavor, 40.0));
+        recipeItems.add(createRecipeItem(comboNhaGau, caramelPowder, 36.0));
+        recipeItems.add(createRecipeItem(comboNhaGau, cheesePowder, 36.0));
+
+        snackRecipeItemRepo.saveAll(recipeItems);
+        System.out.println("Seeded ingredients, batches, and snack recipes successfully!");
+    }
+
+    private void seedIngredientDataWithExistingSnacks(
+            SnackRepository snackRepo,
+            IngredientRepository ingredientRepo,
+            IngredientBatchRepository ingredientBatchRepo,
+            SnackRecipeItemRepository snackRecipeItemRepo) {
+        Snack coke = findSnackByName(snackRepo.findAll(), "Coke 32oz");
+        Snack cokeZero = findSnackByName(snackRepo.findAll(), "Coke Zero 32oz");
+        Snack sprite = findSnackByName(snackRepo.findAll(), "Sprite 32oz");
+        Snack fanta = findSnackByName(snackRepo.findAll(), "Fanta 32oz");
+        Snack comboGau = findSnackByName(snackRepo.findAll(), "Combo Gấu");
+        Snack comboCoGau = findSnackByName(snackRepo.findAll(), "Combo Có Gấu");
+        Snack comboNhaGau = findSnackByName(snackRepo.findAll(), "Combo Nhà Gấu");
+
+        if (coke == null || cokeZero == null || sprite == null || fanta == null
+                || comboGau == null || comboCoGau == null || comboNhaGau == null) {
+            System.out.println("Skip inventory seed: missing base snacks in database.");
+            return;
+        }
+
+        seedIngredientAndRecipeData(
+                ingredientRepo,
+                ingredientBatchRepo,
+                snackRecipeItemRepo,
+                comboGau,
+                comboCoGau,
+                comboNhaGau,
+                cokeZero,
+                coke,
+                sprite,
+                fanta);
+    }
+
+    private Snack findSnackByName(List<Snack> snacks, String snackName) {
+        for (Snack snack : snacks) {
+            if (snackName.equals(snack.getSnackName())) {
+                return snack;
+            }
+        }
+        return null;
+    }
+
+    private void resetIngredientAutoIncrement(JdbcTemplate jdbcTemplate) {
+        resetAutoIncrement(jdbcTemplate, "ingredient_stock_movements");
+        resetAutoIncrement(jdbcTemplate, "snack_recipe_items");
+        resetAutoIncrement(jdbcTemplate, "ingredient_batches");
+        resetAutoIncrement(jdbcTemplate, "ingredients");
+    }
+
+    private void resetAutoIncrement(JdbcTemplate jdbcTemplate, String tableName) {
+        jdbcTemplate.execute("ALTER TABLE " + tableName + " AUTO_INCREMENT = 1");
+    }
+
+    private void setSnackWarehouse(Snack snack, Boolean trackable, Double stock, Double reorderLevel) {
+        snack.setWarehouseTrackable(trackable);
+        snack.setWarehouseStock(stock);
+        snack.setWarehouseReorderLevel(reorderLevel);
+    }
+
+    private void seedSupplyData(SupplyItemRepository supplyItemRepo) {
+        System.out.println("Seeding supply items...");
+        SupplyItem cups = createSupplyItem("Ly giấy 32oz", "cái", 1200.0, 300.0);
+        SupplyItem lids = createSupplyItem("Nắp ly 32oz", "cái", 1200.0, 300.0);
+        SupplyItem straws = createSupplyItem("Ống hút", "cái", 1500.0, 400.0);
+        SupplyItem tissue = createSupplyItem("Khăn giấy", "gói", 180.0, 60.0);
+        SupplyItem carryBag = createSupplyItem("Túi mang đi", "cái", 600.0, 150.0);
+        SupplyItem popcornBucket = createSupplyItem("Hộp bắp 64oz", "cái", 500.0, 120.0);
+        supplyItemRepo.saveAll(List.of(cups, lids, straws, tissue, carryBag, popcornBucket));
+        System.out.println("Seeded supply items successfully!");
+    }
+
+    private SupplyItem createSupplyItem(String name, String unit, Double stock, Double reorderLevel) {
+        SupplyItem item = new SupplyItem();
+        item.setSupplyName(name);
+        item.setUnit(unit);
+        item.setStock(stock);
+        item.setReorderLevel(reorderLevel);
+        item.setActive(true);
+        return item;
     }
 
     private Movie createMovie(String title, Integer duration, String genre, String description, 
@@ -585,6 +812,44 @@ public class DataSeeder {
         movie.setAgeRating(ageRating);
         movie.setActors(actors);
         return movie;
+    }
+
+    private Ingredient createIngredient(String name, String unit, Double stock) {
+        Ingredient ingredient = new Ingredient();
+        ingredient.setIngredientName(name);
+        ingredient.setUnit(unit);
+        ingredient.setStock(stock);
+        ingredient.setActive(true);
+        return ingredient;
+    }
+
+    private IngredientBatch createBatch(
+            Ingredient ingredient,
+            Double quantityReceived,
+            Double quantityRemaining,
+            Double unitCost,
+            String supplier,
+            LocalDate productionDate,
+            LocalDate expiryDate,
+            String note) {
+        IngredientBatch batch = new IngredientBatch();
+        batch.setIngredient(ingredient);
+        batch.setQuantityReceived(quantityReceived);
+        batch.setQuantityRemaining(quantityRemaining);
+        batch.setUnitCost(unitCost);
+        batch.setSupplier(supplier);
+        batch.setProductionDate(productionDate);
+        batch.setExpiryDate(expiryDate);
+        batch.setNote(note);
+        return batch;
+    }
+
+    private SnackRecipeItem createRecipeItem(Snack snack, Ingredient ingredient, Double qtyPerSnack) {
+        SnackRecipeItem item = new SnackRecipeItem();
+        item.setSnack(snack);
+        item.setIngredient(ingredient);
+        item.setQuantityPerSnack(qtyPerSnack);
+        return item;
     }
 
     // Ghế tự động (NORMAL, VIP, SWEETBOX)

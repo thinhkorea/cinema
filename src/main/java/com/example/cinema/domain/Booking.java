@@ -52,6 +52,12 @@ public class Booking {
     @Column(columnDefinition = "INT DEFAULT 0")
     private Integer pointsUsed = 0;  // Điểm tích lũy được dùng
 
+    @Column(length = 60)
+    private String voucherCode;
+
+    @Column
+    private Double voucherDiscount = 0.0;
+
     @CreatedDate
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;

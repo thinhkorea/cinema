@@ -2,7 +2,7 @@ package com.example.cinema.service;
 
 import com.example.cinema.domain.Customer;
 import com.example.cinema.domain.User;
-import com.example.cinema.dto.RegisterRequest;
+import com.example.cinema.dto.RegisterRequestDTO;
 import com.example.cinema.repository.CustomerRepository;
 import com.example.cinema.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -17,7 +17,7 @@ public class AuthService {
     private final CustomerRepository customerRepository;
     private final PasswordEncoder passwordEncoder;
 
-    public void registerCustomer(RegisterRequest req) {
+    public void registerCustomer(RegisterRequestDTO req) {
         if (userRepository.existsByEmail(req.getEmail())) {
             throw new IllegalArgumentException("Email đã tồn tại!");
         }

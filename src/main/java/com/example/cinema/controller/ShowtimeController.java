@@ -3,7 +3,7 @@ package com.example.cinema.controller;
 import com.example.cinema.domain.Movie;
 import com.example.cinema.domain.Room;
 import com.example.cinema.domain.Showtime;
-import com.example.cinema.dto.ShowtimeRequest;
+import com.example.cinema.dto.ShowtimeRequestDTO;
 import com.example.cinema.repository.MovieRepository;
 import com.example.cinema.repository.RoomRepository;
 import com.example.cinema.repository.ShowtimeRepository;
@@ -59,7 +59,7 @@ public class ShowtimeController {
 
     // CREATE new showtime (fix lỗi Data integrity violation)
     @PostMapping
-    public ResponseEntity<?> createShowtime(@RequestBody ShowtimeRequest req) {
+    public ResponseEntity<?> createShowtime(@RequestBody ShowtimeRequestDTO req) {
         Movie movie = movieRepository.findById(req.getMovieId())
                 .orElseThrow(() -> new IllegalArgumentException("Movie not found"));
         Room room = roomRepository.findById(req.getRoomId())
@@ -81,7 +81,7 @@ public class ShowtimeController {
 
     // UPDATE existing showtime
     @PutMapping("/{id}")
-    public ResponseEntity<?> updateShowtime(@PathVariable Long id, @RequestBody ShowtimeRequest req) {
+    public ResponseEntity<?> updateShowtime(@PathVariable Long id, @RequestBody ShowtimeRequestDTO req) {
         return showtimeRepository.findById(id)
                 .map(existing -> {
                     Movie movie = movieRepository.findById(req.getMovieId())
@@ -112,7 +112,7 @@ public class ShowtimeController {
         }
     }
 
-    private Double resolvePrice(ShowtimeRequest req) {
+    private Double resolvePrice(ShowtimeRequestDTO req) {
         if (req.getPrice() != null && req.getPrice() > 0) {
             return req.getPrice();
         }

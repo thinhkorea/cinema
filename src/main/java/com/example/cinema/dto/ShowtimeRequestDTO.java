@@ -1,10 +1,12 @@
 package com.example.cinema.dto;
 
 import java.time.LocalDateTime;
+import lombok.Builder;
 import lombok.Data;
 
 @Data
-public class ShowtimeRequest {
+@Builder
+public class ShowtimeRequestDTO {
     private Long movieId;
     private Long roomId;
     private LocalDateTime startTime;

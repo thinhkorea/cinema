@@ -63,8 +63,14 @@ public class SeatService {
                     String status = booked ? booking.getStatus().name() : null;
                     Long bookingId = booked ? booking.getBookingId() : null;
 
-                    return new SeatStatusDTO(seat.getSeatId(), seat.getSeatNumber(), booked, status, bookingId,
-                            seat.getSeatType().name());
+                        return SeatStatusDTO.builder()
+                            .seatId(seat.getSeatId())
+                            .seatNumber(seat.getSeatNumber())
+                            .booked(booked)
+                            .status(status)
+                            .bookingId(bookingId)
+                            .seatType(seat.getSeatType().name())
+                            .build();
                 })
                 .collect(Collectors.toList());
     }

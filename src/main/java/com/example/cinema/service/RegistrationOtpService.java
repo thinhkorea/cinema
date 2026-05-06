@@ -3,8 +3,8 @@ package com.example.cinema.service;
 import com.example.cinema.domain.Customer;
 import com.example.cinema.domain.RegistrationOtp;
 import com.example.cinema.domain.User;
-import com.example.cinema.dto.RegisterRequest;
-import com.example.cinema.dto.VerifyOtpRequest;
+import com.example.cinema.dto.RegisterRequestDTO;
+import com.example.cinema.dto.VerifyOtpRequestDTO;
 import com.example.cinema.repository.CustomerRepository;
 import com.example.cinema.repository.RegistrationOtpRepository;
 import com.example.cinema.repository.UserRepository;
@@ -40,7 +40,7 @@ public class RegistrationOtpService {
     private String mailFrom;
 
     @Transactional
-    public void sendOtp(RegisterRequest request) {
+    public void sendOtp(RegisterRequestDTO request) {
         validateRegisterRequest(request);
 
         String normalizedEmail = normalizeEmail(request.getEmail());
@@ -91,7 +91,7 @@ public class RegistrationOtpService {
     }
 
     @Transactional
-    public User verifyOtpAndRegister(VerifyOtpRequest request) {
+    public User verifyOtpAndRegister(VerifyOtpRequestDTO request) {
         if (request.getEmail() == null || request.getEmail().isBlank() ||
                 request.getOtp() == null || request.getOtp().isBlank()) {
             throw new IllegalArgumentException("Email và OTP là bắt buộc!");
@@ -149,7 +149,7 @@ public class RegistrationOtpService {
         return user;
     }
 
-    private void validateRegisterRequest(RegisterRequest request) {
+    private void validateRegisterRequest(RegisterRequestDTO request) {
         if (request.getPassword() == null || request.getPassword().trim().isEmpty() ||
                 request.getFullName() == null || request.getFullName().trim().isEmpty() ||
                 request.getEmail() == null || request.getEmail().trim().isEmpty() ||

@@ -2,6 +2,7 @@ package com.example.cinema.dto;
 
 import com.example.cinema.domain.Booking;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -10,6 +11,7 @@ import java.time.LocalDateTime;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@Builder
 public class SoldTicketDTO {
     private Long bookingId;
     private String movieTitle;
@@ -52,6 +54,10 @@ public class SoldTicketDTO {
         this.txnRef = booking.getTxnRef();
         this.printed = booking.isPrinted();
         this.pointsUsed = booking.getPointsUsed() != null ? booking.getPointsUsed() : 0;
+    }
+
+    public static SoldTicketDTO fromBooking(Booking booking) {
+        return new SoldTicketDTO(booking);
     }
 
 }

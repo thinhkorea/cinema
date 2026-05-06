@@ -5,6 +5,8 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDate;
+
 @Entity
 @Table(name = "snacks")
 @Data
@@ -27,9 +29,6 @@ public class Snack {
 
     private String imageUrl;
 
-    @Column(nullable = false)
-    private Integer stock = 0;
-
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private SnackCategory category = SnackCategory.OTHER;
@@ -37,6 +36,19 @@ public class Snack {
     @Column(nullable = false)
     private Boolean available = true;
 
+    @Column(nullable = false)
+    private Boolean warehouseTrackable = false;
+
+    @Column(nullable = false)
+    private Double warehouseStock = 0.0;
+
+    @Column(nullable = false)
+    private Double warehouseReorderLevel = 10.0;
+
+    private LocalDate expiryDate;
+
+    @Column(columnDefinition = "TEXT")
+    private String recipeInstructions;
     public enum SnackCategory {
         COMBO,     
         DRINK,       

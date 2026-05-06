@@ -3,8 +3,8 @@ package com.example.cinema.service;
 import com.example.cinema.domain.Movie;
 import com.example.cinema.domain.MovieReview;
 import com.example.cinema.domain.User;
-import com.example.cinema.dto.MovieReviewRequest;
-import com.example.cinema.dto.MovieReviewResponse;
+import com.example.cinema.dto.MovieReviewRequestDTO;
+import com.example.cinema.dto.MovieReviewResponseDTO;
 import com.example.cinema.repository.BookingRepository;
 import com.example.cinema.repository.MovieRepository;
 import com.example.cinema.repository.MovieReviewRepository;
@@ -36,7 +36,7 @@ public class MovieReviewService {
     }
 
     @Transactional(readOnly = true)
-    public List<MovieReviewResponse> getByMovieId(Long movieId) {
+    public List<MovieReviewResponseDTO> getByMovieId(Long movieId) {
         return reviewRepo.findByMovie_MovieIdOrderByCreatedAtDesc(movieId)
                 .stream()
                 .map(this::toResponse)
@@ -55,7 +55,7 @@ public class MovieReviewService {
     }
 
     @Transactional
-    public MovieReviewResponse createOrUpdate(Long movieId, String username, MovieReviewRequest request) {
+    public MovieReviewResponseDTO createOrUpdate(Long movieId, String username, MovieReviewRequestDTO request) {
         if (request.getRating() == null || request.getRating() < 1 || request.getRating() > 5) {
             throw new IllegalArgumentException("Đánh giá phải từ 1 đến 5 sao");
         }
@@ -73,20 +73,32 @@ public class MovieReviewService {
             throw new IllegalArgumentException("Không tìm thấy người dùng");
         }
 
+        if (user.getRole() != User.Role.CUSTOMER) {
+            throw new IllegalArgumentException("Chỉ khách hàng mới được đánh giá phim");
+        }
+
         String userEmail = user.getEmail();
 
         boolean hasPaidBooking = bookingRepo.existsByCustomer_User_EmailAndShowtime_Movie_MovieIdAndStatus(
-            userEmail,
+                userEmail,
                 movieId,
                 com.example.cinema.domain.Booking.Status.PAID);
 
         if (!hasPaidBooking) {
+            boolean hasCancelled = bookingRepo.existsByCustomer_User_EmailAndShowtime_Movie_MovieIdAndStatus(
+                    userEmail,
+                    movieId,
+                    com.example.cinema.domain.Booking.Status.CANCELLED);
+
+            if (hasCancelled) {
+                throw new IllegalArgumentException("Vé đã hủy không được đánh giá");
+            }
+
             throw new IllegalArgumentException("Bạn cần mua và thanh toán vé xem phim này trước khi đánh giá");
         }
 
-        // Kiểm tra xem có ít nhất 1 suất chiếu đã hoàn thành
         boolean hasCompletedShowtime = bookingRepo.existsCompletedShowtimeBooking(
-            userEmail,
+                userEmail,
                 movieId,
                 com.example.cinema.domain.Booking.Status.PAID,
                 java.time.LocalDateTime.now());
@@ -110,15 +122,15 @@ public class MovieReviewService {
         MovieReview saved = reviewRepo.save(review);
         return toResponse(saved);
     }
-
-    private MovieReviewResponse toResponse(MovieReview review) {
+    private MovieReviewResponseDTO toResponse(MovieReview review) {
         User u = review.getUser();
-        return new MovieReviewResponse(
-                review.getReviewId(),
-                review.getRating(),
-                review.getComment(),
-            u != null ? u.getEmail() : "",
-            u != null && u.getFullName() != null ? u.getFullName() : (u != null ? u.getEmail() : ""),
-                review.getCreatedAt());
+        return MovieReviewResponseDTO.builder()
+                .reviewId(review.getReviewId())
+                .rating(review.getRating())
+                .comment(review.getComment())
+                .username(u != null ? u.getEmail() : "")
+                .fullName(u != null && u.getFullName() != null ? u.getFullName() : (u != null ? u.getEmail() : ""))
+                .createdAt(review.getCreatedAt())
+                .build();
     }
 }

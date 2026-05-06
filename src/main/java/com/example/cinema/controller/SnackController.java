@@ -1,14 +1,17 @@
 package com.example.cinema.controller;
 
 import com.example.cinema.domain.Snack;
-import com.example.cinema.dto.AddSnacksRequest;
+import com.example.cinema.dto.AddSnacksRequestDTO;
 import com.example.cinema.dto.BookingSnackDTO;
 import com.example.cinema.dto.SnackDTO;
+import com.example.cinema.dto.SnackWarehouseDTO;
+import com.example.cinema.dto.UpdateSnackWarehouseStockRequestDTO;
 import com.example.cinema.service.SnackService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -48,9 +51,9 @@ public class SnackController {
      * GET /api/snacks/{snackId}
      */
     @GetMapping("/{snackId}")
-    public ResponseEntity<Snack> getSnackById(@PathVariable Long snackId) {
-        Snack snack = snackService.getSnackById(snackId);
-        return ResponseEntity.ok(snack);
+    public ResponseEntity<SnackDTO> getSnackById(@PathVariable Long snackId) {
+        SnackDTO dto = snackService.getSnackDTOById(snackId);
+        return ResponseEntity.ok(dto);
     }
 
     /**
@@ -59,9 +62,58 @@ public class SnackController {
      */
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Snack> createSnack(@RequestBody Snack snack) {
-        Snack createdSnack = snackService.createSnack(snack);
-        return ResponseEntity.status(HttpStatus.CREATED).body(createdSnack);
+    public ResponseEntity<SnackDTO> createSnack(@RequestBody Snack snack) {
+        SnackDTO created = snackService.createSnackAndReturnDTO(snack);
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
+    }
+
+    /**
+     * [ADMIN] Lấy tất cả snack (bao gồm hết hàng/không available)
+     * GET /api/snacks/admin/all
+     */
+    @GetMapping("/admin/all")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<SnackDTO>> getAllSnacksForAdmin() {
+        return ResponseEntity.ok(snackService.getAllSnacksForAdmin());
+    }
+
+    /**
+     * [ADMIN] Danh sách snack sắp hết hạn
+     * GET /api/snacks/admin/expiring-soon?days=7
+     */
+    @GetMapping("/admin/expiring-soon")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<SnackDTO>> getExpiringSoonSnacks(
+            @RequestParam(defaultValue = "7") Integer days) {
+        return ResponseEntity.ok(snackService.getExpiringSoonSnacks(days));
+    }
+
+    @GetMapping("/admin/warehouse-stocks")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<SnackWarehouseDTO>> getWarehouseStocks() {
+        return ResponseEntity.ok(snackService.getSnackWarehouseStocks());
+    }
+
+    @GetMapping("/admin/warehouse-stocks/low")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<SnackWarehouseDTO>> getLowWarehouseStocks(
+            @RequestParam(required = false) Double threshold) {
+        return ResponseEntity.ok(snackService.getLowWarehouseStocks(threshold));
+    }
+
+    @PatchMapping("/admin/{snackId}/warehouse-stock")
+    @PreAuthorize("hasRole('ADMIN')")
+        public ResponseEntity<?> updateWarehouseStock(
+            @PathVariable Long snackId,
+            @RequestBody UpdateSnackWarehouseStockRequestDTO request,
+            Authentication authentication) {
+        try {
+            String actor = authentication != null ? authentication.getName() : "admin";
+            SnackWarehouseDTO result = snackService.updateWarehouseStock(snackId, request, actor);
+            return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 
     /**
@@ -70,11 +122,11 @@ public class SnackController {
      */
     @PutMapping("/{snackId}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Snack> updateSnack(
+    public ResponseEntity<SnackDTO> updateSnack(
             @PathVariable Long snackId,
             @RequestBody Snack snackDetails) {
-        Snack updatedSnack = snackService.updateSnack(snackId, snackDetails);
-        return ResponseEntity.ok(updatedSnack);
+        SnackDTO updated = snackService.updateSnackAndReturnDTO(snackId, snackDetails);
+        return ResponseEntity.ok(updated);
     }
 
     /**
@@ -94,8 +146,8 @@ public class SnackController {
      * Body: { "txnRef": "...", "snacks": [{ "snackId": 1, "quantity": 2 }, ...] }
      */
     @PostMapping("/add-to-booking")
-    public ResponseEntity<Map<String, Object>> addSnacksToBooking(
-            @RequestBody AddSnacksRequest request) {
+        public ResponseEntity<Map<String, Object>> addSnacksToBooking(
+            @RequestBody AddSnacksRequestDTO request) {
         try {
             Map<String, Object> result = snackService.addSnacksToBookings(request);
             return ResponseEntity.ok(result);

@@ -1,6 +1,6 @@
 package com.example.cinema.service;
 
-import com.example.cinema.dto.BookingResponse;
+import com.example.cinema.dto.BookingResponseDTO;
 import com.example.cinema.repository.*;
 import org.springframework.stereotype.Service;
 import java.util.*;
@@ -34,31 +34,30 @@ public class AdminService {
         }
 
         // API danh sách booking (DTO)
-        public List<BookingResponse> getAllBookings() {
+        public List<BookingResponseDTO> getAllBookings() {
                 return bookingRepo.findAll()
                                 .stream()
-                                .map(b -> new BookingResponse(
-                                                b.getBookingId(),
-                                                // Lấy email đăng nhập từ Customer -> User
-                                                (b.getCustomer() != null && b.getCustomer().getUser() != null)
-                                                                ? b.getCustomer().getUser().getEmail()
-                                                                : "-",
-                                                // Lấy staffName từ Staff -> User
-                                                (b.getSoldByStaff() != null && b.getSoldByStaff().getUser() != null)
-                                                                ? b.getSoldByStaff().getUser().getFullName()
-                                                                : null,
-                                                (b.getShowtime() != null && b.getShowtime().getMovie() != null)
-                                                                ? b.getShowtime().getMovie().getTitle()
-                                                                : "-",
-                                                (b.getShowtime() != null && b.getShowtime().getRoom() != null)
-                                                                ? b.getShowtime().getRoom().getRoomName()
-                                                                : "-",
-                                                b.getSeat() != null ? b.getSeat().getSeatNumber() : "-",
-                                                (b.getShowtime() != null && b.getShowtime().getStartTime() != null)
-                                                                ? b.getShowtime().getStartTime().toString()
-                                                                : "-",
-                                                b.getStatus() != null ? b.getStatus().name() : "-",
-                                                b.getCreatedAt()))
+                                .map(b -> BookingResponseDTO.builder()
+                                                                .bookingId(b.getBookingId())
+                                                                .username((b.getCustomer() != null && b.getCustomer().getUser() != null)
+                                                                                ? b.getCustomer().getUser().getEmail()
+                                                                                : "-")
+                                                                .soldByStaff((b.getSoldByStaff() != null && b.getSoldByStaff().getUser() != null)
+                                                                                ? b.getSoldByStaff().getUser().getFullName()
+                                                                                : null)
+                                                                .movieTitle((b.getShowtime() != null && b.getShowtime().getMovie() != null)
+                                                                                ? b.getShowtime().getMovie().getTitle()
+                                                                                : "-")
+                                                                .roomName((b.getShowtime() != null && b.getShowtime().getRoom() != null)
+                                                                                ? b.getShowtime().getRoom().getRoomName()
+                                                                                : "-")
+                                                                .seatNumber(b.getSeat() != null ? b.getSeat().getSeatNumber() : "-")
+                                                                .showtime((b.getShowtime() != null && b.getShowtime().getStartTime() != null)
+                                                                                ? b.getShowtime().getStartTime().toString()
+                                                                                : "-")
+                                                                .status(b.getStatus() != null ? b.getStatus().name() : "-")
+                                                                .createdAt(b.getCreatedAt())
+                                                                .build())
                                 .collect(Collectors.toList());
         }
 }

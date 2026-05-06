@@ -4,8 +4,8 @@ import com.example.cinema.domain.Booking;
 import com.example.cinema.domain.Movie;
 import com.example.cinema.domain.Room;
 import com.example.cinema.domain.Showtime;
-import com.example.cinema.dto.BookingRequest;
-import com.example.cinema.dto.RedeemPointsRequest;
+import com.example.cinema.dto.BookingRequestDTO;
+import com.example.cinema.dto.RedeemPointsRequestDTO;
 import com.example.cinema.dto.SoldTicketDTO;
 import com.example.cinema.service.BookingService;
 import com.example.cinema.service.TicketPDFService;
@@ -77,7 +77,7 @@ public class BookingController {
     // ==================== STAFF / VNPay ====================
     @PostMapping("/staff/sell-multi")
     @Deprecated // Endpoint này sẽ được thay thế bằng /staff/create-multi
-    public ResponseEntity<?> sellMulti(@RequestBody BookingRequest req) {
+    public ResponseEntity<?> sellMulti(@RequestBody BookingRequestDTO req) {
         return createMultiByStaff(req); // Chuyển hướng logic sang phương thức createMultiByStaff
     }
 
@@ -97,9 +97,9 @@ public class BookingController {
         try {
             // Cập nhật trạng thái thành PAID
             List<Booking> updatedBookings = bookingService.markPaidByTxn(txnRef, "VNPAY");
-            // Chuyển đổi sang DTO để tránh lỗi tuần tự hóa JSON (circular reference)
-            List<SoldTicketDTO> updatedBookingsDTO = updatedBookings.stream()
-                    .map(SoldTicketDTO::new)
+                // Chuyển đổi sang DTO để tránh lỗi tuần tự hóa JSON (circular reference)
+                List<SoldTicketDTO> updatedBookingsDTO = updatedBookings.stream()
+                    .map(SoldTicketDTO::fromBooking)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(updatedBookingsDTO);
         } catch (Exception e) {
@@ -110,7 +110,7 @@ public class BookingController {
     // ==================== STAFF / CASH ====================
     // B1: Nhân viên chọn ghế và tạo nhiều booking (chưa thanh toán)
     @PostMapping("/staff/create-multi")
-    public ResponseEntity<?> createMultiByStaff(@RequestBody BookingRequest req) {
+    public ResponseEntity<?> createMultiByStaff(@RequestBody BookingRequestDTO req) {
         try {
             if (req.getSeatIds() == null || req.getSeatIds().isEmpty()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Chưa chọn ghế nào!"));
@@ -194,7 +194,7 @@ public class BookingController {
 
     // ==================== CUSTOMER ====================
     @PostMapping
-    public ResponseEntity<?> createMultiByCustomer(@RequestBody BookingRequest req, Authentication authentication) {
+    public ResponseEntity<?> createMultiByCustomer(@RequestBody BookingRequestDTO req, Authentication authentication) {
         try {
             if (req.getSeatIds() == null || req.getSeatIds().isEmpty()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Chưa chọn ghế nào!"));
@@ -244,7 +244,7 @@ public class BookingController {
                     .orElseThrow(() -> new RuntimeException("Không tìm thấy vé"));
 
             // Trả về DTO để tránh vòng lặp JSON và chỉ gửi dữ liệu cần thiết
-            SoldTicketDTO dto = new SoldTicketDTO(booking);
+            SoldTicketDTO dto = SoldTicketDTO.fromBooking(booking);
             return ResponseEntity.ok(dto);
 
         } catch (Exception e) {
@@ -260,8 +260,8 @@ public class BookingController {
         }
 
         List<SoldTicketDTO> dtoList = bookings.stream()
-                .map(SoldTicketDTO::new)
-                .collect(Collectors.toList());
+            .map(SoldTicketDTO::fromBooking)
+            .collect(Collectors.toList());
 
         return ResponseEntity.ok(dtoList);
     }
@@ -365,8 +365,8 @@ public class BookingController {
     public ResponseEntity<?> getMyBookings(Principal principal) {
         try {
             List<Booking> bookings = bookingService.getBookingsByUsername(principal.getName());
-            List<SoldTicketDTO> dtos = bookings.stream()
-                    .map(SoldTicketDTO::new)
+                List<SoldTicketDTO> dtos = bookings.stream()
+                    .map(SoldTicketDTO::fromBooking)
                     .collect(Collectors.toList());
             return ResponseEntity.ok(dtos);
         } catch (Exception e) {
@@ -374,9 +374,45 @@ public class BookingController {
         }
     }
 
+    @PostMapping("/{bookingId}/cancel")
+    public ResponseEntity<?> cancelBooking(@PathVariable Long bookingId, Principal principal) {
+        try {
+            if (principal == null || principal.getName() == null) {
+                return ResponseEntity.status(401).body(Map.of("error", "Bạn cần đăng nhập để hủy vé."));
+            }
+            Map<String, Object> result = bookingService.cancelBookingByCustomer(bookingId, principal.getName());
+            return ResponseEntity.ok(result);
+        } catch (SecurityException e) {
+            return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/txn/{txnRef}/cancel")
+    public ResponseEntity<?> cancelBookingGroup(@PathVariable String txnRef, Principal principal) {
+        try {
+            if (principal == null || principal.getName() == null) {
+                return ResponseEntity.status(401).body(Map.of("error", "Bạn cần đăng nhập để hủy vé."));
+            }
+            Map<String, Object> result = bookingService.cancelBookingGroupByCustomer(txnRef, principal.getName());
+            return ResponseEntity.ok(result);
+        } catch (SecurityException e) {
+            return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     // ==================== LOYALTY POINTS ====================
     @PostMapping("/redeem-points")
-    public ResponseEntity<?> redeemPoints(@RequestBody RedeemPointsRequest req) {
+    public ResponseEntity<?> redeemPoints(@RequestBody RedeemPointsRequestDTO req) {
         try {
             Map<String, Object> result = bookingService.redeemPoints(req.getTxnRef(), req.getPointsToUse());
             return ResponseEntity.ok(result);

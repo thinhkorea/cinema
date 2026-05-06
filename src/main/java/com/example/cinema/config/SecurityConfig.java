@@ -42,7 +42,7 @@ public class SecurityConfig {
                                         var corsConfig = new CorsConfiguration();
                                         corsConfig.setAllowedOriginPatterns(List.of("http://localhost:5173")); // frontend
                                         corsConfig.setAllowedMethods(
-                                                        List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+                                                        List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
                                         corsConfig.setAllowedHeaders(List.of("*"));
                                         corsConfig.setAllowCredentials(true);
                                         return corsConfig;
@@ -59,6 +59,12 @@ public class SecurityConfig {
                                                 .requestMatchers(HttpMethod.POST, "/api/bookings/pay-by-txn/{txnRef}")
                                                 .permitAll()
 
+                                                // Snack admin APIs
+                                                .requestMatchers(HttpMethod.GET, "/api/snacks/admin/**").hasRole("ADMIN")
+                                                .requestMatchers(HttpMethod.POST, "/api/snacks").hasRole("ADMIN")
+                                                .requestMatchers(HttpMethod.PUT, "/api/snacks/*").hasRole("ADMIN")
+                                                .requestMatchers(HttpMethod.DELETE, "/api/snacks/*").hasRole("ADMIN")
+
                                                 // Public GET cho phim, suất chiếu, ghế
                                                 .requestMatchers(HttpMethod.GET,
                                                                 "/api/movies/**",
@@ -69,6 +75,10 @@ public class SecurityConfig {
 
                                                 // Cho phép người dùng đã đăng nhập gửi review phim
                                                 .requestMatchers(HttpMethod.POST, "/api/movies/*/reviews")
+                                                .hasRole("CUSTOMER")
+
+                                                // Voucher validate/redeem
+                                                .requestMatchers(HttpMethod.POST, "/api/vouchers/**")
                                                 .hasRole("CUSTOMER")
 
                                                 // 2️STAFF zone (chỉ STAFF mới được truy cập) - phải đặt sau rule cụ thể

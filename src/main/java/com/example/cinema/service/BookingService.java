@@ -1,7 +1,7 @@
 package com.example.cinema.service;
 
 import com.example.cinema.domain.*;
-import com.example.cinema.dto.BookingResponse;
+import com.example.cinema.dto.BookingResponseDTO;
 import com.example.cinema.dto.SoldTicketDTO;
 import com.example.cinema.repository.*;
 import org.slf4j.Logger;
@@ -29,6 +29,8 @@ public class BookingService {
     private final CustomerRepository customerRepo;
     private final UserRepository userRepository;
     private final TicketEmailService ticketEmailService;
+    private final PointService pointService;
+    private final BookingSnackRepository bookingSnackRepo;
 
     public BookingService(BookingRepository bookingRepo,
             ShowtimeRepository showtimeRepo,
@@ -36,7 +38,9 @@ public class BookingService {
             StaffRepository staffRepo, 
             CustomerRepository customerRepo,
             UserRepository userRepository,
-            TicketEmailService ticketEmailService) {
+            TicketEmailService ticketEmailService,
+            PointService pointService,
+            BookingSnackRepository bookingSnackRepo) {
         this.bookingRepo = bookingRepo;
         this.showtimeRepo = showtimeRepo;
         this.seatRepo = seatRepo;
@@ -44,27 +48,36 @@ public class BookingService {
         this.customerRepo = customerRepo;
         this.userRepository = userRepository;
         this.ticketEmailService = ticketEmailService;
+        this.pointService = pointService;
+        this.bookingSnackRepo = bookingSnackRepo;
     }
 
     // ==================== ADMIN / USER ====================
-    public List<BookingResponse> findAllDTO() {
+        public List<BookingResponseDTO> findAllDTO() {
         return bookingRepo.findAll().stream()
-                .map(b -> new BookingResponse(
-                        b.getBookingId(),
-                        (b.getCustomer() != null && b.getCustomer().getUser() != null)
-                        ? b.getCustomer().getUser().getEmail()
-                                : "-",
-                        (b.getSoldByStaff() != null && b.getSoldByStaff().getUser() != null)
-                                ? b.getSoldByStaff().getUser().getFullName()
-                                : null,
-                        b.getShowtime().getMovie().getTitle(),
-                        b.getShowtime().getRoom().getRoomName(),
-                        b.getSeat().getSeatNumber(),
-                        b.getShowtime().getStartTime().toString(),
-                        b.getStatus().name(),
-                        b.getCreatedAt()))
-                .collect(Collectors.toList());
-    }
+            .map(b -> BookingResponseDTO.builder()
+                .bookingId(b.getBookingId())
+                .username((b.getCustomer() != null && b.getCustomer().getUser() != null)
+                    ? b.getCustomer().getUser().getEmail()
+                    : "-")
+                .soldByStaff((b.getSoldByStaff() != null && b.getSoldByStaff().getUser() != null)
+                    ? b.getSoldByStaff().getUser().getFullName()
+                    : null)
+                .movieTitle((b.getShowtime() != null && b.getShowtime().getMovie() != null)
+                    ? b.getShowtime().getMovie().getTitle()
+                    : "-")
+                .roomName((b.getShowtime() != null && b.getShowtime().getRoom() != null)
+                    ? b.getShowtime().getRoom().getRoomName()
+                    : "-")
+                .seatNumber(b.getSeat() != null ? b.getSeat().getSeatNumber() : "-")
+                .showtime((b.getShowtime() != null && b.getShowtime().getStartTime() != null)
+                    ? b.getShowtime().getStartTime().toString()
+                    : "-")
+                .status(b.getStatus() != null ? b.getStatus().name() : "-")
+                .createdAt(b.getCreatedAt())
+                .build())
+            .collect(Collectors.toList());
+        }
 
     public List<Booking> findByUsername(String username) {
         return bookingRepo.findByCustomer_User_Email(username);
@@ -109,18 +122,18 @@ public class BookingService {
     public List<SoldTicketDTO> findSoldTicketsByStaffUsername(String username) {
         List<Booking> bookings = bookingRepo.findBySoldByStaff_User_EmailAndStatus(username, Booking.Status.PAID);
         return bookings.stream()
-                .map(SoldTicketDTO::new) // Sử dụng constructor để chuyển đổi
-                .sorted(Comparator.comparing(SoldTicketDTO::getCreatedAt).reversed()) // Sắp xếp vé mới nhất lên đầu
-                .collect(Collectors.toList());
+            .map(SoldTicketDTO::fromBooking)
+            .sorted(Comparator.comparing(SoldTicketDTO::getCreatedAt).reversed())
+            .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)
     public List<SoldTicketDTO> findSoldTicketsByStaffUsernameAndDate(String username, LocalDateTime dateStart, LocalDateTime dateEnd) {
         List<Booking> bookings = bookingRepo.findBySoldByStaff_User_EmailAndStatusAndDateRange(username, Booking.Status.PAID, dateStart, dateEnd);
         return bookings.stream()
-                .map(SoldTicketDTO::new)
-                .sorted(Comparator.comparing(SoldTicketDTO::getCreatedAt).reversed())
-                .collect(Collectors.toList());
+            .map(SoldTicketDTO::fromBooking)
+            .sorted(Comparator.comparing(SoldTicketDTO::getCreatedAt).reversed())
+            .collect(Collectors.toList());
     }
 
     // Thêm phương thức mới để tìm booking theo txnRef
@@ -220,24 +233,22 @@ public class BookingService {
         
         // TÍCH ĐIỂM: Tính từ tổng tiền THANH TOÁN (sau khi trừ điểm)
         if (customer != null && totalAmount > 0) {
-            // Lấy pointsUsed từ booking đầu tiên (tất cả booking cùng giá trị)
-            Integer pointsUsed = bookings.get(0).getPointsUsed() != null ? 
+            Integer pointsUsed = bookings.get(0).getPointsUsed() != null ?
                 bookings.get(0).getPointsUsed() : 0;
-            
-            // Tính tiền thanh toán thực tế (tiền gốc - giảm từ điểm)
-            Double discountFromPoints = pointsUsed * 1000.0; // 1 điểm = 1.000đ
+
+            Double discountFromPoints = pointsUsed * 1000.0;
             Double actualPaymentAmount = totalAmount - discountFromPoints;
-            
-            // Tính điểm từ tiền thanh toán (20.000đ = 1 điểm)
-            Integer points = (int) Math.floor(actualPaymentAmount / 20000.0);
-            
-            Integer currentPoints = customer.getLoyaltyPoints() != null ? 
-                customer.getLoyaltyPoints() : 0;
-            
-            // Cập nhật điểm: trừ điểm đã dùng, cộng điểm mới tích lũy
-            Integer newPoints = currentPoints - pointsUsed + points;
-            customer.setLoyaltyPoints(newPoints);
-            customerRepo.save(customer);
+
+            // Trừ điểm đã dùng qua PointService
+            if (pointsUsed > 0) {
+                pointService.usePoints(customer, pointsUsed);
+            }
+
+            // Tích điểm mới từ tiền thanh toán thực tế
+            if (actualPaymentAmount > 0) {
+                Booking firstBooking = updatedBookings.get(0);
+                pointService.earnPoints(customer, firstBooking, actualPaymentAmount);
+            }
         }
 
         // Gửi email vé bất đồng bộ để tránh làm chậm response xác nhận thanh toán.
@@ -367,9 +378,9 @@ public class BookingService {
     private double calculateSeatPrice(double basePrice, Seat.SeatType seatType) {
         switch (seatType) {
             case VIP:
-                return basePrice + 20000.0; // Phụ thu VIP: +20k
+                return basePrice + 10000.0; // Phụ thu VIP: +10k
             case SWEETBOX:
-                return basePrice * 2.0; // Ghế đôi: x2 giá cơ bản
+                return basePrice * 2.0 + 15000.0; // Ghế đôi: x2 giá cơ bản + 15k
             case NORMAL:
             default:
                 return basePrice; // Giá cơ bản
@@ -494,38 +505,29 @@ public class BookingService {
             throw new IllegalArgumentException("Booking này không có khách hàng");
         }
 
-        Integer currentPoints = customer.getLoyaltyPoints() != null ? customer.getLoyaltyPoints() : 0;
-        if (pointsToUse < 0 || pointsToUse > currentPoints) {
-            throw new IllegalArgumentException("Số điểm không hợp lệ. Bạn có: " + currentPoints + " điểm");
+        int availablePoints = pointService.getAvailablePoints(customer.getCustomerId());
+        if (pointsToUse < 0 || pointsToUse > availablePoints) {
+            throw new IllegalArgumentException("Số điểm không hợp lệ. Bạn có: " + availablePoints + " điểm khả dụng");
         }
 
-        // Tính tổng tiền hiện tại (theo giá đã tính sẵn của từng ghế)
         Double totalAmount = bookings.stream()
                 .mapToDouble(b -> b.getTotal() != null ? b.getTotal() : 0.0)
                 .sum();
 
-        // Tính tiền giảm từ điểm (1 điểm = 1.000đ)
         Double discount = pointsToUse * 1000.0;
-        
-        // Không cho giảm quá tổng tiền
+
         if (discount > totalAmount) {
             throw new IllegalArgumentException("Số điểm quá lớn, tối đa có thể dùng: " + (int)(totalAmount / 1000) + " điểm");
         }
 
-        // Chỉ lưu pointsUsed vào booking đầu tiên, những booking khác để 0
-        // Cập nhật total = giá đã tính sẵn - phần giảm giá
         for (int i = 0; i < bookings.size(); i++) {
             Booking b = bookings.get(i);
             Double originalPrice = b.getTotal() != null ? b.getTotal() : 0.0;
-            
             if (i == 0) {
                 b.setPointsUsed(pointsToUse);
-                // Vé đầu tiên: trừ hết discount
                 b.setTotal(originalPrice - discount);
             } else {
                 b.setPointsUsed(0);
-                // Các vé khác: giữ giá gốc
-                // Các vé còn lại: giữ nguyên giá gốc
                 b.setTotal(originalPrice);
             }
         }
@@ -537,7 +539,7 @@ public class BookingService {
                 "discountAmount", discount,
                 "totalAmount", totalAmount,
                 "newTotal", totalAmount - discount,
-                "remainingPoints", currentPoints
+                "remainingPoints", availablePoints
         );
     }
 
@@ -548,6 +550,149 @@ public class BookingService {
         if (!bookingsToCancel.isEmpty()) {
             bookingRepo.deleteAll(bookingsToCancel);
             System.out.println("Đã hủy " + bookingsToCancel.size() + " booking PENDING với txnRef: " + txnRef);
+        }
+    }
+
+    @Transactional
+    public Map<String, Object> cancelBookingByCustomer(Long bookingId, String username) {
+        Booking booking = bookingRepo.findById(bookingId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy vé với ID: " + bookingId));
+
+        if (username == null || username.isBlank()) {
+            throw new SecurityException("Bạn cần đăng nhập để hủy vé.");
+        }
+
+        Customer customer = booking.getCustomer();
+        if (customer == null || customer.getUser() == null) {
+            throw new IllegalStateException("Vé này không có thông tin khách hàng.");
+        }
+
+        String ownerEmail = customer.getUser().getEmail();
+        String ownerPhone = customer.getUser().getPhone();
+        boolean isOwner = (ownerEmail != null && ownerEmail.equalsIgnoreCase(username))
+                || (ownerPhone != null && ownerPhone.equalsIgnoreCase(username));
+        if (!isOwner) {
+            throw new SecurityException("Bạn không có quyền hủy vé này.");
+        }
+
+        if (booking.getStatus() != Booking.Status.PAID) {
+            throw new IllegalStateException("Chỉ có thể hủy vé đã thanh toán. Trạng thái hiện tại: "
+                    + booking.getStatus());
+        }
+
+        if (booking.getShowtime() == null || booking.getShowtime().getStartTime() == null) {
+            throw new IllegalStateException("Vé này không có thông tin giờ chiếu.");
+        }
+
+        LocalDateTime showtimeStart = booking.getShowtime().getStartTime();
+        LocalDateTime deadline = showtimeStart.minusMinutes(30);
+        if (LocalDateTime.now().isAfter(deadline)) {
+            throw new IllegalStateException(
+                    "Không thể hủy vé. Chỉ được hủy trước giờ chiếu ít nhất 30 phút. " +
+                    "Giờ chiếu: " + showtimeStart);
+        }
+
+        booking.setStatus(Booking.Status.CANCELLED);
+        Seat seat = booking.getSeat();
+        if (seat != null) {
+            seat.setBooking(false);
+            seatRepo.save(seat);
+        }
+        bookingRepo.save(booking);
+
+        double refundAmount = booking.getTotal() != null ? booking.getTotal() : 0.0;
+        int refundedPoints = pointService.refundPoints(customer, booking, refundAmount);
+
+        int availablePoints = pointService.getAvailablePoints(customer.getCustomerId());
+
+        return Map.of(
+                "message", "Hủy vé thành công! Bạn được hoàn " + refundedPoints + " điểm (hạn dùng 3 tháng).",
+                "bookingId", bookingId,
+                "refundedPoints", refundedPoints,
+                "refundAmount", refundAmount,
+                "totalAvailablePoints", availablePoints
+        );
+    }
+
+    @Transactional
+    public Map<String, Object> cancelBookingGroupByCustomer(String txnRef, String username) {
+        if (txnRef == null || txnRef.isBlank()) {
+            throw new IllegalArgumentException("Mã giao dịch không hợp lệ.");
+        }
+        if (username == null || username.isBlank()) {
+            throw new SecurityException("Bạn cần đăng nhập để hủy vé.");
+        }
+
+        List<Booking> bookings = bookingRepo.findByTxnRef(txnRef);
+        if (bookings.isEmpty()) {
+            throw new IllegalArgumentException("Không tìm thấy vé với mã giao dịch: " + txnRef);
+        }
+
+        Booking firstBooking = bookings.get(0);
+        Customer customer = firstBooking.getCustomer();
+        validateCancelableBookingGroup(bookings, customer, username);
+
+        double ticketTotal = bookings.stream()
+                .mapToDouble(b -> b.getTotal() != null ? b.getTotal() : 0.0)
+                .sum();
+        double snackTotal = bookingSnackRepo.findByTxnRef(txnRef).stream()
+                .mapToDouble(BookingSnack::getSubtotal)
+                .sum();
+        double refundAmount = ticketTotal + snackTotal;
+
+        for (Booking booking : bookings) {
+            booking.setStatus(Booking.Status.CANCELLED);
+            Seat seat = booking.getSeat();
+            if (seat != null) {
+                seat.setBooking(false);
+                seatRepo.save(seat);
+            }
+        }
+        bookingRepo.saveAll(bookings);
+
+        int refundedPoints = pointService.refundPoints(customer, firstBooking, refundAmount);
+        int availablePoints = pointService.getAvailablePoints(customer.getCustomerId());
+
+        return Map.of(
+                "message", "Hủy vé thành công! Bạn được hoàn " + refundedPoints + " điểm (hạn dùng 3 tháng).",
+                "txnRef", txnRef,
+                "cancelledBookings", bookings.size(),
+                "ticketTotal", ticketTotal,
+                "snackTotal", snackTotal,
+                "refundAmount", refundAmount,
+                "refundedPoints", refundedPoints,
+                "totalAvailablePoints", availablePoints
+        );
+    }
+
+    private void validateCancelableBookingGroup(List<Booking> bookings, Customer customer, String username) {
+        if (customer == null || customer.getUser() == null) {
+            throw new IllegalStateException("Vé này không có thông tin khách hàng.");
+        }
+
+        String ownerEmail = customer.getUser().getEmail();
+        String ownerPhone = customer.getUser().getPhone();
+        boolean isOwner = (ownerEmail != null && ownerEmail.equalsIgnoreCase(username))
+                || (ownerPhone != null && ownerPhone.equalsIgnoreCase(username));
+        if (!isOwner) {
+            throw new SecurityException("Bạn không có quyền hủy vé này.");
+        }
+
+        for (Booking booking : bookings) {
+            if (booking.getStatus() != Booking.Status.PAID) {
+                throw new IllegalStateException("Chỉ có thể hủy vé đã thanh toán. Trạng thái hiện tại: "
+                        + booking.getStatus());
+            }
+            if (booking.getShowtime() == null || booking.getShowtime().getStartTime() == null) {
+                throw new IllegalStateException("Vé này không có thông tin giờ chiếu.");
+            }
+            LocalDateTime showtimeStart = booking.getShowtime().getStartTime();
+            LocalDateTime deadline = showtimeStart.minusMinutes(30);
+            if (LocalDateTime.now().isAfter(deadline)) {
+                throw new IllegalStateException(
+                        "Không thể hủy vé. Chỉ được hủy trước giờ chiếu ít nhất 30 phút. " +
+                                "Giờ chiếu: " + showtimeStart);
+            }
         }
     }
 

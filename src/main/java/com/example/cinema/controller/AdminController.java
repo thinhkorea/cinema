@@ -118,10 +118,45 @@ public class AdminController {
     // Xóa tài khoản người dùng
     @DeleteMapping("/users/{userId}")
     public ResponseEntity<?> deleteUser(@PathVariable Long userId) {
-        userRepository.findById(userId)
+        User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
-        userRepository.deleteById(userId);
-        return ResponseEntity.ok(Map.of("message", "Tài khoản đã bị xóa", "success", true));
+
+        if (user.getRole() == User.Role.ADMIN) {
+            throw new IllegalArgumentException("Không thể xóa tài khoản admin");
+        }
+
+        boolean hasCustomerBookings = bookingRepo.existsByCustomer_User_UserId(userId);
+        boolean hasStaffBookings = bookingRepo.existsBySoldByStaff_User_UserId(userId);
+
+        if (hasCustomerBookings || hasStaffBookings) {
+            user.setIsActive(false);
+            userRepository.save(user);
+
+            if (hasStaffBookings) {
+                staffRepository.findByUser_UserId(userId).ifPresent(staff -> {
+                    staff.setStatus(com.example.cinema.domain.Staff.Status.INACTIVE);
+                    staffRepository.save(staff);
+                });
+            }
+
+            String reason = hasCustomerBookings
+                    ? "Tài khoản có lịch sử đặt vé"
+                    : "Tài khoản có lịch sử bán vé";
+
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("message", "Không thể xóa tài khoản vì " + reason + ". Đã chuyển sang trạng thái khóa.");
+            payload.put("success", true);
+            payload.put("deleted", false);
+            payload.put("locked", true);
+            return ResponseEntity.ok(payload);
+        }
+
+        userRepository.delete(user);
+        return ResponseEntity.ok(Map.of(
+                "message", "Tài khoản đã bị xóa",
+                "success", true,
+                "deleted", true,
+                "locked", false));
     }
 
     // Lấy danh sách tất cả người dùng (Customers)

@@ -37,10 +37,16 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
        List<Booking> findByTxnRefAndStatus(String txnRef, Booking.Status status);
 
+       boolean existsByCustomer_User_UserId(Long userId);
+
+       boolean existsBySoldByStaff_User_UserId(Long userId);
+
        boolean existsByCustomer_User_EmailAndShowtime_Movie_MovieIdAndStatus(
                      String email,
                      Long movieId,
                      Booking.Status status);
+
+       boolean existsByCustomer_User_UserIdAndStatus(Long userId, Booking.Status status);
 
        // Kiểm tra xem user có booking PAID cho phim này với showtime đã kết thúc
        @Query("""

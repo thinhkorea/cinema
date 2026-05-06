@@ -59,11 +59,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return true;
         }
 
-        // Cho phép GET tới các API public (movies, showtimes, seats, snacks)
+        // Cho phép GET tới các API public (movies, showtimes, seats, snacks public).
         if ("GET".equals(method) && (path.startsWith("/api/movies") ||
-                path.startsWith("/api/showtimes") ||
+            path.startsWith("/api/showtimes") ||
             path.startsWith("/api/seats") ||
-            path.startsWith("/api/snacks"))) {
+            (path.startsWith("/api/snacks")
+                && !path.startsWith("/api/snacks/admin")))) {
             return true;
         }
         // TẤT CẢ requests khác (bao gồm /api/bookings/**) ĐỀU PHẢI QUA FILTER

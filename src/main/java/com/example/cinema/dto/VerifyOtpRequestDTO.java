@@ -1,9 +1,11 @@
 package com.example.cinema.dto;
 
+import lombok.Builder;
 import lombok.Data;
 
 @Data
-public class VerifyOtpRequest {
+@Builder
+public class VerifyOtpRequestDTO {
     private String email;
     private String otp;
 }
