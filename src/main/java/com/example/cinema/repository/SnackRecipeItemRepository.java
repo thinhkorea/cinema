@@ -9,5 +9,9 @@ public interface SnackRecipeItemRepository extends JpaRepository<SnackRecipeItem
 
     List<SnackRecipeItem> findBySnack_SnackIdOrderByIngredient_IngredientNameAsc(Long snackId);
 
+    boolean existsByIngredient_IngredientId(Long ingredientId);
+
+    void deleteByIngredient_IngredientId(Long ingredientId);
+
     void deleteBySnack_SnackId(Long snackId);
 }

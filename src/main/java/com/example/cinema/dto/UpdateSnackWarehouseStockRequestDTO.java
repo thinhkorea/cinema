@@ -7,6 +7,7 @@ import lombok.Data;
 @Builder
 public class UpdateSnackWarehouseStockRequestDTO {
     private Double quantity;
+    private Double reorderLevel;
     private String operation; // SET, ADD, SUBTRACT
     private String note;
 }

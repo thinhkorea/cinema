@@ -27,6 +27,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -37,6 +38,7 @@ public class SnackService {
     private final BookingSnackRepository bookingSnackRepository;
     private final BookingRepository bookingRepository;
     private final SnackWarehouseMovementRepository snackWarehouseMovementRepository;
+    private final InventoryService inventoryService;
 
     /**
      * Lấy tất cả snacks available
@@ -106,7 +108,20 @@ public class SnackService {
      */
     @Transactional
     public Snack createSnack(Snack snack) {
-        return snackRepository.save(snack);
+        Snack created = snackRepository.save(snack);
+        double initialStock = created.getWarehouseStock() == null ? 0.0 : created.getWarehouseStock();
+        if (isWarehouseTrackable(created) && initialStock > 0) {
+            SnackWarehouseMovement movement = new SnackWarehouseMovement();
+            movement.setSnack(created);
+            movement.setQuantityBefore(0.0);
+            movement.setQuantityChange(initialStock);
+            movement.setQuantityAfter(initialStock);
+            movement.setAction("CREATE_INITIAL_STOCK");
+            movement.setNote("Tạo sản phẩm với tồn ban đầu");
+            movement.setPerformedBy("admin");
+            snackWarehouseMovementRepository.save(movement);
+        }
+        return created;
     }
 
     /**
@@ -136,37 +151,49 @@ public class SnackService {
 
     @Transactional
     public SnackWarehouseDTO updateWarehouseStock(Long snackId, UpdateSnackWarehouseStockRequestDTO request, String actor) {
-        if (request == null || request.getQuantity() == null || request.getQuantity() < 0) {
+        if (request == null || (request.getQuantity() == null && request.getReorderLevel() == null)) {
+            throw new IllegalArgumentException("Cần nhập số lượng hoặc mức cảnh báo.");
+        }
+        if (request.getQuantity() != null && request.getQuantity() < 0) {
             throw new IllegalArgumentException("quantity phải >= 0");
+        }
+        if (request.getReorderLevel() != null && request.getReorderLevel() < 0) {
+            throw new IllegalArgumentException("Mức cảnh báo phải >= 0");
         }
 
         Snack snack = getSnackById(snackId);
         if (!isWarehouseTrackable(snack)) {
             throw new IllegalArgumentException("Snack này không theo dõi tồn kho thành phẩm.");
         }
-
         String op = request.getOperation() == null ? "SET" : request.getOperation().trim().toUpperCase(Locale.ROOT);
         double current = snack.getWarehouseStock() == null ? 0.0 : snack.getWarehouseStock();
-        double next;
+        double next = current;
+        boolean hasQuantityChange = request.getQuantity() != null;
 
-        switch (op) {
-            case "ADD":
-                next = current + request.getQuantity();
-                break;
-            case "SUBTRACT":
-                next = current - request.getQuantity();
-                if (next < 0) {
-                    throw new IllegalArgumentException("Không thể trừ vượt quá tồn kho hiện tại.");
-                }
-                break;
-            case "SET":
-                next = request.getQuantity();
-                break;
-            default:
-                throw new IllegalArgumentException("operation chỉ hỗ trợ: SET, ADD, SUBTRACT");
+        if (hasQuantityChange) {
+            switch (op) {
+                case "ADD":
+                    next = current + request.getQuantity();
+                    break;
+                case "SUBTRACT":
+                    next = current - request.getQuantity();
+                    if (next < 0) {
+                        throw new IllegalArgumentException("Không thể trừ vượt quá tồn kho hiện tại.");
+                    }
+                    break;
+                case "SET":
+                    next = request.getQuantity();
+                    break;
+                default:
+                    throw new IllegalArgumentException("operation chỉ hỗ trợ: SET, ADD, SUBTRACT");
+            }
+            snack.setWarehouseStock(next);
         }
 
-        snack.setWarehouseStock(next);
+        if (request.getReorderLevel() != null) {
+            snack.setWarehouseReorderLevel(request.getReorderLevel());
+        }
+
         snackRepository.save(snack);
 
         SnackWarehouseMovement movement = new SnackWarehouseMovement();
@@ -174,7 +201,7 @@ public class SnackService {
         movement.setQuantityBefore(current);
         movement.setQuantityChange(next - current);
         movement.setQuantityAfter(next);
-        movement.setAction(op);
+        movement.setAction(hasQuantityChange ? op : "UPDATE_REORDER_LEVEL");
         movement.setNote(request.getNote());
         movement.setPerformedBy(actor != null && !actor.isBlank() ? actor : "admin");
         snackWarehouseMovementRepository.save(movement);
@@ -228,6 +255,44 @@ public class SnackService {
         }
 
         return new ArrayList<>(summary.values());
+    }
+
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> getSnackWarehouseMovements(Long snackId) {
+        Snack snack = getSnackById(snackId);
+        List<Map<String, Object>> rows = snackWarehouseMovementRepository.findTop50BySnack_SnackIdOrderByCreatedAtDesc(snackId)
+                .stream()
+                .map(movement -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("movementId", movement.getMovementId());
+                    row.put("snackId", movement.getSnack().getSnackId());
+                    row.put("snackName", movement.getSnack().getSnackName());
+                    row.put("quantityBefore", movement.getQuantityBefore());
+                    row.put("quantityChange", movement.getQuantityChange());
+                    row.put("quantityAfter", movement.getQuantityAfter());
+                    row.put("action", movement.getAction());
+                    row.put("note", movement.getNote());
+                    row.put("performedBy", movement.getPerformedBy());
+                    row.put("createdAt", movement.getCreatedAt());
+                    return row;
+                })
+                .collect(Collectors.toList());
+        double currentStock = snack.getWarehouseStock() == null ? 0.0 : snack.getWarehouseStock();
+        if (rows.isEmpty() && isWarehouseTrackable(snack) && currentStock > 0) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("movementId", -snack.getSnackId());
+            row.put("snackId", snack.getSnackId());
+            row.put("snackName", snack.getSnackName());
+            row.put("quantityBefore", 0.0);
+            row.put("quantityChange", currentStock);
+            row.put("quantityAfter", currentStock);
+            row.put("action", "CURRENT_STOCK");
+            row.put("note", "Sản phẩm đang có tồn kho nhưng chưa có lịch sử nhập/xuất trước đó.");
+            row.put("performedBy", "system");
+            row.put("createdAt", null);
+            rows.add(row);
+        }
+        return rows;
     }
 
     /**
@@ -320,6 +385,155 @@ public class SnackService {
         return bookingSnackRepository.findByTxnRef(txnRef).stream()
                 .mapToDouble(BookingSnack::getSubtotal)
                 .sum();
+    }
+
+    @Transactional
+    public Map<String, Object> fulfillSnacksByTxn(String txnRef, String actor) {
+        if (txnRef == null || txnRef.isBlank()) {
+            throw new IllegalArgumentException("Mã giao dịch không hợp lệ.");
+        }
+
+        List<Booking> bookings = bookingRepository.findByTxnRef(txnRef);
+        if (bookings.isEmpty()) {
+            throw new IllegalArgumentException("Không tìm thấy vé với mã giao dịch: " + txnRef);
+        }
+
+        boolean alreadyFulfilled = bookings.stream().allMatch(Booking::isSnacksFulfilled);
+        if (alreadyFulfilled) {
+            throw new IllegalStateException("Bắp nước đã được xuất kho cho mã giao dịch này.");
+        }
+
+        for (Booking booking : bookings) {
+            if (booking.getStatus() != Booking.Status.PAID) {
+                throw new IllegalStateException("Vé chưa thanh toán, không thể xuất bắp nước.");
+            }
+        }
+
+        List<BookingSnack> items = bookingSnackRepository.findByTxnRef(txnRef);
+        if (items.isEmpty()) {
+            bookings.forEach(b -> b.setSnacksFulfilled(true));
+            bookingRepository.saveAll(bookings);
+            return Map.of(
+                    "success", true,
+                    "txnRef", txnRef,
+                    "message", "Không có bắp nước để xuất.");
+        }
+
+        Map<Snack, Integer> expandedItems = new LinkedHashMap<>();
+        for (BookingSnack item : items) {
+            if (item.getSnack() == null) {
+                continue;
+            }
+            int qty = item.getQuantity() == null ? 0 : item.getQuantity();
+            if (qty <= 0) {
+                continue;
+            }
+
+            Snack snack = item.getSnack();
+            if (snack.getCategory() == Snack.SnackCategory.COMBO) {
+                Map<Snack, Integer> components = expandComboItems(snack, qty);
+                for (Map.Entry<Snack, Integer> entry : components.entrySet()) {
+                    expandedItems.merge(entry.getKey(), entry.getValue(), Integer::sum);
+                }
+            } else {
+                expandedItems.merge(snack, qty, Integer::sum);
+            }
+        }
+
+        Map<String, Integer> summary = new LinkedHashMap<>();
+        for (Map.Entry<Snack, Integer> entry : expandedItems.entrySet()) {
+            Snack snack = entry.getKey();
+            int qty = entry.getValue();
+            if (qty <= 0) {
+                continue;
+            }
+            summary.merge(snack.getSnackName(), qty, Integer::sum);
+
+            if (isWarehouseTrackable(snack)) {
+                double before = snack.getWarehouseStock() == null ? 0.0 : snack.getWarehouseStock();
+                double after = before - qty;
+                if (after < 0) {
+                    throw new IllegalStateException(
+                            "Tồn kho thành phẩm không đủ cho " + snack.getSnackName());
+                }
+                snack.setWarehouseStock(after);
+                snackRepository.save(snack);
+
+                SnackWarehouseMovement movement = new SnackWarehouseMovement();
+                movement.setSnack(snack);
+                movement.setQuantityBefore(before);
+                movement.setQuantityChange(after - before);
+                movement.setQuantityAfter(after);
+                movement.setAction("SUBTRACT");
+                movement.setNote("Fulfill txnRef=" + txnRef);
+                movement.setPerformedBy(actor != null && !actor.isBlank() ? actor : "staff");
+                snackWarehouseMovementRepository.save(movement);
+            } else {
+                inventoryService.consumeIngredientsForSnack(
+                        snack.getSnackId(),
+                        qty,
+                        actor,
+                        "txnRef=" + txnRef);
+            }
+        }
+
+        bookings.forEach(b -> b.setSnacksFulfilled(true));
+        bookingRepository.saveAll(bookings);
+
+        return Map.of(
+                "success", true,
+                "txnRef", txnRef,
+                "items", summary,
+                "message", "Đã xuất bắp nước thành công.");
+    }
+
+    private Map<Snack, Integer> expandComboItems(Snack combo, int comboQty) {
+        String comboName = combo.getSnackName() == null ? "" : combo.getSnackName().trim();
+        Map<Snack, Integer> result = new LinkedHashMap<>();
+
+        if (comboQty <= 0) {
+            return result;
+        }
+
+        if (equalsIgnoreCase(comboName, "Combo Gấu")) {
+            result.put(findSnackByName("Coke 32oz"), 1 * comboQty);
+            result.put(findSnackByAnyName("Bắp riêng", "Bắp 2 Ngăn 64OZ Phô Mai + Caramel"), 1 * comboQty);
+            return result;
+        }
+
+        if (equalsIgnoreCase(comboName, "Combo Có Gấu")) {
+            result.put(findSnackByName("Coke 32oz"), 2 * comboQty);
+            result.put(findSnackByAnyName("Bắp riêng", "Bắp 2 Ngăn 64OZ Phô Mai + Caramel"), 1 * comboQty);
+            return result;
+        }
+
+        if (equalsIgnoreCase(comboName, "Combo Nhà Gấu")) {
+            result.put(findSnackByName("Coke 32oz"), 4 * comboQty);
+            result.put(findSnackByAnyName("Bắp riêng", "Bắp 2 Ngăn 64OZ Phô Mai + Caramel"), 2 * comboQty);
+            return result;
+        }
+
+        throw new IllegalStateException("Chưa cấu hình tách combo cho: " + comboName);
+    }
+
+    private Snack findSnackByName(String snackName) {
+        return snackRepository.findBySnackNameIgnoreCase(snackName)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Thiếu snack: " + snackName + ". Vui lòng tạo snack này trước."));
+    }
+
+    private Snack findSnackByAnyName(String... snackNames) {
+        for (String snackName : snackNames) {
+            Optional<Snack> snack = snackRepository.findBySnackNameIgnoreCase(snackName);
+            if (snack.isPresent()) {
+                return snack.get();
+            }
+        }
+        throw new IllegalStateException("Thiếu snack: " + String.join(" hoặc ", snackNames) + ". Vui lòng tạo snack này trước.");
+    }
+
+    private boolean equalsIgnoreCase(String left, String right) {
+        return left != null && right != null && left.equalsIgnoreCase(right);
     }
 
     // Helper methods

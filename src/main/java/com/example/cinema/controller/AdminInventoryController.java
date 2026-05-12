@@ -11,6 +11,8 @@ import com.example.cinema.dto.SnackRecipeItemDTO;
 import com.example.cinema.domain.Snack;
 import com.example.cinema.dto.SnackRecipeItemRequestDTO;
 import com.example.cinema.service.InventoryService;
+import com.example.cinema.repository.SnackRepository;
+import com.example.cinema.domain.Snack;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -27,6 +29,14 @@ import java.util.Map;
 public class AdminInventoryController {
 
     private final InventoryService inventoryService;
+    private final SnackRepository snackRepository;
+
+    private boolean isPopcornSnack(Snack snack) {
+        if (snack == null || snack.getSnackName() == null) {
+            return false;
+        }
+        return snack.getSnackName().toLowerCase().contains("bắp");
+    }
 
     @GetMapping("/ingredients")
     public ResponseEntity<List<IngredientDTO>> getIngredients() {
@@ -68,6 +78,16 @@ public class AdminInventoryController {
             IngredientDTO updated = inventoryService.updateIngredientDTO(ingredientId, ingredient);
             return ResponseEntity.ok(updated);
         } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/ingredients/{ingredientId}")
+    public ResponseEntity<?> deleteIngredient(@PathVariable Long ingredientId) {
+        try {
+            inventoryService.deleteIngredient(ingredientId);
+            return ResponseEntity.ok(Map.of("message", "Đã xóa nguyên liệu."));
+        } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
@@ -134,7 +154,16 @@ public class AdminInventoryController {
 
     @GetMapping("/snacks/{snackId}/recipe")
     public ResponseEntity<List<SnackRecipeItemDTO>> getRecipeBySnack(@PathVariable Long snackId) {
-        return ResponseEntity.ok(inventoryService.getRecipeBySnack(snackId));
+        try {
+            Snack snack = snackRepository.findById(snackId)
+                    .orElseThrow(() -> new IllegalArgumentException("Snack not found: " + snackId));
+            if (snack.getCategory() != Snack.SnackCategory.SNACK || !isPopcornSnack(snack)) {
+                return ResponseEntity.badRequest().body(null);
+            }
+            return ResponseEntity.ok(inventoryService.getRecipeBySnack(snackId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(null);
+        }
     }
 
     @PutMapping("/snacks/{snackId}/recipe")
@@ -142,6 +171,11 @@ public class AdminInventoryController {
             @PathVariable Long snackId,
             @RequestBody List<SnackRecipeItemRequestDTO> request) {
         try {
+            Snack snack = snackRepository.findById(snackId)
+                    .orElseThrow(() -> new IllegalArgumentException("Snack not found: " + snackId));
+            if (snack.getCategory() != Snack.SnackCategory.SNACK || !isPopcornSnack(snack)) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Công thức chỉ áp dụng cho bắp rang."));
+            }
             List<SnackRecipeItemDTO> updated = inventoryService.replaceRecipe(snackId, request);
             return ResponseEntity.ok(updated);
         } catch (IllegalArgumentException e) {
@@ -152,6 +186,11 @@ public class AdminInventoryController {
     @GetMapping("/snacks/{snackId}/instructions")
     public ResponseEntity<?> getSnackInstructions(@PathVariable Long snackId) {
         try {
+            Snack snack = snackRepository.findById(snackId)
+                    .orElseThrow(() -> new IllegalArgumentException("Snack not found: " + snackId));
+            if (snack.getCategory() != Snack.SnackCategory.SNACK || !isPopcornSnack(snack)) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Chỉ có bắp rang mới có công thức."));
+            }
             String instructions = inventoryService.getRecipeInstructions(snackId);
             return ResponseEntity.ok(Map.of("instructions", instructions == null ? "" : instructions));
         } catch (IllegalArgumentException e) {
@@ -164,6 +203,11 @@ public class AdminInventoryController {
             @PathVariable Long snackId,
             @RequestBody Map<String, String> body) {
         try {
+            Snack snack = snackRepository.findById(snackId)
+                    .orElseThrow(() -> new IllegalArgumentException("Snack not found: " + snackId));
+            if (snack.getCategory() != Snack.SnackCategory.SNACK || !isPopcornSnack(snack)) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Chỉ có bắp rang mới có công thức."));
+            }
             String instructions = body.getOrDefault("instructions", "");
             Snack updated = inventoryService.updateRecipeInstructions(snackId, instructions);
             return ResponseEntity.ok(Map.of("message", "OK", "snackId", updated.getSnackId()));

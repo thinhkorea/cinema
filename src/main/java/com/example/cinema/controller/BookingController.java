@@ -11,7 +11,6 @@ import com.example.cinema.service.BookingService;
 import com.example.cinema.service.TicketPDFService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
 import java.time.LocalDate;
 import java.time.LocalDateTime;

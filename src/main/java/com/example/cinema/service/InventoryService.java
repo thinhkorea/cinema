@@ -62,6 +62,25 @@ public class InventoryService {
         return toIngredientDTO(updated, display);
     }
 
+    @Transactional
+    public void deleteIngredient(Long ingredientId) {
+        Ingredient ingredient = getIngredientEntity(ingredientId);
+
+        if (snackRecipeItemRepository.existsByIngredient_IngredientId(ingredientId)) {
+            snackRecipeItemRepository.deleteByIngredient_IngredientId(ingredientId);
+        }
+
+        if (ingredientBatchRepository.existsByIngredient_IngredientId(ingredientId)) {
+            ingredientBatchRepository.deleteByIngredient_IngredientId(ingredientId);
+        }
+
+        if (ingredientStockMovementRepository.existsByIngredient_IngredientId(ingredientId)) {
+            ingredientStockMovementRepository.deleteByIngredient_IngredientId(ingredientId);
+        }
+
+        ingredientRepository.delete(ingredient);
+    }
+
     public List<IngredientDTO> getLowStockIngredients(Double threshold) {
         double safeThreshold = threshold == null ? 10.0 : Math.max(0.0, threshold);
         LocalDate today = LocalDate.now();
@@ -239,64 +258,46 @@ public class InventoryService {
         }
 
         Ingredient ingredient = getIngredientEntity(ingredientId);
-        if (!Boolean.TRUE.equals(ingredient.getActive())) {
-            throw new IllegalStateException("Nguyên liệu đang ngưng hoạt động, không thể xuất dùng.");
-        }
-        final boolean sameDayOnly = isSameDayOnlyIngredient(ingredient);
-        final LocalDate today = LocalDate.now();
-
-        double before = ingredient.getStock() == null ? 0.0 : ingredient.getStock();
-        List<IngredientBatch> batches = ingredientBatchRepository.findByIngredient_IngredientIdOrderByReceivedAtDesc(ingredientId);
-        double availableForConsumption = batches.stream()
-            .filter(batch -> isBatchConsumable(batch, sameDayOnly, today))
-                .mapToDouble(batch -> batch.getQuantityRemaining() == null ? 0.0 : batch.getQuantityRemaining())
-                .sum();
-
-        if (availableForConsumption < request.getQuantity()) {
-            if (sameDayOnly) {
-                throw new IllegalStateException(
-                        "Đá viên chỉ được dùng trong ngày nhập. Lô đá hôm nay không đủ, vui lòng nhập đá viên mới.");
-            }
-            throw new IllegalStateException("Không đủ tồn kho nguyên liệu để xuất dùng.");
-        }
-
-        double remainingNeed = request.getQuantity();
-
-        for (IngredientBatch batch : batches) {
-            if (remainingNeed <= 0) {
-                break;
-            }
-            if (!isBatchConsumable(batch, sameDayOnly, today)) {
-                continue;
-            }
-            double available = batch.getQuantityRemaining() == null ? 0.0 : batch.getQuantityRemaining();
-            if (available <= 0) {
-                continue;
-            }
-
-            double consumed = Math.min(available, remainingNeed);
-            batch.setQuantityRemaining(available - consumed);
-            ingredientBatchRepository.save(batch);
-            remainingNeed -= consumed;
-        }
-
-        if (remainingNeed > 0) {
-            throw new IllegalStateException("Dữ liệu lô không đủ để trừ kho. Vui lòng kiểm tra lại các lô nguyên liệu.");
-        }
-
-        double after = before - request.getQuantity();
-        ingredient.setStock(after);
-        ingredientRepository.save(ingredient);
-
-        recordIngredientMovement(
+        consumeIngredientInternal(
                 ingredient,
-                before,
-                -request.getQuantity(),
-                after,
+                request.getQuantity(),
                 "CONSUME_PREP",
                 request.getReason(),
                 request.getNote(),
                 actor);
+    }
+
+    @Transactional
+    public void consumeIngredientsForSnack(Long snackId, int snackQuantity, String actor, String note) {
+        if (snackQuantity <= 0) {
+            throw new IllegalArgumentException("Số lượng snack phải > 0.");
+        }
+
+        Snack snack = snackRepository.findById(snackId)
+                .orElseThrow(() -> new IllegalArgumentException("Snack not found: " + snackId));
+
+        List<SnackRecipeItem> recipeItems = snackRecipeItemRepository
+                .findBySnack_SnackIdOrderByIngredient_IngredientNameAsc(snackId);
+        if (recipeItems.isEmpty()) {
+            throw new IllegalStateException("Snack chưa có công thức nguyên liệu: " + snack.getSnackName());
+        }
+
+        for (SnackRecipeItem item : recipeItems) {
+            if (item.getIngredient() == null || item.getQuantityPerSnack() == null) {
+                continue;
+            }
+            double requiredQty = item.getQuantityPerSnack() * snackQuantity;
+            if (requiredQty <= 0) {
+                continue;
+            }
+            consumeIngredientInternal(
+                    item.getIngredient(),
+                    requiredQty,
+                    "CONSUME_SNACK",
+                    "Fulfill snack: " + snack.getSnackName(),
+                    note,
+                    actor);
+        }
     }
 
     private boolean isBatchReceivedToday(IngredientBatch batch, LocalDate today) {
@@ -368,9 +369,11 @@ public class InventoryService {
             double change = movement.getQuantityChange() == null ? 0.0 : movement.getQuantityChange();
             String action = movement.getAction() == null ? "" : movement.getAction();
 
+            boolean isConsumeAction = action.startsWith("CONSUME_");
+
             if ("IMPORT_BATCH".equals(action) && change > 0) {
                 row.setImportedQty(row.getImportedQty() + change);
-            } else if ("CONSUME_PREP".equals(action) && change < 0) {
+            } else if (isConsumeAction && change < 0) {
                 row.setConsumedQty(row.getConsumedQty() + Math.abs(change));
             } else {
                 row.setAdjustedQty(row.getAdjustedQty() + change);
@@ -607,9 +610,83 @@ public class InventoryService {
     private static final Map<String, String> ACTION_LABELS = Map.of(
             "IMPORT_BATCH", "Nhập lô",
             "CONSUME_PREP", "Xuất dùng",
+            "CONSUME_SNACK", "Xuất cho bắp nước",
+            "CONSUME_PRODUCTION", "Xuất chế biến",
             "DISCARD_EXPIRED", "Hủy lô hết hạn",
             "ADJUSTMENT", "Điều chỉnh"
     );
+
+    private void consumeIngredientInternal(
+            Ingredient ingredient,
+            Double quantity,
+            String action,
+            String reason,
+            String note,
+            String actor) {
+        if (quantity == null || quantity <= 0) {
+            throw new IllegalArgumentException("Số lượng xuất dùng phải > 0.");
+        }
+        if (!Boolean.TRUE.equals(ingredient.getActive())) {
+            throw new IllegalStateException("Nguyên liệu đang ngưng hoạt động, không thể xuất dùng.");
+        }
+
+        final boolean sameDayOnly = isSameDayOnlyIngredient(ingredient);
+        final LocalDate today = LocalDate.now();
+        Long ingredientId = ingredient.getIngredientId();
+
+        double before = ingredient.getStock() == null ? 0.0 : ingredient.getStock();
+        List<IngredientBatch> batches = ingredientBatchRepository
+                .findByIngredient_IngredientIdOrderByReceivedAtDesc(ingredientId);
+        double availableForConsumption = batches.stream()
+                .filter(batch -> isBatchConsumable(batch, sameDayOnly, today))
+                .mapToDouble(batch -> batch.getQuantityRemaining() == null ? 0.0 : batch.getQuantityRemaining())
+                .sum();
+
+        if (availableForConsumption < quantity) {
+            if (sameDayOnly) {
+                throw new IllegalStateException(
+                        "Đá viên chỉ được dùng trong ngày nhập. Lô đá hôm nay không đủ, vui lòng nhập đá viên mới.");
+            }
+            throw new IllegalStateException("Không đủ tồn kho nguyên liệu để xuất dùng.");
+        }
+
+        double remainingNeed = quantity;
+        for (IngredientBatch batch : batches) {
+            if (remainingNeed <= 0) {
+                break;
+            }
+            if (!isBatchConsumable(batch, sameDayOnly, today)) {
+                continue;
+            }
+            double available = batch.getQuantityRemaining() == null ? 0.0 : batch.getQuantityRemaining();
+            if (available <= 0) {
+                continue;
+            }
+
+            double consumed = Math.min(available, remainingNeed);
+            batch.setQuantityRemaining(available - consumed);
+            ingredientBatchRepository.save(batch);
+            remainingNeed -= consumed;
+        }
+
+        if (remainingNeed > 0) {
+            throw new IllegalStateException("Dữ liệu lô không đủ để trừ kho. Vui lòng kiểm tra lại các lô nguyên liệu.");
+        }
+
+        double after = before - quantity;
+        ingredient.setStock(after);
+        ingredientRepository.save(ingredient);
+
+        recordIngredientMovement(
+                ingredient,
+                before,
+                -quantity,
+                after,
+                action,
+                reason,
+                note,
+                actor);
+    }
 
     private String mapActionToVietnamese(String action) {
         if (action == null) return null;

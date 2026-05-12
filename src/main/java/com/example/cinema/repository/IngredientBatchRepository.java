@@ -13,4 +13,8 @@ public interface IngredientBatchRepository extends JpaRepository<IngredientBatch
     List<IngredientBatch> findByExpiryDateLessThanEqualAndQuantityRemainingGreaterThanOrderByExpiryDateAsc(
             LocalDate date,
             Double quantity);
+
+    boolean existsByIngredient_IngredientId(Long ingredientId);
+
+    void deleteByIngredient_IngredientId(Long ingredientId);
 }

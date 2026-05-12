@@ -61,6 +61,8 @@ public class SecurityConfig {
 
                                                 // Snack admin APIs
                                                 .requestMatchers(HttpMethod.GET, "/api/snacks/admin/**").hasRole("ADMIN")
+                                                .requestMatchers(HttpMethod.POST, "/api/snacks/admin/**").hasRole("ADMIN")
+                                                .requestMatchers(HttpMethod.PATCH, "/api/snacks/admin/**").hasRole("ADMIN")
                                                 .requestMatchers(HttpMethod.POST, "/api/snacks").hasRole("ADMIN")
                                                 .requestMatchers(HttpMethod.PUT, "/api/snacks/*").hasRole("ADMIN")
                                                 .requestMatchers(HttpMethod.DELETE, "/api/snacks/*").hasRole("ADMIN")

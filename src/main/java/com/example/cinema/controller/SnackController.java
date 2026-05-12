@@ -8,14 +8,22 @@ import com.example.cinema.dto.SnackWarehouseDTO;
 import com.example.cinema.dto.UpdateSnackWarehouseStockRequestDTO;
 import com.example.cinema.service.SnackService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.UrlResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.net.MalformedURLException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/snacks")
@@ -67,6 +75,47 @@ public class SnackController {
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
+    @PostMapping("/admin/upload-image")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> uploadSnackImage(@RequestParam("file") MultipartFile file) {
+        try {
+            if (file == null || file.isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Vui lòng chọn ảnh."));
+            }
+
+            String contentType = file.getContentType() == null ? "" : file.getContentType();
+            if (!contentType.startsWith("image/")) {
+                return ResponseEntity.badRequest().body(Map.of("error", "File upload phải là ảnh."));
+            }
+
+            String originalName = file.getOriginalFilename() == null ? "snack" : file.getOriginalFilename();
+            String extension = "";
+            int dotIndex = originalName.lastIndexOf('.');
+            if (dotIndex >= 0) {
+                extension = originalName.substring(dotIndex).replaceAll("[^a-zA-Z0-9.]", "");
+            }
+            String fileName = UUID.randomUUID() + extension;
+            Path uploadDir = Paths.get("uploads", "snacks");
+            Files.createDirectories(uploadDir);
+            Files.copy(file.getInputStream(), uploadDir.resolve(fileName));
+
+            return ResponseEntity.ok(Map.of("imageUrl", "http://localhost:8080/api/snacks/images/" + fileName));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Không thể upload ảnh: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/images/{fileName:.+}")
+    public ResponseEntity<Resource> getSnackImage(@PathVariable String fileName) throws MalformedURLException {
+        Path imagePath = Paths.get("uploads", "snacks").resolve(fileName).normalize();
+        Resource resource = new UrlResource(imagePath.toUri());
+        if (!resource.exists() || !resource.isReadable()) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(resource);
+    }
+
     /**
      * [ADMIN] Lấy tất cả snack (bao gồm hết hàng/không available)
      * GET /api/snacks/admin/all
@@ -99,6 +148,12 @@ public class SnackController {
     public ResponseEntity<List<SnackWarehouseDTO>> getLowWarehouseStocks(
             @RequestParam(required = false) Double threshold) {
         return ResponseEntity.ok(snackService.getLowWarehouseStocks(threshold));
+    }
+
+    @GetMapping("/admin/{snackId}/warehouse-movements")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<Map<String, Object>>> getWarehouseMovements(@PathVariable Long snackId) {
+        return ResponseEntity.ok(snackService.getSnackWarehouseMovements(snackId));
     }
 
     @PatchMapping("/admin/{snackId}/warehouse-stock")

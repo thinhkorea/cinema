@@ -11,4 +11,8 @@ public interface IngredientStockMovementRepository extends JpaRepository<Ingredi
     List<IngredientStockMovement> findByIngredient_IngredientIdOrderByCreatedAtDesc(Long ingredientId);
 
     List<IngredientStockMovement> findByCreatedAtBetweenOrderByCreatedAtDesc(LocalDateTime from, LocalDateTime to);
+
+    boolean existsByIngredient_IngredientId(Long ingredientId);
+
+    void deleteByIngredient_IngredientId(Long ingredientId);
 }

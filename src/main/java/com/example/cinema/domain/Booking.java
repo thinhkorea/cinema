@@ -69,6 +69,9 @@ public class Booking {
     @Column(nullable = false)
     private boolean printed = false;
 
+    @Column(nullable = false)
+    private boolean snacksFulfilled = false;
+
     // Quan hệ với BookingSnacks (bắp nước đã chọn)
     @OneToMany(mappedBy = "booking", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<BookingSnack> snacks = new ArrayList<>();

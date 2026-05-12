@@ -547,6 +547,14 @@ public class DataSeeder {
             snackThai.setCategory(Snack.SnackCategory.SNACK);
             snackThai.setAvailable(true);
 
+            Snack popcornTwoFlavor = new Snack();
+            popcornTwoFlavor.setSnackName("Bắp 2 Ngăn 64OZ Phô Mai + Caramel");
+            popcornTwoFlavor.setDescription("Bắp 2 ngăn 64oz vị phô mai và caramel");
+            popcornTwoFlavor.setPrice(0.0);
+            popcornTwoFlavor.setImageUrl("https://via.placeholder.com/300x300?text=Popcorn+2+Ngan");
+            popcornTwoFlavor.setCategory(Snack.SnackCategory.SNACK);
+            popcornTwoFlavor.setAvailable(true);
+
             Snack laysStax = new Snack();
             laysStax.setSnackName("Khoai Tây Lay's Stax 100g");
             laysStax.setDescription("");
@@ -579,13 +587,13 @@ public class DataSeeder {
             pocaWavy.setCategory(Snack.SnackCategory.SNACK);
             pocaWavy.setAvailable(true);
 
-            // Combo va do pha che tai quay: khong theo ton kho thanh pham
+            // Combo khong theo ton kho thanh pham, khi xuat se tach ra bap + nuoc
             setSnackWarehouse(comboGau, false, 0.0, 0.0);
             setSnackWarehouse(comboCoGau, false, 0.0, 0.0);
             setSnackWarehouse(comboNhaGau, false, 0.0, 0.0);
             setSnackWarehouse(cokeZero, false, 0.0, 0.0);
             setSnackWarehouse(fanta, false, 0.0, 0.0);
-            setSnackWarehouse(coke, false, 0.0, 0.0);
+            setSnackWarehouse(coke, true, 120.0, 30.0);
             setSnackWarehouse(sprite, false, 0.0, 0.0);
 
             // Do dong chai/dong goi: co theo ton kho thanh pham
@@ -593,6 +601,7 @@ public class DataSeeder {
             setSnackWarehouse(nutriboost, true, 70.0, 20.0);
             setSnackWarehouse(teppy, true, 70.0, 20.0);
             setSnackWarehouse(snackThai, true, 60.0, 20.0);
+            setSnackWarehouse(popcornTwoFlavor, true, 80.0, 20.0);
             setSnackWarehouse(laysStax, true, 50.0, 15.0);
             setSnackWarehouse(pocaKhoaiTay, true, 80.0, 25.0);
             setSnackWarehouse(snackPartyz, true, 100.0, 30.0);
@@ -602,7 +611,7 @@ public class DataSeeder {
             snackRepo.saveAll(List.of(
                 comboGau, comboCoGau, comboNhaGau,
                 dasani, nutriboost, teppy, cokeZero, fanta, coke, sprite,
-                snackThai, laysStax, pocaKhoaiTay, snackPartyz, pocaWavy
+                snackThai, popcornTwoFlavor, laysStax, pocaKhoaiTay, snackPartyz, pocaWavy
             ));
 
             seedIngredientAndRecipeData(
@@ -637,9 +646,6 @@ public class DataSeeder {
         System.out.println("Seeding ingredients, batches, and snack recipes...");
 
         Ingredient ice = createIngredient("Đá viên", "bao", 10.0);
-        Ingredient cokeSyrup = createIngredient("Syrup Coke", "ml", 30000.0);
-        Ingredient spriteSyrup = createIngredient("Syrup Sprite", "ml", 25000.0);
-        Ingredient fantaSyrup = createIngredient("Syrup Fanta", "ml", 22000.0);
         Ingredient cornKernel = createIngredient("Hạt bắp nổ", "gram", 12000.0);
         Ingredient popcornOil = createIngredient("Dầu nổ bắp", "ml", 8000.0);
         Ingredient sugar = createIngredient("Đường", "kg", 120.0);
@@ -649,9 +655,6 @@ public class DataSeeder {
 
         ingredientRepo.saveAll(List.of(
             ice,
-            cokeSyrup,
-            spriteSyrup,
-            fantaSyrup,
             cornKernel,
             popcornOil,
             sugar,
@@ -663,9 +666,6 @@ public class DataSeeder {
         List<IngredientBatch> batches = new ArrayList<>();
         // Da vien nhap moi ngay, han su dung rat ngan
         batches.add(createBatch(ice, 10.0, 10.0, 45000.0, "Nhà cung cấp đá D", today.minusDays(1), today, "Đá giao theo ngày (hôm nay)"));
-        batches.add(createBatch(cokeSyrup, 30000.0, 30000.0, 0.8, "Coca-Cola VN", today.minusDays(10), today.plusMonths(6), "Syrup Coke"));
-        batches.add(createBatch(spriteSyrup, 25000.0, 25000.0, 0.8, "Coca-Cola VN", today.minusDays(10), today.plusMonths(6), "Syrup Sprite"));
-        batches.add(createBatch(fantaSyrup, 22000.0, 22000.0, 0.8, "Coca-Cola VN", today.minusDays(10), today.plusMonths(6), "Syrup Fanta"));
         batches.add(createBatch(cornKernel, 12000.0, 12000.0, 0.04, "Nhà cung cấp bắp F", today.minusDays(12), today.plusMonths(4), "Hạt bắp cho máy nổ"));
         batches.add(createBatch(popcornOil, 8000.0, 8000.0, 0.06, "Nhà cung cấp dầu G", today.minusDays(12), today.plusMonths(4), "Dầu nổ bắp"));
         batches.add(createBatch(sugar, 120.0, 120.0, 18000.0, "Nhà cung cấp đường K", today.minusDays(6), today.plusMonths(6), "Đường dùng pha chế"));
@@ -676,20 +676,15 @@ public class DataSeeder {
 
         List<SnackRecipeItem> recipeItems = new ArrayList<>();
         recipeItems.add(createRecipeItem(coke, ice, 0.03));
-        recipeItems.add(createRecipeItem(coke, cokeSyrup, 90.0));
 
         recipeItems.add(createRecipeItem(cokeZero, ice, 0.03));
-        recipeItems.add(createRecipeItem(cokeZero, cokeSyrup, 85.0));
 
         recipeItems.add(createRecipeItem(sprite, ice, 0.03));
-        recipeItems.add(createRecipeItem(sprite, spriteSyrup, 90.0));
 
         recipeItems.add(createRecipeItem(fanta, ice, 0.03));
-        recipeItems.add(createRecipeItem(fanta, fantaSyrup, 90.0));
 
         // 1 bắp 2 ngăn 64oz vị phô mai + caramel cho combo
         recipeItems.add(createRecipeItem(comboGau, ice, 0.03));
-        recipeItems.add(createRecipeItem(comboGau, cokeSyrup, 90.0));
         recipeItems.add(createRecipeItem(comboGau, cornKernel, 160.0));
         recipeItems.add(createRecipeItem(comboGau, popcornOil, 35.0));
         recipeItems.add(createRecipeItem(comboGau, butterFlavor, 20.0));
@@ -698,7 +693,6 @@ public class DataSeeder {
 
         // 2 coke + 1 bắp 2 ngăn
         recipeItems.add(createRecipeItem(comboCoGau, ice, 0.06));
-        recipeItems.add(createRecipeItem(comboCoGau, cokeSyrup, 180.0));
         recipeItems.add(createRecipeItem(comboCoGau, cornKernel, 160.0));
         recipeItems.add(createRecipeItem(comboCoGau, popcornOil, 35.0));
         recipeItems.add(createRecipeItem(comboCoGau, butterFlavor, 20.0));
@@ -707,7 +701,6 @@ public class DataSeeder {
 
         // 4 coke + 2 bắp 2 ngăn
         recipeItems.add(createRecipeItem(comboNhaGau, ice, 0.12));
-        recipeItems.add(createRecipeItem(comboNhaGau, cokeSyrup, 360.0));
         recipeItems.add(createRecipeItem(comboNhaGau, cornKernel, 320.0));
         recipeItems.add(createRecipeItem(comboNhaGau, popcornOil, 70.0));
         recipeItems.add(createRecipeItem(comboNhaGau, butterFlavor, 40.0));

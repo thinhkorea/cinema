@@ -1,6 +1,5 @@
 package com.example.cinema.controller;
 
-import com.example.cinema.repository.BookingRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -28,12 +27,6 @@ public class PaymentController {
 
     @Value("${vnp_ReturnUrl}")
     private String vnp_ReturnUrl;
-
-    private final BookingRepository bookingRepo;
-
-    public PaymentController(BookingRepository bookingRepo) {
-        this.bookingRepo = bookingRepo;
-    }
 
     // HMAC-SHA512 đúng chuẩn VNPay
     private static String hmacSHA512(String key, String data) {

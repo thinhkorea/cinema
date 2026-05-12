@@ -6,6 +6,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface SnackRepository extends JpaRepository<Snack, Long> {
@@ -21,4 +22,6 @@ public interface SnackRepository extends JpaRepository<Snack, Long> {
     List<Snack> findByCategoryAndAvailableTrue(Snack.SnackCategory category);
 
     List<Snack> findByExpiryDateLessThanEqual(LocalDate date);
+
+    Optional<Snack> findBySnackNameIgnoreCase(String snackName);
 }
