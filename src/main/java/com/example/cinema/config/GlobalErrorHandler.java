@@ -46,7 +46,12 @@ public class GlobalErrorHandler {
     // Trùng unique DB (đặt ghế trùng)
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiErrorDTO> handleDataIntegrity(DataIntegrityViolationException ex, HttpServletRequest req) {
-        return build(HttpStatus.BAD_REQUEST, "Bad Request", "Data integrity violation", req);
+        String path = req.getRequestURI();
+        String message = "Data integrity violation";
+        if (path != null && path.contains("/admin/inventory/snacks/") && path.endsWith("/recipe")) {
+            message = "Cong thuc co nguyen lieu trung hoac du lieu khong hop le.";
+        }
+        return build(HttpStatus.BAD_REQUEST, "Bad Request", message, req);
     }
 
     // Fallback

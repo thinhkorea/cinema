@@ -1,4 +1,4 @@
-package com.example.cinema.service;
+﻿package com.example.cinema.service;
 
 import com.example.cinema.domain.Ingredient;
 import com.example.cinema.domain.IngredientBatch;
@@ -24,10 +24,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.Locale;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -153,16 +153,16 @@ public class InventoryService {
     public Ingredient createIngredient(Ingredient ingredient) {
         String name = ingredient.getIngredientName();
         if (name == null || name.trim().isEmpty()) {
-            throw new IllegalArgumentException("Tên nguyên liệu không được để trống.");
+            throw new IllegalArgumentException("TÃªn nguyÃªn liá»‡u khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
         }
         String unit = ingredient.getUnit();
         if (unit == null || unit.trim().isEmpty()) {
-            throw new IllegalArgumentException("Đơn vị không được để trống.");
+            throw new IllegalArgumentException("ÄÆ¡n vá»‹ khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
         }
         String normalizedName = name.trim();
         String normalizedUnit = unit.trim();
         if (ingredientRepository.existsByIngredientNameIgnoreCase(normalizedName)) {
-            throw new IllegalArgumentException("Tên nguyên liệu đã tồn tại.");
+            throw new IllegalArgumentException("TÃªn nguyÃªn liá»‡u Ä‘Ã£ tá»“n táº¡i.");
         }
 
         ingredient.setIngredientId(null);
@@ -172,7 +172,7 @@ public class InventoryService {
             ingredient.setStock(0.0);
         }
         if (ingredient.getStock() < 0) {
-            throw new IllegalArgumentException("Tồn kho không được âm.");
+            throw new IllegalArgumentException("Tá»“n kho khÃ´ng Ä‘Æ°á»£c Ã¢m.");
         }
         if (ingredient.getActive() == null) {
             ingredient.setActive(true);
@@ -185,16 +185,16 @@ public class InventoryService {
         Ingredient ingredient = getIngredientEntity(ingredientId);
         String name = payload.getIngredientName();
         if (name == null || name.trim().isEmpty()) {
-            throw new IllegalArgumentException("Tên nguyên liệu không được để trống.");
+            throw new IllegalArgumentException("TÃªn nguyÃªn liá»‡u khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
         }
         String unit = payload.getUnit();
         if (unit == null || unit.trim().isEmpty()) {
-            throw new IllegalArgumentException("Đơn vị không được để trống.");
+            throw new IllegalArgumentException("ÄÆ¡n vá»‹ khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng.");
         }
         String normalizedName = name.trim();
         String normalizedUnit = unit.trim();
         if (ingredientRepository.existsByIngredientNameIgnoreCaseAndIngredientIdNot(normalizedName, ingredientId)) {
-            throw new IllegalArgumentException("Tên nguyên liệu đã tồn tại.");
+            throw new IllegalArgumentException("TÃªn nguyÃªn liá»‡u Ä‘Ã£ tá»“n táº¡i.");
         }
 
         ingredient.setIngredientName(normalizedName);
@@ -203,7 +203,7 @@ public class InventoryService {
         if (payload.getStock() != null && payload.getStock() >= 0) {
             ingredient.setStock(payload.getStock());
         } else if (payload.getStock() != null && payload.getStock() < 0) {
-            throw new IllegalArgumentException("Tồn kho không được âm.");
+            throw new IllegalArgumentException("Tá»“n kho khÃ´ng Ä‘Æ°á»£c Ã¢m.");
         }
         return ingredientRepository.save(ingredient);
     }
@@ -211,17 +211,17 @@ public class InventoryService {
     @Transactional
     public IngredientBatch receiveBatch(Long ingredientId, ReceiveIngredientBatchRequestDTO request, String actor) {
         if (request.getQuantity() == null || request.getQuantity() <= 0) {
-            throw new IllegalArgumentException("Số lượng nhập phải > 0.");
+            throw new IllegalArgumentException("Sá»‘ lÆ°á»£ng nháº­p pháº£i > 0.");
         }
 
         if (request.getProductionDate() != null && request.getExpiryDate() != null
                 && request.getExpiryDate().isBefore(request.getProductionDate())) {
-            throw new IllegalArgumentException("Hạn sử dụng không được trước ngày sản xuất.");
+            throw new IllegalArgumentException("Háº¡n sá»­ dá»¥ng khÃ´ng Ä‘Æ°á»£c trÆ°á»›c ngÃ y sáº£n xuáº¥t.");
         }
 
         Ingredient ingredient = getIngredientEntity(ingredientId);
         if (!Boolean.TRUE.equals(ingredient.getActive())) {
-            throw new IllegalStateException("Nguyên liệu đang ngưng hoạt động, không thể nhập thêm lô.");
+            throw new IllegalStateException("NguyÃªn liá»‡u Ä‘ang ngÆ°ng hoáº¡t Ä‘á»™ng, khÃ´ng thá»ƒ nháº­p thÃªm lÃ´.");
         }
         double before = ingredient.getStock() == null ? 0.0 : ingredient.getStock();
 
@@ -254,7 +254,7 @@ public class InventoryService {
     @Transactional
     public void consumeIngredientByStaff(Long ingredientId, IngredientConsumeRequestDTO request, String actor) {
         if (request == null || request.getQuantity() == null || request.getQuantity() <= 0) {
-            throw new IllegalArgumentException("Số lượng xuất dùng phải > 0.");
+            throw new IllegalArgumentException("Sá»‘ lÆ°á»£ng xuáº¥t dÃ¹ng pháº£i > 0.");
         }
 
         Ingredient ingredient = getIngredientEntity(ingredientId);
@@ -270,7 +270,7 @@ public class InventoryService {
     @Transactional
     public void consumeIngredientsForSnack(Long snackId, int snackQuantity, String actor, String note) {
         if (snackQuantity <= 0) {
-            throw new IllegalArgumentException("Số lượng snack phải > 0.");
+            throw new IllegalArgumentException("Sá»‘ lÆ°á»£ng snack pháº£i > 0.");
         }
 
         Snack snack = snackRepository.findById(snackId)
@@ -279,7 +279,7 @@ public class InventoryService {
         List<SnackRecipeItem> recipeItems = snackRecipeItemRepository
                 .findBySnack_SnackIdOrderByIngredient_IngredientNameAsc(snackId);
         if (recipeItems.isEmpty()) {
-            throw new IllegalStateException("Snack chưa có công thức nguyên liệu: " + snack.getSnackName());
+            throw new IllegalStateException("Snack chÆ°a cÃ³ cÃ´ng thá»©c nguyÃªn liá»‡u: " + snack.getSnackName());
         }
 
         for (SnackRecipeItem item : recipeItems) {
@@ -320,13 +320,13 @@ public class InventoryService {
             return false;
         }
         String normalized = name.trim().toLowerCase(Locale.ROOT);
-        return normalized.equals("đá viên")
+        return normalized.equals("Ä‘Ã¡ viÃªn")
                 || normalized.equals("da vien")
-                || normalized.equals("nước đá")
+                || normalized.equals("nÆ°á»›c Ä‘Ã¡")
                 || normalized.equals("nuoc da")
-                || normalized.contains("đá viên")
+                || normalized.contains("Ä‘Ã¡ viÃªn")
                 || normalized.contains("da vien")
-                || normalized.contains("nước đá")
+                || normalized.contains("nÆ°á»›c Ä‘Ã¡")
                 || normalized.contains("nuoc da");
     }
 
@@ -396,7 +396,7 @@ public class InventoryService {
 
         LocalDate today = LocalDate.now();
         if (!isExpiredBatch(batch, today)) {
-            throw new IllegalArgumentException("Lô này chưa hết hạn, không thể loại bỏ.");
+            throw new IllegalArgumentException("LÃ´ nÃ y chÆ°a háº¿t háº¡n, khÃ´ng thá»ƒ loáº¡i bá».");
         }
 
         double discardQty = batch.getQuantityRemaining() == null ? 0.0 : batch.getQuantityRemaining();
@@ -420,7 +420,7 @@ public class InventoryService {
                 -discardQty,
                 after,
                 "DISCARD_EXPIRED",
-                "Hủy lô hết hạn",
+                "Há»§y lÃ´ háº¿t háº¡n",
                 "BatchId=" + batchId,
                 actor);
     }
@@ -455,7 +455,7 @@ public class InventoryService {
                     -remaining,
                     after,
                     "DISCARD_EXPIRED",
-                    "Hủy lô hết hạn",
+                    "Há»§y lÃ´ háº¿t háº¡n",
                     "BatchId=" + batch.getBatchId(),
                     actor);
 
@@ -490,23 +490,28 @@ public class InventoryService {
         Snack snack = snackRepository.findById(snackId)
                 .orElseThrow(() -> new IllegalArgumentException("Snack not found: " + snackId));
 
-        snackRecipeItemRepository.deleteBySnack_SnackId(snackId);
-
-        List<SnackRecipeItem> createdItems = new ArrayList<>();
+        Map<Long, Double> groupedRequests = new LinkedHashMap<>();
         if (requests != null) {
             for (SnackRecipeItemRequestDTO request : requests) {
-                if (request.getIngredientId() == null || request.getQuantityPerSnack() == null
+                if (request == null || request.getIngredientId() == null || request.getQuantityPerSnack() == null
                         || request.getQuantityPerSnack() <= 0) {
-                    throw new IllegalArgumentException("Công thức không hợp lệ: ingredientId và quantityPerSnack phải > 0.");
+                    throw new IllegalArgumentException("Cong thuc khong hop le: ingredientId va quantityPerSnack phai > 0.");
                 }
-
-                Ingredient ingredient = getIngredientEntity(request.getIngredientId());
-                SnackRecipeItem item = new SnackRecipeItem();
-                item.setSnack(snack);
-                item.setIngredient(ingredient);
-                item.setQuantityPerSnack(request.getQuantityPerSnack());
-                createdItems.add(snackRecipeItemRepository.save(item));
+                groupedRequests.merge(request.getIngredientId(), request.getQuantityPerSnack(), Double::sum);
             }
+        }
+
+        snackRecipeItemRepository.deleteBySnack_SnackId(snackId);
+        snackRecipeItemRepository.flush();
+
+        List<SnackRecipeItem> createdItems = new ArrayList<>();
+        for (Map.Entry<Long, Double> entry : groupedRequests.entrySet()) {
+            Ingredient ingredient = getIngredientEntity(entry.getKey());
+            SnackRecipeItem item = new SnackRecipeItem();
+            item.setSnack(snack);
+            item.setIngredient(ingredient);
+            item.setQuantityPerSnack(entry.getValue());
+            createdItems.add(snackRecipeItemRepository.save(item));
         }
 
         return createdItems.stream().map(this::toRecipeDTO).collect(Collectors.toList());
@@ -608,12 +613,12 @@ public class InventoryService {
     }
 
     private static final Map<String, String> ACTION_LABELS = Map.of(
-            "IMPORT_BATCH", "Nhập lô",
-            "CONSUME_PREP", "Xuất dùng",
-            "CONSUME_SNACK", "Xuất cho bắp nước",
-            "CONSUME_PRODUCTION", "Xuất chế biến",
-            "DISCARD_EXPIRED", "Hủy lô hết hạn",
-            "ADJUSTMENT", "Điều chỉnh"
+            "IMPORT_BATCH", "Nháº­p lÃ´",
+            "CONSUME_PREP", "Xuáº¥t dÃ¹ng",
+            "CONSUME_SNACK", "Xuáº¥t cho báº¯p nÆ°á»›c",
+            "CONSUME_PRODUCTION", "Xuáº¥t cháº¿ biáº¿n",
+            "DISCARD_EXPIRED", "Há»§y lÃ´ háº¿t háº¡n",
+            "ADJUSTMENT", "Äiá»u chá»‰nh"
     );
 
     private void consumeIngredientInternal(
@@ -624,10 +629,10 @@ public class InventoryService {
             String note,
             String actor) {
         if (quantity == null || quantity <= 0) {
-            throw new IllegalArgumentException("Số lượng xuất dùng phải > 0.");
+            throw new IllegalArgumentException("Sá»‘ lÆ°á»£ng xuáº¥t dÃ¹ng pháº£i > 0.");
         }
         if (!Boolean.TRUE.equals(ingredient.getActive())) {
-            throw new IllegalStateException("Nguyên liệu đang ngưng hoạt động, không thể xuất dùng.");
+            throw new IllegalStateException("NguyÃªn liá»‡u Ä‘ang ngÆ°ng hoáº¡t Ä‘á»™ng, khÃ´ng thá»ƒ xuáº¥t dÃ¹ng.");
         }
 
         final boolean sameDayOnly = isSameDayOnlyIngredient(ingredient);
@@ -645,9 +650,9 @@ public class InventoryService {
         if (availableForConsumption < quantity) {
             if (sameDayOnly) {
                 throw new IllegalStateException(
-                        "Đá viên chỉ được dùng trong ngày nhập. Lô đá hôm nay không đủ, vui lòng nhập đá viên mới.");
+                        "ÄÃ¡ viÃªn chá»‰ Ä‘Æ°á»£c dÃ¹ng trong ngÃ y nháº­p. LÃ´ Ä‘Ã¡ hÃ´m nay khÃ´ng Ä‘á»§, vui lÃ²ng nháº­p Ä‘Ã¡ viÃªn má»›i.");
             }
-            throw new IllegalStateException("Không đủ tồn kho nguyên liệu để xuất dùng.");
+            throw new IllegalStateException("KhÃ´ng Ä‘á»§ tá»“n kho nguyÃªn liá»‡u Ä‘á»ƒ xuáº¥t dÃ¹ng.");
         }
 
         double remainingNeed = quantity;
@@ -670,7 +675,7 @@ public class InventoryService {
         }
 
         if (remainingNeed > 0) {
-            throw new IllegalStateException("Dữ liệu lô không đủ để trừ kho. Vui lòng kiểm tra lại các lô nguyên liệu.");
+            throw new IllegalStateException("Dá»¯ liá»‡u lÃ´ khÃ´ng Ä‘á»§ Ä‘á»ƒ trá»« kho. Vui lÃ²ng kiá»ƒm tra láº¡i cÃ¡c lÃ´ nguyÃªn liá»‡u.");
         }
 
         double after = before - quantity;
@@ -714,3 +719,4 @@ public class InventoryService {
         ingredientStockMovementRepository.save(movement);
     }
 }
+
