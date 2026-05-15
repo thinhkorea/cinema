@@ -10,17 +10,19 @@ import com.example.cinema.service.SnackService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -32,6 +34,7 @@ import java.util.UUID;
 public class SnackController {
 
     private final SnackService snackService;
+    private static final Path SNACK_UPLOAD_DIR = Paths.get("uploads", "snacks");
 
     /**
      * [PUBLIC] Lấy tất cả snacks đang available
@@ -88,18 +91,27 @@ public class SnackController {
                 return ResponseEntity.badRequest().body(Map.of("error", "File upload phải là ảnh."));
             }
 
-            String originalName = file.getOriginalFilename() == null ? "snack" : file.getOriginalFilename();
+            String originalName = Paths.get(file.getOriginalFilename() == null ? "snack" : file.getOriginalFilename())
+                    .getFileName()
+                    .toString();
             String extension = "";
             int dotIndex = originalName.lastIndexOf('.');
             if (dotIndex >= 0) {
-                extension = originalName.substring(dotIndex).replaceAll("[^a-zA-Z0-9.]", "");
+                extension = originalName.substring(dotIndex).replaceAll("[^a-zA-Z0-9.]", "").toLowerCase();
+            }
+            if (extension.isBlank()) {
+                extension = ".jpg";
             }
             String fileName = UUID.randomUUID() + extension;
-            Path uploadDir = Paths.get("uploads", "snacks");
+            Path uploadDir = SNACK_UPLOAD_DIR.toAbsolutePath().normalize();
             Files.createDirectories(uploadDir);
-            Files.copy(file.getInputStream(), uploadDir.resolve(fileName));
+            Files.copy(file.getInputStream(), uploadDir.resolve(fileName), StandardCopyOption.REPLACE_EXISTING);
 
-            return ResponseEntity.ok(Map.of("imageUrl", "http://localhost:8080/api/snacks/images/" + fileName));
+            String imageUrl = "/api/snacks/images/" + fileName;
+
+            return ResponseEntity.ok(Map.of(
+                    "fileName", fileName,
+                    "imageUrl", imageUrl));
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Không thể upload ảnh: " + e.getMessage()));
@@ -107,13 +119,24 @@ public class SnackController {
     }
 
     @GetMapping("/images/{fileName:.+}")
-    public ResponseEntity<Resource> getSnackImage(@PathVariable String fileName) throws MalformedURLException {
-        Path imagePath = Paths.get("uploads", "snacks").resolve(fileName).normalize();
+    public ResponseEntity<Resource> getSnackImage(@PathVariable String fileName) throws Exception {
+        Path uploadDir = SNACK_UPLOAD_DIR.toAbsolutePath().normalize();
+        Path imagePath = uploadDir.resolve(fileName).normalize();
+        if (!imagePath.startsWith(uploadDir)) {
+            return ResponseEntity.badRequest().build();
+        }
         Resource resource = new UrlResource(imagePath.toUri());
         if (!resource.exists() || !resource.isReadable()) {
             return ResponseEntity.notFound().build();
         }
-        return ResponseEntity.ok(resource);
+
+        String contentType = Files.probeContentType(imagePath);
+        MediaType mediaType = contentType == null ? MediaType.APPLICATION_OCTET_STREAM : MediaType.parseMediaType(contentType);
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CACHE_CONTROL, "max-age=86400")
+                .contentType(mediaType)
+                .body(resource);
     }
 
     /**

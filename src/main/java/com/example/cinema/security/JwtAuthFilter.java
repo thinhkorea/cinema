@@ -59,8 +59,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return true;
         }
 
-        // Cho phép GET tới các API public (movies, showtimes, seats, snacks public).
-        if ("GET".equals(method) && (path.startsWith("/api/movies") ||
+        // Cho phép GET/HEAD tới các API public (movies, showtimes, seats, snacks public).
+        if (("GET".equals(method) || "HEAD".equals(method)) && (path.startsWith("/api/movies") ||
             path.startsWith("/api/showtimes") ||
             path.startsWith("/api/seats") ||
             (path.startsWith("/api/snacks")

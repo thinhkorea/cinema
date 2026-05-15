@@ -45,7 +45,6 @@ public class SnackService {
      */
     public List<SnackDTO> getAllAvailableSnacks() {
         return snackRepository.findByAvailableTrue().stream()
-                .filter(snack -> !isExpiredSnack(snack))
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
     }
@@ -55,7 +54,6 @@ public class SnackService {
      */
     public List<SnackDTO> getSnacksByCategory(Snack.SnackCategory category) {
         return snackRepository.findByCategoryAndAvailableTrue(category).stream()
-                .filter(snack -> !isExpiredSnack(snack))
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
     }
@@ -332,10 +330,6 @@ public class SnackService {
 
             Snack snack = getSnackById(item.getSnackId());
 
-            if (snack.getExpiryDate() != null && snack.getExpiryDate().isBefore(LocalDate.now())) {
-                throw new RuntimeException("Snack đã quá hạn sử dụng: " + snack.getSnackName());
-            }
-
             // Online booking chỉ ghi nhận món đã chọn.
             // Việc kiểm tra/trừ nguyên liệu sẽ xử lý ở bước staff fulfill tại quầy.
 
@@ -576,10 +570,6 @@ public class SnackService {
             .priceAtPurchase(bs.getPriceAtPurchase())
             .subtotal(bs.getSubtotal())
             .build();
-    }
-
-    private boolean isExpiredSnack(Snack snack) {
-        return snack.getExpiryDate() != null && snack.getExpiryDate().isBefore(LocalDate.now());
     }
 
     private SnackWarehouseDTO convertToWarehouseDTO(Snack snack) {

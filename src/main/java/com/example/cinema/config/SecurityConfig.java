@@ -74,6 +74,12 @@ public class SecurityConfig {
                                                                 "/api/seats/**",
                                                                 "/api/snacks/**")
                                                 .permitAll()
+                                                .requestMatchers(HttpMethod.HEAD,
+                                                                "/api/movies/**",
+                                                                "/api/showtimes/**",
+                                                                "/api/seats/**",
+                                                                "/api/snacks/**")
+                                                .permitAll()
 
                                                 // Cho phép người dùng đã đăng nhập gửi review phim
                                                 .requestMatchers(HttpMethod.POST, "/api/movies/*/reviews")
