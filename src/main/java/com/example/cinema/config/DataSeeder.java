@@ -92,7 +92,8 @@ public class DataSeeder {
             admin.setPassword("$2a$10$bWK86rfYrdLDLtYh6lZ66eCUBo9G1.kpw7DUPTLP.KYav0Q4gONvC"); // 123456
             admin.setFullName("Admin Manager");
             admin.setRole(User.Role.ADMIN);
-            admin.setCurrentSessionToken(null); // Chưa đăng nhập
+            admin.setCurrentSessionId(null);
+            admin.setCurrentRefreshToken(null);
 
             User staff = new User();
             staff.setEmail("staff01@cinema.com");
@@ -100,7 +101,8 @@ public class DataSeeder {
             staff.setPassword("$2a$10$bWK86rfYrdLDLtYh6lZ66eCUBo9G1.kpw7DUPTLP.KYav0Q4gONvC");
             staff.setFullName("Nguyen Van Staff");
             staff.setRole(User.Role.STAFF);
-            staff.setCurrentSessionToken(null); // Chưa đăng nhập
+            staff.setCurrentSessionId(null);
+            staff.setCurrentRefreshToken(null);
 
             User cus1 = new User();
             cus1.setEmail("customer01@cinema.com");
@@ -108,7 +110,8 @@ public class DataSeeder {
             cus1.setPassword("$2a$10$bWK86rfYrdLDLtYh6lZ66eCUBo9G1.kpw7DUPTLP.KYav0Q4gONvC");
             cus1.setFullName("Le Thi Customer");
             cus1.setRole(User.Role.CUSTOMER);
-            cus1.setCurrentSessionToken(null); // Chưa đăng nhập
+            cus1.setCurrentSessionId(null);
+            cus1.setCurrentRefreshToken(null);
 
             User cus2 = new User();
             cus2.setEmail("customer02@cinema.com");
@@ -116,7 +119,8 @@ public class DataSeeder {
             cus2.setPassword("$2a$10$bWK86rfYrdLDLtYh6lZ66eCUBo9G1.kpw7DUPTLP.KYav0Q4gONvC");
             cus2.setFullName("Tran Minh User");
             cus2.setRole(User.Role.CUSTOMER);
-            cus2.setCurrentSessionToken(null); // Chưa đăng nhập
+            cus2.setCurrentSessionId(null);
+            cus2.setCurrentRefreshToken(null);
 
             userRepo.saveAll(List.of(admin, staff, cus1, cus2));
 
@@ -419,34 +423,33 @@ public class DataSeeder {
             // Suất chiếu — tự động cộng ngày tương lai
             // Luôn sử dụng múi giờ Việt Nam để đảm bảo tính nhất quán
             ZonedDateTime nowInVietnam = ZonedDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh"));
-            final int BUFFER_MINUTES = 30; // Thời gian nghỉ giữa các suất
 
             Showtime s01 = new Showtime();
             s01.setMovie(m1);
             s01.setRoom(r1);
             s01.setStartTime(nowInVietnam.plusDays(1).withHour(18).withMinute(0).withSecond(0).toLocalDateTime());
-            s01.setEndTime(s01.getStartTime().plusMinutes(m1.getDuration() + BUFFER_MINUTES));
+            s01.setEndTime(s01.getStartTime().plusMinutes(m1.getDuration()));
             s01.setPrice(90000.0);
 
             Showtime s02 = new Showtime();
             s02.setMovie(m2);
             s02.setRoom(r2);
             s02.setStartTime(nowInVietnam.plusDays(2).withHour(20).withMinute(0).withSecond(0).toLocalDateTime());
-            s02.setEndTime(s02.getStartTime().plusMinutes(m2.getDuration() + BUFFER_MINUTES));
+            s02.setEndTime(s02.getStartTime().plusMinutes(m2.getDuration()));
             s02.setPrice(80000.0);
 
             Showtime s03 = new Showtime();
             s03.setMovie(m3);
             s03.setRoom(r3);
             s03.setStartTime(nowInVietnam.plusDays(3).withHour(9).withMinute(0).withSecond(0).toLocalDateTime());
-            s03.setEndTime(s03.getStartTime().plusMinutes(m3.getDuration() + BUFFER_MINUTES));
+            s03.setEndTime(s03.getStartTime().plusMinutes(m3.getDuration()));
             s03.setPrice(75000.0);
 
             Showtime s04 = new Showtime();
             s04.setMovie(m1);
             s04.setRoom(r4);
             s04.setStartTime(nowInVietnam.plusDays(4).withHour(19).withMinute(0).withSecond(0).toLocalDateTime());
-            s04.setEndTime(s04.getStartTime().plusMinutes(m1.getDuration() + BUFFER_MINUTES));
+            s04.setEndTime(s04.getStartTime().plusMinutes(m1.getDuration()));
             s04.setPrice(120000.0);
 
             showtimeRepo.saveAll(List.of(s01, s02, s03, s04));

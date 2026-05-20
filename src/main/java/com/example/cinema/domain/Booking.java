@@ -72,6 +72,18 @@ public class Booking {
     @Column(nullable = false)
     private boolean snacksFulfilled = false;
 
+    @Column
+    private Double popcornAdditionalCharge = 0.0;
+
+    @Column(length = 30)
+    private String popcornAdditionalPaymentMethod;
+
+    @Column(length = 120)
+    private String popcornAdditionalCollectedBy;
+
+    @Column
+    private LocalDateTime popcornAdditionalCollectedAt;
+
     // Quan hệ với BookingSnacks (bắp nước đã chọn)
     @OneToMany(mappedBy = "booking", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<BookingSnack> snacks = new ArrayList<>();

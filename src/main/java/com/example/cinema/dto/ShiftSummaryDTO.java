@@ -17,4 +17,6 @@ public class ShiftSummaryDTO {
     private List<ShiftUsageItemDTO> ingredients;
     private List<ShiftUsageItemDTO> supplies;
     private List<ShiftUsageItemDTO> snackWarehouse;
+    private List<StaffShiftDTO> shifts;
+    private List<ShiftRevenueItemDTO> revenues;
 }

@@ -2,6 +2,7 @@ package com.example.cinema.controller;
 
 import com.example.cinema.service.BookingService;
 import com.example.cinema.repository.*;
+import com.example.cinema.domain.Customer;
 import com.example.cinema.domain.User;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -76,6 +77,12 @@ public class AdminController {
         return ResponseEntity.ok(bookingService.getRevenueByStaff());
     }
 
+    @GetMapping("/revenue/time-slots")
+    public ResponseEntity<?> getRevenueByTimeSlot(@RequestParam(required = false) Integer year) {
+        int targetYear = year != null ? year : java.time.LocalDate.now().getYear();
+        return ResponseEntity.ok(bookingService.getRevenueByTimeSlot(targetYear));
+    }
+
     @GetMapping("/staffs")
     public ResponseEntity<?> getAllStaffs() {
         List<Map<String, Object>> staffList = staffRepository.findAll().stream()
@@ -85,8 +92,17 @@ public class AdminController {
                     m.put("userId", s.getUser().getUserId());
                     m.put("username", s.getUser().getEmail());
                     m.put("fullName", s.getUser().getFullName());
+                    m.put("role", s.getUser().getRole());
                     m.put("email", s.getEmail());
                     m.put("phone", s.getPhone());
+                    m.put("userEmail", s.getUser().getEmail());
+                    m.put("userPhone", s.getUser().getPhone());
+                    m.put("cccd", s.getCccd());
+                    m.put("position", s.getPosition());
+                    m.put("salary", s.getSalary());
+                    m.put("gender", s.getGender());
+                    m.put("staffStatus", s.getStatus());
+                    m.put("hireDate", s.getHireDate());
                     m.put("createdAt", s.getHireDate());
                     m.put("isActive", s.getUser().getIsActive());
                     return m;
@@ -168,9 +184,18 @@ public class AdminController {
                     Map<String, Object> m = new HashMap<>();
                     m.put("userId", u.getUserId());
                     m.put("username", u.getEmail());
+                    m.put("email", u.getEmail());
+                    m.put("phone", u.getPhone());
                     m.put("fullName", u.getFullName());
                     m.put("role", u.getRole());
                     m.put("isActive", u.getIsActive());
+                    Customer customer = u.getCustomer();
+                    if (customer != null) {
+                        m.put("customerId", customer.getCustomerId());
+                        m.put("address", customer.getAddress());
+                        m.put("gender", customer.getGender());
+                        m.put("loyaltyPoints", customer.getLoyaltyPoints());
+                    }
                     return m;
                 })
                 .collect(Collectors.toList());

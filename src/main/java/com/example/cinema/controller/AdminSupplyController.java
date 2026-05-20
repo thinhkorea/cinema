@@ -31,6 +31,15 @@ public class AdminSupplyController {
         return ResponseEntity.ok(supplyService.getLowStockSupplies());
     }
 
+    @GetMapping("/{supplyId}/movements")
+    public ResponseEntity<?> getSupplyMovements(@PathVariable Long supplyId) {
+        try {
+            return ResponseEntity.ok(supplyService.getSupplyMovements(supplyId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @PostMapping
     public ResponseEntity<?> createSupply(@RequestBody SupplyItem payload) {
         try {
@@ -44,6 +53,16 @@ public class AdminSupplyController {
     public ResponseEntity<?> updateSupply(@PathVariable Long supplyId, @RequestBody SupplyItem payload) {
         try {
             return ResponseEntity.ok(supplyService.updateSupply(supplyId, payload));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/{supplyId}")
+    public ResponseEntity<?> deleteSupply(@PathVariable Long supplyId) {
+        try {
+            supplyService.deleteSupply(supplyId);
+            return ResponseEntity.ok(Map.of("message", "Supply deleted successfully"));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }

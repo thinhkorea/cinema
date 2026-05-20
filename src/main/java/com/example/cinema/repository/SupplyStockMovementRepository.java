@@ -9,4 +9,8 @@ import java.util.List;
 public interface SupplyStockMovementRepository extends JpaRepository<SupplyStockMovement, Long> {
 
     List<SupplyStockMovement> findByCreatedAtBetweenOrderByCreatedAtDesc(LocalDateTime from, LocalDateTime to);
+
+    List<SupplyStockMovement> findTop50BySupply_SupplyIdOrderByCreatedAtDesc(Long supplyId);
+
+    void deleteBySupply_SupplyId(Long supplyId);
 }

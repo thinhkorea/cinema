@@ -19,9 +19,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.text.Normalizer;
 import java.time.LocalDateTime;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -383,6 +385,16 @@ public class SnackService {
 
     @Transactional
     public Map<String, Object> fulfillSnacksByTxn(String txnRef, String actor) {
+        return fulfillSnacksByTxn(txnRef, actor, null);
+    }
+
+    @Transactional
+    public Map<String, Object> fulfillSnacksByTxn(String txnRef, String actor, Long popcornSnackId) {
+        return fulfillSnacksByTxn(txnRef, actor, popcornSnackId, null);
+    }
+
+    @Transactional
+    public Map<String, Object> fulfillSnacksByTxn(String txnRef, String actor, Long popcornSnackId, String additionalPaymentMethod) {
         if (txnRef == null || txnRef.isBlank()) {
             throw new IllegalArgumentException("Mã giao dịch không hợp lệ.");
         }
@@ -413,6 +425,9 @@ public class SnackService {
                     "message", "Không có bắp nước để xuất.");
         }
 
+        Snack defaultPopcorn = getDefaultPopcornSnack();
+        Snack selectedPopcorn = resolveSelectedPopcorn(popcornSnackId, defaultPopcorn);
+        int comboPopcornQty = 0;
         Map<Snack, Integer> expandedItems = new LinkedHashMap<>();
         for (BookingSnack item : items) {
             if (item.getSnack() == null) {
@@ -425,7 +440,8 @@ public class SnackService {
 
             Snack snack = item.getSnack();
             if (snack.getCategory() == Snack.SnackCategory.COMBO) {
-                Map<Snack, Integer> components = expandComboItems(snack, qty);
+                comboPopcornQty += getComboPopcornQuantity(snack, qty);
+                Map<Snack, Integer> components = expandComboItems(snack, qty, selectedPopcorn);
                 for (Map.Entry<Snack, Integer> entry : components.entrySet()) {
                     expandedItems.merge(entry.getKey(), entry.getValue(), Integer::sum);
                 }
@@ -471,17 +487,46 @@ public class SnackService {
             }
         }
 
+        double additionalCharge = calculatePopcornAdditionalCharge(defaultPopcorn, selectedPopcorn, comboPopcornQty);
+        String normalizedAdditionalPaymentMethod = normalizePaymentMethod(additionalPaymentMethod);
+        if (additionalCharge > 0 && normalizedAdditionalPaymentMethod == null) {
+            throw new IllegalArgumentException("Vui lòng chọn phương thức thu phụ phí đổi bắp.");
+        }
+
         bookings.forEach(b -> b.setSnacksFulfilled(true));
+        if (additionalCharge > 0) {
+            Booking firstBooking = bookings.get(0);
+            firstBooking.setPopcornAdditionalCharge(additionalCharge);
+            firstBooking.setPopcornAdditionalPaymentMethod(normalizedAdditionalPaymentMethod);
+            firstBooking.setPopcornAdditionalCollectedBy(actor != null && !actor.isBlank() ? actor : "staff");
+            firstBooking.setPopcornAdditionalCollectedAt(LocalDateTime.now());
+        }
         bookingRepository.saveAll(bookings);
 
         return Map.of(
                 "success", true,
                 "txnRef", txnRef,
                 "items", summary,
+                "defaultPopcorn", defaultPopcorn.getSnackName(),
+                "selectedPopcorn", selectedPopcorn.getSnackName(),
+                "popcornQuantity", comboPopcornQty,
+                "additionalCharge", additionalCharge,
                 "message", "Đã xuất bắp nước thành công.");
     }
 
-    private Map<Snack, Integer> expandComboItems(Snack combo, int comboQty) {
+    private String normalizePaymentMethod(String paymentMethod) {
+        if (paymentMethod == null || paymentMethod.isBlank()) {
+            return null;
+        }
+        String normalized = paymentMethod.trim().toUpperCase(Locale.ROOT);
+        if ("CASH".equals(normalized) || "VNPAY".equals(normalized) || "BANK".equals(normalized)
+                || "TRANSFER".equals(normalized)) {
+            return normalized;
+        }
+        throw new IllegalArgumentException("Phương thức thu phụ phí không hợp lệ.");
+    }
+
+    private Map<Snack, Integer> expandComboItems(Snack combo, int comboQty, Snack popcornSnack) {
         String comboName = combo.getSnackName() == null ? "" : combo.getSnackName().trim();
         Map<Snack, Integer> result = new LinkedHashMap<>();
 
@@ -491,23 +536,87 @@ public class SnackService {
 
         if (equalsIgnoreCase(comboName, "Combo Gấu")) {
             result.put(findSnackByName("Coke 32oz"), 1 * comboQty);
-            result.put(findSnackByAnyName("Bắp riêng", "Bắp 2 Ngăn 64OZ Phô Mai + Caramel"), 1 * comboQty);
+            result.put(popcornSnack, 1 * comboQty);
             return result;
         }
 
         if (equalsIgnoreCase(comboName, "Combo Có Gấu")) {
             result.put(findSnackByName("Coke 32oz"), 2 * comboQty);
-            result.put(findSnackByAnyName("Bắp riêng", "Bắp 2 Ngăn 64OZ Phô Mai + Caramel"), 1 * comboQty);
+            result.put(popcornSnack, 1 * comboQty);
             return result;
         }
 
         if (equalsIgnoreCase(comboName, "Combo Nhà Gấu")) {
             result.put(findSnackByName("Coke 32oz"), 4 * comboQty);
-            result.put(findSnackByAnyName("Bắp riêng", "Bắp 2 Ngăn 64OZ Phô Mai + Caramel"), 2 * comboQty);
+            result.put(popcornSnack, 2 * comboQty);
             return result;
         }
 
         throw new IllegalStateException("Chưa cấu hình tách combo cho: " + comboName);
+    }
+
+    private int getComboPopcornQuantity(Snack combo, int comboQty) {
+        String comboName = combo.getSnackName() == null ? "" : combo.getSnackName().trim();
+        if (comboQty <= 0) {
+            return 0;
+        }
+        if (equalsIgnoreCase(comboName, "Combo Gấu") || equalsIgnoreCase(comboName, "Combo Có Gấu")) {
+            return comboQty;
+        }
+        if (equalsIgnoreCase(comboName, "Combo Nhà Gấu")) {
+            return comboQty * 2;
+        }
+        throw new IllegalStateException("Chưa cấu hình tách combo cho: " + comboName);
+    }
+
+    private Snack resolveSelectedPopcorn(Long popcornSnackId, Snack defaultPopcorn) {
+        if (popcornSnackId == null) {
+            return defaultPopcorn;
+        }
+
+        Snack selected = getSnackById(popcornSnackId);
+        if (!isPopcornSnack(selected)) {
+            throw new IllegalArgumentException("Sản phẩm chọn thay bắp không phải món bắp.");
+        }
+        return selected;
+    }
+
+    private Snack getDefaultPopcornSnack() {
+        List<Snack> popcornSnacks = snackRepository.findAll().stream()
+                .filter(this::isPopcornSnack)
+                .collect(Collectors.toList());
+
+        return popcornSnacks.stream()
+                .filter(snack -> normalizeText(snack.getSnackName()).contains("bap cola"))
+                .min(Comparator.comparingDouble(this::safePrice))
+                .or(() -> popcornSnacks.stream().min(Comparator.comparingDouble(this::safePrice)))
+                .orElseThrow(() -> new IllegalStateException("Chưa có món bắp nào để xuất combo."));
+    }
+
+    private double calculatePopcornAdditionalCharge(Snack defaultPopcorn, Snack selectedPopcorn, int quantity) {
+        if (quantity <= 0) {
+            return 0.0;
+        }
+        double diff = safePrice(selectedPopcorn) - safePrice(defaultPopcorn);
+        return Math.max(0.0, diff) * quantity;
+    }
+
+    private boolean isPopcornSnack(Snack snack) {
+        if (snack == null || snack.getSnackName() == null || snack.getCategory() != Snack.SnackCategory.SNACK) {
+            return false;
+        }
+        String normalized = normalizeText(snack.getSnackName());
+        return normalized.contains("bap") || normalized.contains("popcorn");
+    }
+
+    private String normalizeText(String value) {
+        String normalized = Normalizer.normalize(value == null ? "" : value, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "");
+        return normalized.toLowerCase(Locale.ROOT).trim();
+    }
+
+    private double safePrice(Snack snack) {
+        return snack.getPrice() == null ? 0.0 : snack.getPrice();
     }
 
     private Snack findSnackByName(String snackName) {

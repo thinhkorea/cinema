@@ -2,7 +2,6 @@ package com.example.cinema.security;
 
 import com.example.cinema.domain.User;
 import com.example.cinema.repository.UserRepository;
-
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -38,8 +37,8 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
         String method = request.getMethod();
 
-        // Các endpoint đăng nhập/đăng ký public không yêu cầu JWT
         if (path.equals("/api/auth/login") ||
+                path.equals("/api/auth/refresh") ||
                 path.equals("/api/auth/register") ||
                 path.equals("/api/auth/register-admin") ||
                 path.equals("/api/auth/register/send-otp") ||
@@ -47,40 +46,32 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return true;
         }
 
-        // Preflight CORS luôn cho qua
         if ("OPTIONS".equals(method)) {
             return true;
         }
-        
-        // /api/auth/me và /api/auth/logout PHẢI qua filter để validate session
 
-        // Cho phép callback từ VNPay (không chứa token)
         if (path.startsWith("/api/payments/vnpay-return")) {
             return true;
         }
 
-        // Cho phép GET/HEAD tới các API public (movies, showtimes, seats, snacks public).
         if (("GET".equals(method) || "HEAD".equals(method)) && (path.startsWith("/api/movies") ||
-            path.startsWith("/api/showtimes") ||
-            path.startsWith("/api/seats") ||
-            (path.startsWith("/api/snacks")
-                && !path.startsWith("/api/snacks/admin")))) {
+                path.startsWith("/api/showtimes") ||
+                path.startsWith("/api/seats") ||
+                (path.startsWith("/api/snacks") && !path.startsWith("/api/snacks/admin")))) {
             return true;
         }
-        // TẤT CẢ requests khác (bao gồm /api/bookings/**) ĐỀU PHẢI QUA FILTER
+
         return false;
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
-            HttpServletResponse response,
-            FilterChain filterChain) throws ServletException, IOException {
+                                    HttpServletResponse response,
+                                    FilterChain filterChain) throws ServletException, IOException {
 
         String header = request.getHeader("Authorization");
 
-        // Không có token → 401
         if (header == null || !header.startsWith("Bearer ")) {
-            System.out.println("No Authorization header or invalid format");
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.setContentType("application/json");
             response.getWriter().write("{\"error\": \"Unauthorized - token missing or invalid\"}");
@@ -88,71 +79,51 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         }
 
         String token = header.substring(7);
-        String identifier = null;
+        String identifier;
 
         try {
             identifier = jwtUtil.extractIdentifier(token);
         } catch (Exception e) {
-            System.out.println("Token parsing error: " + e.getMessage());
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.setContentType("application/json");
             response.getWriter().write("{\"error\": \"Invalid token\"}");
             return;
         }
 
-        if (identifier != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-            UserDetails userDetails = userDetailsService.loadUserByUsername(identifier);
-
-            System.out.println("JWT Filter - Identifier from token: " + identifier);
-            System.out.println("JWT Filter - UserDetails loaded: " + userDetails.getUsername());
-
-            if (jwtUtil.validateToken(token, userDetails)) {
-                // Kiểm tra xem token có khớp với currentSessionToken trong database không
-                User user = userRepository.findByEmail(userDetails.getUsername());
-                if (user == null || !token.equals(user.getCurrentSessionToken())) {
-                    System.out.println("Session không hợp lệ - có thể đã đăng nhập từ nơi khác");
-                    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                    response.setContentType("application/json");
-                    response.getWriter().write("{\"error\": \"Session expired - logged in from another location\", \"code\": \"CONCURRENT_LOGIN\"}");
-                    return;
-                }
-                
-                // Extract role từ token
-                String role = jwtUtil.extractRole(token);
-                System.out.println("JWT Filter - Role from token: " + role);
-                System.out.println("JWT Filter - Authority: ROLE_" + role);
-
-                // Tạo authorities với ROLE_ prefix
-                List<GrantedAuthority> authorities = List.of(
-                        new SimpleGrantedAuthority("ROLE_" + role));
-
-                // Tạo authentication object
-                UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
-                        userDetails,
-                        null,
-                        authorities);
-
-                authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-
-                // Set vào SecurityContext
-                SecurityContextHolder.getContext().setAuthentication(authToken);
-
-                System.out.println("JWT Filter - Authentication set successfully");
-                System.out.println("JWT Filter - Request path: " + request.getRequestURI());
-
-                // Cho request đi tiếp
-                filterChain.doFilter(request, response);
-            } else {
-                System.out.println("Token validation failed");
-                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                response.setContentType("application/json");
-                response.getWriter().write("{\"error\": \"Invalid JWT token\"}");
-            }
-        } else {
-            System.out.println("Identifier is null or authentication already exists");
+        if (identifier == null || SecurityContextHolder.getContext().getAuthentication() != null) {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.setContentType("application/json");
             response.getWriter().write("{\"error\": \"Authentication failed\"}");
+            return;
         }
+
+        UserDetails userDetails = userDetailsService.loadUserByUsername(identifier);
+        if (!jwtUtil.validateToken(token, userDetails.getUsername(), "access")) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType("application/json");
+            response.getWriter().write("{\"error\": \"Invalid JWT token\"}");
+            return;
+        }
+
+        User user = userRepository.findByEmail(userDetails.getUsername());
+        String sessionId = jwtUtil.extractSessionId(token);
+        if (user == null || sessionId == null || !sessionId.equals(user.getCurrentSessionId())) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType("application/json");
+            response.getWriter().write("{\"error\": \"Session expired - logged in from another location\", \"code\": \"CONCURRENT_LOGIN\"}");
+            return;
+        }
+
+        String role = jwtUtil.extractRole(token);
+        List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role));
+
+        UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
+                userDetails,
+                null,
+                authorities);
+        authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+        SecurityContextHolder.getContext().setAuthentication(authToken);
+
+        filterChain.doFilter(request, response);
     }
 }

@@ -1,6 +1,7 @@
 package com.example.cinema.repository;
 
 import com.example.cinema.domain.Movie;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -37,4 +38,19 @@ public interface ShowtimeRepository extends JpaRepository<Showtime, Long> {
   List<Showtime> findByMovieAndDate(
       @Param("movieId") Long movieId,
       @Param("dateStr") String dateStr);
+
+  @Query("""
+        SELECT s
+        FROM Showtime s
+        WHERE s.room.roomId = :roomId
+          AND (:excludeShowtimeId IS NULL OR s.showtimeId <> :excludeShowtimeId)
+          AND s.startTime < :endTime
+          AND s.endTime > :startTime
+        ORDER BY s.startTime
+      """)
+  List<Showtime> findOverlappingShowtimes(
+      @Param("roomId") Long roomId,
+      @Param("startTime") LocalDateTime startTime,
+      @Param("endTime") LocalDateTime endTime,
+      @Param("excludeShowtimeId") Long excludeShowtimeId);
 }

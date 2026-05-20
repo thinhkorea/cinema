@@ -5,6 +5,7 @@ import com.example.cinema.domain.Staff;
 import com.example.cinema.domain.User;
 import com.example.cinema.dto.LoginRequestDTO;
 import com.example.cinema.dto.LoginResponseDTO;
+import com.example.cinema.dto.RefreshTokenRequestDTO;
 import com.example.cinema.dto.RegisterRequestDTO;
 import com.example.cinema.dto.VerifyOtpRequestDTO;
 import com.example.cinema.repository.CustomerRepository;
@@ -12,16 +13,14 @@ import com.example.cinema.repository.StaffRepository;
 import com.example.cinema.repository.UserRepository;
 import com.example.cinema.security.JwtUtil;
 import com.example.cinema.service.RegistrationOtpService;
-
 import jakarta.transaction.Transactional;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
-
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -32,12 +31,12 @@ public class AuthController {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final RegistrationOtpService registrationOtpService;
-    private CustomerRepository customerRepository;
-    private StaffRepository staffRepository;
+    private final CustomerRepository customerRepository;
+    private final StaffRepository staffRepository;
 
     public AuthController(JwtUtil jwtUtil, UserRepository userRepository, PasswordEncoder passwordEncoder,
-            RegistrationOtpService registrationOtpService,
-            CustomerRepository customerRepository, StaffRepository staffRepository) {
+                          RegistrationOtpService registrationOtpService,
+                          CustomerRepository customerRepository, StaffRepository staffRepository) {
         this.jwtUtil = jwtUtil;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
@@ -50,25 +49,57 @@ public class AuthController {
     public ResponseEntity<?> login(@RequestBody LoginRequestDTO req) {
         String identifier = req.getLoginIdentifier();
         if (identifier == null || identifier.isBlank()) {
-            return ResponseEntity.badRequest().body(LoginResponseDTO.builder().token(null).message("Missing identifier").role(null).userId(null).build());
+            return ResponseEntity.badRequest().body(emptyLoginResponse("Missing identifier"));
         }
 
         User user = userRepository.findByEmailOrPhone(identifier, identifier);
         if (user == null || !passwordEncoder.matches(req.getPassword(), user.getPassword())) {
-            return ResponseEntity.badRequest().body(LoginResponseDTO.builder().token(null).message("Bad credentials").role(null).userId(null).build());
+            return ResponseEntity.badRequest().body(emptyLoginResponse("Bad credentials"));
         }
         if (!user.getIsActive()) {
-            return ResponseEntity.badRequest().body(LoginResponseDTO.builder().token(null).message("Account is locked").role(null).userId(null).build());
+            return ResponseEntity.badRequest().body(emptyLoginResponse("Account is locked"));
         }
-        
-        // Tạo token mới
-        String token = jwtUtil.generateToken(user.getEmail(), user.getRole().name(), user.getFullName());
-        
-        // Lưu token vào database - điều này sẽ vô hiệu hóa session cũ (nếu có)
-        user.setCurrentSessionToken(token);
-        userRepository.save(user);
-        
-        return ResponseEntity.ok(LoginResponseDTO.builder().token(token).message("OK").role(user.getRole().name()).userId(user.getUserId()).build());
+
+        return ResponseEntity.ok(issueSession(user));
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<?> refresh(@RequestBody RefreshTokenRequestDTO req) {
+        if (req == null || req.getRefreshToken() == null || req.getRefreshToken().isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Missing refresh token"));
+        }
+
+        String refreshToken = req.getRefreshToken().trim();
+
+        try {
+            if (!jwtUtil.isRefreshToken(refreshToken)) {
+                return ResponseEntity.status(401).body(Map.of("error", "Invalid refresh token"));
+            }
+
+            String identifier = jwtUtil.extractIdentifier(refreshToken);
+            User user = userRepository.findByEmail(identifier);
+            if (user == null || !user.getIsActive()) {
+                return ResponseEntity.status(401).body(Map.of("error", "Invalid refresh token"));
+            }
+
+            if (!refreshToken.equals(user.getCurrentRefreshToken())) {
+                return ResponseEntity.status(401).body(Map.of("error", "Refresh token expired", "code", "CONCURRENT_LOGIN"));
+            }
+
+            String currentSessionId = user.getCurrentSessionId();
+            String tokenSessionId = jwtUtil.extractSessionId(refreshToken);
+            if (currentSessionId == null || tokenSessionId == null || !currentSessionId.equals(tokenSessionId)) {
+                return ResponseEntity.status(401).body(Map.of("error", "Refresh token expired", "code", "CONCURRENT_LOGIN"));
+            }
+
+            if (!jwtUtil.validateToken(refreshToken, user.getEmail(), "refresh")) {
+                return ResponseEntity.status(401).body(Map.of("error", "Refresh token expired"));
+            }
+
+            return ResponseEntity.ok(refreshSession(user));
+        } catch (Exception e) {
+            return ResponseEntity.status(401).body(Map.of("error", "Invalid refresh token"));
+        }
     }
 
     @PostMapping("/register")
@@ -133,7 +164,6 @@ public class AuthController {
             return ResponseEntity.badRequest().body(Map.of("message", "Account is locked"));
         }
 
-        // Trả JSON đơn giản, không phụ thuộc entity
         Map<String, Object> userInfo = new HashMap<>();
         userInfo.put("userId", user.getUserId());
         userInfo.put("username", user.getEmail());
@@ -155,8 +185,8 @@ public class AuthController {
         User user = userRepository.findByEmail(identifier);
 
         if (user != null) {
-            // Xóa currentSessionToken để vô hiệu hóa session
-            user.setCurrentSessionToken(null);
+            user.setCurrentSessionId(null);
+            user.setCurrentRefreshToken(null);
             userRepository.save(user);
         }
 
@@ -190,24 +220,21 @@ public class AuthController {
     public ResponseEntity<?> getProfile(@PathVariable Long userId) {
         try {
             System.out.println("DEBUG: Getting profile for userId: " + userId);
-            
-            // Lấy user
+
             Optional<User> userOpt = userRepository.findById(userId);
-            if (!userOpt.isPresent()) {
+            if (userOpt.isEmpty()) {
                 System.out.println("DEBUG: User not found with ID: " + userId);
                 return ResponseEntity.status(404).body(Map.of("error", "Không tìm thấy người dùng với ID: " + userId));
             }
-            
+
             User user = userOpt.get();
             System.out.println("DEBUG: Found user: " + user.getEmail() + ", role: " + user.getRole());
 
-            // Tìm customer tương ứng
             Optional<Customer> customerOpt = customerRepository.findByUserUserId(userId);
             if (customerOpt.isPresent()) {
                 Customer customer = customerOpt.get();
                 System.out.println("DEBUG: Found customer with loyaltyPoints: " + customer.getLoyaltyPoints());
-                
-                // Tạo response map để tránh circular reference
+
                 Map<String, Object> customerProfile = new HashMap<>();
                 customerProfile.put("customerId", customer.getCustomerId());
                 customerProfile.put("phone", user.getPhone());
@@ -215,8 +242,7 @@ public class AuthController {
                 customerProfile.put("address", customer.getAddress());
                 customerProfile.put("gender", customer.getGender());
                 customerProfile.put("loyaltyPoints", customer.getLoyaltyPoints());
-                
-                // User info
+
                 Map<String, Object> userInfo = new HashMap<>();
                 userInfo.put("userId", user.getUserId());
                 userInfo.put("username", user.getEmail());
@@ -225,18 +251,17 @@ public class AuthController {
                 userInfo.put("fullName", user.getFullName());
                 userInfo.put("role", user.getRole());
                 userInfo.put("isActive", user.getIsActive());
-                
+
                 customerProfile.put("user", userInfo);
-                
+
                 return ResponseEntity.ok(customerProfile);
             }
 
-            // Nếu không có customer (vd: ADMIN, STAFF)
             System.out.println("DEBUG: No customer found, returning basic user info");
             Map<String, Object> userProfile = new HashMap<>();
             userProfile.put("userId", user.getUserId());
-            userProfile.put("loyaltyPoints", 0); // Default cho admin/staff
-            
+            userProfile.put("loyaltyPoints", 0);
+
             Map<String, Object> userInfo = new HashMap<>();
             userInfo.put("userId", user.getUserId());
             userInfo.put("username", user.getEmail());
@@ -245,9 +270,9 @@ public class AuthController {
             userInfo.put("fullName", user.getFullName());
             userInfo.put("role", user.getRole());
             userInfo.put("isActive", user.getIsActive());
-            
+
             userProfile.put("user", userInfo);
-            
+
             return ResponseEntity.ok(userProfile);
         } catch (Exception e) {
             System.err.println("ERROR in getProfile: " + e.getMessage());
@@ -262,11 +287,9 @@ public class AuthController {
         Customer customer = customerRepository.findByUserUserId(userId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy khách hàng"));
 
-        // Cập nhật thông tin customer-only
         customer.setAddress(req.getAddress());
         customer.setGender(req.getGender());
 
-        // Cập nhật thông tin định danh trong bảng users
         User user = customer.getUser();
         if (req.getUser() != null && req.getUser().getFullName() != null) {
             user.setFullName(req.getUser().getFullName());
@@ -295,7 +318,6 @@ public class AuthController {
 
     @PostMapping("/register-staff")
     public ResponseEntity<?> registerStaff(@RequestBody RegisterRequestDTO req) {
-        // Kiểm tra email / phone / CCCD trùng
         if (req.getEmail() == null || req.getEmail().isBlank()) {
             return ResponseEntity.badRequest().body("Email là bắt buộc!");
         }
@@ -309,7 +331,6 @@ public class AuthController {
             return ResponseEntity.badRequest().body("CCCD đã tồn tại!");
         }
 
-        // Tạo User mới
         User user = new User();
         user.setEmail(req.getEmail());
         user.setPhone(req.getPhone());
@@ -318,7 +339,6 @@ public class AuthController {
         user.setRole(User.Role.STAFF);
         userRepository.save(user);
 
-        // Tạo Staff tương ứng
         Staff staff = new Staff();
         staff.setUser(user);
         staff.setCccd(req.getCccd());
@@ -330,11 +350,56 @@ public class AuthController {
         try {
             staff.setGender(Staff.Gender.valueOf(req.getGender().toUpperCase()));
         } catch (Exception e) {
-            staff.setGender(Staff.Gender.MALE); // mặc định nếu bị lỗi
+            staff.setGender(Staff.Gender.MALE);
         }
         staff.setStatus(Staff.Status.ACTIVE);
         staffRepository.save(staff);
 
         return ResponseEntity.ok("Đã thêm nhân viên mới thành công!");
+    }
+
+    private LoginResponseDTO issueSession(User user) {
+        return issueSession(user, jwtUtil.generateSessionId());
+    }
+
+    private LoginResponseDTO refreshSession(User user) {
+        String existingSessionId = user.getCurrentSessionId();
+        if (existingSessionId == null || existingSessionId.isBlank()) {
+            existingSessionId = jwtUtil.generateSessionId();
+        }
+        return issueSession(user, existingSessionId);
+    }
+
+    private LoginResponseDTO issueSession(User user, String sessionId) {
+        String accessToken = jwtUtil.generateAccessToken(
+                user.getEmail(),
+                user.getRole().name(),
+                user.getFullName(),
+                sessionId);
+        String refreshToken = jwtUtil.generateRefreshToken(user.getEmail(), sessionId);
+
+        user.setCurrentSessionId(sessionId);
+        user.setCurrentRefreshToken(refreshToken);
+        userRepository.save(user);
+
+        return LoginResponseDTO.builder()
+                .token(accessToken)
+                .accessToken(accessToken)
+                .refreshToken(refreshToken)
+                .message("OK")
+                .role(user.getRole().name())
+                .userId(user.getUserId())
+                .build();
+    }
+
+    private LoginResponseDTO emptyLoginResponse(String message) {
+        return LoginResponseDTO.builder()
+                .token(null)
+                .accessToken(null)
+                .refreshToken(null)
+                .message(message)
+                .role(null)
+                .userId(null)
+                .build();
     }
 }

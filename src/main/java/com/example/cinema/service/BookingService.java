@@ -2,6 +2,7 @@ package com.example.cinema.service;
 
 import com.example.cinema.domain.*;
 import com.example.cinema.dto.BookingResponseDTO;
+import com.example.cinema.dto.ShiftRevenueItemDTO;
 import com.example.cinema.dto.SoldTicketDTO;
 import com.example.cinema.repository.*;
 import org.slf4j.Logger;
@@ -11,7 +12,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.concurrent.CompletableFuture;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -269,35 +272,418 @@ public class BookingService {
     public List<Map<String, Object>> getMonthlyRevenue() {
         List<Object[]> results = bookingRepo.getMonthlyRevenue();
         List<Map<String, Object>> list = new ArrayList<>();
-        for (Object[] r : results)
-            list.add(Map.of("month", r[0], "revenue", r[1]));
+        Map<Object, Double> snackRevenueByMonth = toRevenueMap(bookingSnackRepo.getMonthlySnackRevenue());
+        for (Object[] r : results) {
+            double ticketRevenue = toDouble(r[1]);
+            double snackRevenue = snackRevenueByMonth.getOrDefault(r[0], 0.0);
+            list.add(Map.of(
+                    "month", r[0],
+                    "revenue", ticketRevenue + snackRevenue,
+                    "ticketRevenue", ticketRevenue,
+                    "snackRevenue", snackRevenue));
+            snackRevenueByMonth.remove(r[0]);
+        }
+        for (Map.Entry<Object, Double> entry : snackRevenueByMonth.entrySet()) {
+            list.add(Map.of(
+                    "month", entry.getKey(),
+                    "revenue", entry.getValue(),
+                    "ticketRevenue", 0.0,
+                    "snackRevenue", entry.getValue()));
+        }
+        list.sort(Comparator.comparing(row -> String.valueOf(row.get("month"))));
         return list;
     }
 
     public List<Map<String, Object>> getMonthlyRevenueByYear(int year) {
-        return bookingRepo.findMonthlyRevenueByYear(year).stream()
-                .map(r -> Map.of("month", r[0], "revenue", r[1]))
-                .collect(Collectors.toList());
+        Map<Object, Double> snackRevenueByMonth = toRevenueMap(bookingSnackRepo.findMonthlySnackRevenueByYear(year));
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (Object[] r : bookingRepo.findMonthlyRevenueByYear(year)) {
+            double ticketRevenue = toDouble(r[1]);
+            double snackRevenue = snackRevenueByMonth.getOrDefault(r[0], 0.0);
+            list.add(Map.of(
+                    "month", r[0],
+                    "revenue", ticketRevenue + snackRevenue,
+                    "ticketRevenue", ticketRevenue,
+                    "snackRevenue", snackRevenue));
+            snackRevenueByMonth.remove(r[0]);
+        }
+        for (Map.Entry<Object, Double> entry : snackRevenueByMonth.entrySet()) {
+            list.add(Map.of(
+                    "month", entry.getKey(),
+                    "revenue", entry.getValue(),
+                    "ticketRevenue", 0.0,
+                    "snackRevenue", entry.getValue()));
+        }
+        list.sort(Comparator.comparingInt(row -> ((Number) row.get("month")).intValue()));
+        return list;
     }
 
     public List<Map<String, Object>> getRevenueByMovie() {
         List<Object[]> results = bookingRepo.getRevenueByMovie();
         List<Map<String, Object>> movieRevenueList = new ArrayList<>();
+        Map<Object, Double> snackRevenueByMovie = toRevenueMap(bookingSnackRepo.getSnackRevenueByMovie());
         for (Object[] row : results) {
-            movieRevenueList.add(Map.of("movieTitle", row[0], "revenue", row[1]));
+            double ticketRevenue = toDouble(row[1]);
+            double snackRevenue = snackRevenueByMovie.getOrDefault(row[0], 0.0);
+            movieRevenueList.add(Map.of(
+                    "movieTitle", row[0],
+                    "revenue", ticketRevenue + snackRevenue,
+                    "ticketRevenue", ticketRevenue,
+                    "snackRevenue", snackRevenue));
+            snackRevenueByMovie.remove(row[0]);
         }
+        for (Map.Entry<Object, Double> entry : snackRevenueByMovie.entrySet()) {
+            movieRevenueList.add(Map.of(
+                    "movieTitle", entry.getKey(),
+                    "revenue", entry.getValue(),
+                    "ticketRevenue", 0.0,
+                    "snackRevenue", entry.getValue()));
+        }
+        movieRevenueList.sort((left, right) -> Double.compare(toDouble(right.get("revenue")), toDouble(left.get("revenue"))));
         return movieRevenueList;
     }
 
     public List<Map<String, Object>> getRevenueByStaff() {
         List<Object[]> results = bookingRepo.getRevenueByStaff();
         List<Map<String, Object>> staffRevenueList = new ArrayList<>();
+        Map<Object, Double> snackRevenueByStaff = toRevenueMap(bookingSnackRepo.getSnackRevenueByStaff());
         for (Object[] row : results) {
+            double ticketRevenue = toDouble(row[1]);
+            double snackRevenue = snackRevenueByStaff.getOrDefault(row[0], 0.0);
             staffRevenueList.add(Map.of(
                     "staffName", row[0],
-                    "totalRevenue", row[1]));
+                    "totalRevenue", ticketRevenue + snackRevenue,
+                    "ticketRevenue", ticketRevenue,
+                    "snackRevenue", snackRevenue));
+            snackRevenueByStaff.remove(row[0]);
         }
+        for (Map.Entry<Object, Double> entry : snackRevenueByStaff.entrySet()) {
+            staffRevenueList.add(Map.of(
+                    "staffName", entry.getKey(),
+                    "totalRevenue", entry.getValue(),
+                    "ticketRevenue", 0.0,
+                    "snackRevenue", entry.getValue()));
+        }
+        staffRevenueList.sort((left, right) -> Double.compare(toDouble(right.get("totalRevenue")), toDouble(left.get("totalRevenue"))));
         return staffRevenueList;
+    }
+
+    public List<Map<String, Object>> getRevenueByTimeSlot(int year) {
+        Map<String, TimeSlotRevenue> slots = new LinkedHashMap<>();
+        slots.put("morning", new TimeSlotRevenue("morning", "Sáng", "08:30 - 11:59", 0));
+        slots.put("afternoon", new TimeSlotRevenue("afternoon", "Chiều", "12:00 - 17:59", 1));
+        slots.put("evening", new TimeSlotRevenue("evening", "Tối", "18:00 - 22:59", 2));
+        slots.put("late", new TimeSlotRevenue("late", "Suất muộn", "23:00 - 23:59", 3));
+
+        for (Object[] row : bookingRepo.getRevenueByShowtimeTime(year)) {
+            TimeSlotRevenue slot = slots.get(getTimeSlotKey(toInt(row[0]), toInt(row[1])));
+            if (slot != null) {
+                slot.ticketRevenue += toDouble(row[2]);
+            }
+        }
+
+        for (Object[] row : bookingSnackRepo.getSnackRevenueByShowtimeTime(year)) {
+            TimeSlotRevenue slot = slots.get(getTimeSlotKey(toInt(row[0]), toInt(row[1])));
+            if (slot != null) {
+                slot.snackRevenue += toDouble(row[2]);
+            }
+        }
+
+        return slots.values().stream()
+                .sorted(Comparator.comparingInt(slot -> slot.order))
+                .map(slot -> Map.<String, Object>of(
+                        "slot", slot.key,
+                        "label", slot.label,
+                        "timeRange", slot.timeRange,
+                        "revenue", slot.ticketRevenue + slot.snackRevenue,
+                        "ticketRevenue", slot.ticketRevenue,
+                        "snackRevenue", slot.snackRevenue))
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<ShiftRevenueItemDTO> getDailyShiftRevenue(LocalDate date) {
+        LocalDate targetDate = date == null ? LocalDate.now() : date;
+        LocalDateTime from = targetDate.atStartOfDay();
+        LocalDateTime to = targetDate.plusDays(1).atStartOfDay().minusNanos(1);
+        Map<String, ShiftRevenueAccumulator> rows = new LinkedHashMap<>();
+
+        for (Booking booking : bookingRepo.findByStatusAndCreatedAtBetween(Booking.Status.PAID, from, to)) {
+            if (booking.getSoldByStaff() == null) {
+                continue;
+            }
+            ShiftDefinition shift = getShiftDefinition(booking.getCreatedAt());
+            if (shift == null) {
+                continue;
+            }
+            ShiftRevenueAccumulator row = getShiftRevenueRow(rows, shift, getBookingStaffName(booking));
+            double amount = booking.getTotal() != null ? booking.getTotal() : 0.0;
+            if ("VNPAY".equals(normalizeRevenuePaymentMethod(booking.getPaymentMethod()))) {
+                row.ticketVnpayRevenue += amount;
+            } else {
+                row.ticketCashRevenue += amount;
+            }
+        }
+
+        for (Booking booking : bookingRepo.findByPopcornAdditionalCollectedAtBetween(from, to)) {
+            double amount = booking.getPopcornAdditionalCharge() != null ? booking.getPopcornAdditionalCharge() : 0.0;
+            if (amount <= 0 || booking.getPopcornAdditionalCollectedAt() == null) {
+                continue;
+            }
+            ShiftDefinition shift = getShiftDefinition(booking.getPopcornAdditionalCollectedAt());
+            if (shift == null) {
+                continue;
+            }
+            String staffName = booking.getPopcornAdditionalCollectedBy();
+            if (staffName == null || staffName.isBlank()) {
+                staffName = getBookingStaffName(booking);
+            }
+            ShiftRevenueAccumulator row = getShiftRevenueRow(rows, shift, staffName);
+            String method = normalizeRevenuePaymentMethod(booking.getPopcornAdditionalPaymentMethod());
+            if ("VNPAY".equals(method)) {
+                row.popcornVnpayRevenue += amount;
+            } else if ("BANK".equals(method) || "TRANSFER".equals(method)) {
+                row.popcornBankRevenue += amount;
+            } else {
+                row.popcornCashRevenue += amount;
+            }
+        }
+
+        return rows.values().stream()
+                .sorted(Comparator
+                        .comparingInt((ShiftRevenueAccumulator row) -> row.shift.order)
+                        .thenComparing(row -> row.staffName, String.CASE_INSENSITIVE_ORDER))
+                .map(ShiftRevenueAccumulator::toDto)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<ShiftRevenueItemDTO> getDailyShiftRevenueForStaff(LocalDate date, String username) {
+        LocalDate targetDate = date == null ? LocalDate.now() : date;
+        LocalDateTime from = targetDate.atStartOfDay();
+        LocalDateTime to = targetDate.plusDays(1).atStartOfDay().minusNanos(1);
+        return getRevenueForStaffBetween(from, to, username);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ShiftRevenueItemDTO> getRevenueForStaffBetween(LocalDateTime from, LocalDateTime to, String username) {
+        Map<String, ShiftRevenueAccumulator> rows = new LinkedHashMap<>();
+
+        for (Booking booking : bookingRepo.findByStatusAndCreatedAtBetween(Booking.Status.PAID, from, to)) {
+            if (!isBookingSoldByStaff(booking, username)) {
+                continue;
+            }
+            ShiftDefinition shift = getShiftDefinition(booking.getCreatedAt());
+            if (shift == null) {
+                continue;
+            }
+            ShiftRevenueAccumulator row = getShiftRevenueRow(rows, shift, getBookingStaffName(booking));
+            double amount = booking.getTotal() != null ? booking.getTotal() : 0.0;
+            if ("VNPAY".equals(normalizeRevenuePaymentMethod(booking.getPaymentMethod()))) {
+                row.ticketVnpayRevenue += amount;
+            } else {
+                row.ticketCashRevenue += amount;
+            }
+        }
+
+        for (Booking booking : bookingRepo.findByPopcornAdditionalCollectedAtBetween(from, to)) {
+            if (!isPopcornAdditionalCollectedByStaff(booking, username)) {
+                continue;
+            }
+            double amount = booking.getPopcornAdditionalCharge() != null ? booking.getPopcornAdditionalCharge() : 0.0;
+            if (amount <= 0 || booking.getPopcornAdditionalCollectedAt() == null) {
+                continue;
+            }
+            ShiftDefinition shift = getShiftDefinition(booking.getPopcornAdditionalCollectedAt());
+            if (shift == null) {
+                continue;
+            }
+            String staffName = booking.getPopcornAdditionalCollectedBy();
+            if (staffName == null || staffName.isBlank()) {
+                staffName = getBookingStaffName(booking);
+            }
+            ShiftRevenueAccumulator row = getShiftRevenueRow(rows, shift, staffName);
+            String method = normalizeRevenuePaymentMethod(booking.getPopcornAdditionalPaymentMethod());
+            if ("VNPAY".equals(method)) {
+                row.popcornVnpayRevenue += amount;
+            } else if ("BANK".equals(method) || "TRANSFER".equals(method)) {
+                row.popcornBankRevenue += amount;
+            } else {
+                row.popcornCashRevenue += amount;
+            }
+        }
+
+        return rows.values().stream()
+                .sorted(Comparator
+                        .comparingInt((ShiftRevenueAccumulator row) -> row.shift.order)
+                        .thenComparing(row -> row.staffName, String.CASE_INSENSITIVE_ORDER))
+                .map(ShiftRevenueAccumulator::toDto)
+                .collect(Collectors.toList());
+    }
+
+    private Map<Object, Double> toRevenueMap(List<Object[]> rows) {
+        Map<Object, Double> revenueMap = new LinkedHashMap<>();
+        for (Object[] row : rows) {
+            revenueMap.put(row[0], toDouble(row[1]));
+        }
+        return revenueMap;
+    }
+
+    private double toDouble(Object value) {
+        return value instanceof Number number ? number.doubleValue() : 0.0;
+    }
+
+    private int toInt(Object value) {
+        return value instanceof Number number ? number.intValue() : 0;
+    }
+
+    private String getTimeSlotKey(int hour, int minute) {
+        int time = hour * 60 + minute;
+        if (time >= 8 * 60 + 30 && time < 12 * 60) {
+            return "morning";
+        }
+        if (time >= 12 * 60 && time < 18 * 60) {
+            return "afternoon";
+        }
+        if (time >= 18 * 60 && time < 23 * 60) {
+            return "evening";
+        }
+        if (time >= 23 * 60 && time < 24 * 60) {
+            return "late";
+        }
+        return null;
+    }
+
+    private ShiftDefinition getShiftDefinition(LocalDateTime dateTime) {
+        if (dateTime == null) {
+            return null;
+        }
+        LocalTime time = dateTime.toLocalTime();
+        if (!time.isBefore(LocalTime.of(8, 30)) && time.isBefore(LocalTime.NOON)) {
+            return new ShiftDefinition("morning", "Sáng", "08:30 - 11:59", 0);
+        }
+        if (!time.isBefore(LocalTime.NOON) && time.isBefore(LocalTime.of(18, 0))) {
+            return new ShiftDefinition("afternoon", "Chiều", "12:00 - 17:59", 1);
+        }
+        if (!time.isBefore(LocalTime.of(18, 0)) && time.isBefore(LocalTime.of(23, 0))) {
+            return new ShiftDefinition("evening", "Tối", "18:00 - 22:59", 2);
+        }
+        if (!time.isBefore(LocalTime.of(23, 0))) {
+            return new ShiftDefinition("late", "Suất muộn", "23:00 - 23:59", 3);
+        }
+        return null;
+    }
+
+    private ShiftRevenueAccumulator getShiftRevenueRow(
+            Map<String, ShiftRevenueAccumulator> rows,
+            ShiftDefinition shift,
+            String staffName) {
+        String normalizedStaffName = staffName == null || staffName.isBlank() ? "Không xác định" : staffName.trim();
+        String key = shift.key + "|" + normalizedStaffName.toLowerCase(Locale.ROOT);
+        return rows.computeIfAbsent(key, ignored -> new ShiftRevenueAccumulator(shift, normalizedStaffName));
+    }
+
+    private String getBookingStaffName(Booking booking) {
+        if (booking != null && booking.getSoldByStaff() != null && booking.getSoldByStaff().getUser() != null) {
+            String fullName = booking.getSoldByStaff().getUser().getFullName();
+            if (fullName != null && !fullName.isBlank()) {
+                return fullName;
+            }
+            String email = booking.getSoldByStaff().getUser().getEmail();
+            if (email != null && !email.isBlank()) {
+                return email;
+            }
+        }
+        return "Không xác định";
+    }
+
+    private boolean isBookingSoldByStaff(Booking booking, String username) {
+        if (username == null || username.isBlank()
+                || booking == null
+                || booking.getSoldByStaff() == null
+                || booking.getSoldByStaff().getUser() == null) {
+            return false;
+        }
+        String email = booking.getSoldByStaff().getUser().getEmail();
+        String phone = booking.getSoldByStaff().getUser().getPhone();
+        return username.equalsIgnoreCase(email) || username.equalsIgnoreCase(phone);
+    }
+
+    private boolean isPopcornAdditionalCollectedByStaff(Booking booking, String username) {
+        if (username == null || username.isBlank() || booking == null) {
+            return false;
+        }
+        String collector = booking.getPopcornAdditionalCollectedBy();
+        if (collector != null && username.equalsIgnoreCase(collector)) {
+            return true;
+        }
+        return isBookingSoldByStaff(booking, username);
+    }
+
+    private String normalizeRevenuePaymentMethod(String paymentMethod) {
+        return paymentMethod == null ? "CASH" : paymentMethod.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private static class TimeSlotRevenue {
+        private final String key;
+        private final String label;
+        private final String timeRange;
+        private final int order;
+        private double ticketRevenue;
+        private double snackRevenue;
+
+        private TimeSlotRevenue(String key, String label, String timeRange, int order) {
+            this.key = key;
+            this.label = label;
+            this.timeRange = timeRange;
+            this.order = order;
+        }
+    }
+
+    private static class ShiftDefinition {
+        private final String key;
+        private final String label;
+        private final String timeRange;
+        private final int order;
+
+        private ShiftDefinition(String key, String label, String timeRange, int order) {
+            this.key = key;
+            this.label = label;
+            this.timeRange = timeRange;
+            this.order = order;
+        }
+    }
+
+    private static class ShiftRevenueAccumulator {
+        private final ShiftDefinition shift;
+        private final String staffName;
+        private double ticketCashRevenue;
+        private double ticketVnpayRevenue;
+        private double popcornCashRevenue;
+        private double popcornVnpayRevenue;
+        private double popcornBankRevenue;
+
+        private ShiftRevenueAccumulator(ShiftDefinition shift, String staffName) {
+            this.shift = shift;
+            this.staffName = staffName;
+        }
+
+        private ShiftRevenueItemDTO toDto() {
+            double totalRevenue = ticketCashRevenue + ticketVnpayRevenue
+                    + popcornCashRevenue + popcornVnpayRevenue + popcornBankRevenue;
+            return ShiftRevenueItemDTO.builder()
+                    .shiftKey(shift.key)
+                    .shiftLabel(shift.label)
+                    .timeRange(shift.timeRange)
+                    .staffName(staffName)
+                    .ticketCashRevenue(ticketCashRevenue)
+                    .ticketVnpayRevenue(ticketVnpayRevenue)
+                    .popcornCashRevenue(popcornCashRevenue)
+                    .popcornVnpayRevenue(popcornVnpayRevenue)
+                    .popcornBankRevenue(popcornBankRevenue)
+                    .totalRevenue(totalRevenue)
+                    .build();
+        }
     }
 
     /** CUSTOMER */

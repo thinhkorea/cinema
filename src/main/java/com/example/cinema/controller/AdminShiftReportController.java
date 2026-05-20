@@ -1,8 +1,10 @@
 package com.example.cinema.controller;
 
 import com.example.cinema.dto.ShiftSummaryDTO;
+import com.example.cinema.service.BookingService;
 import com.example.cinema.service.InventoryService;
 import com.example.cinema.service.SnackService;
+import com.example.cinema.service.StaffShiftService;
 import com.example.cinema.service.SupplyService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -24,6 +26,8 @@ public class AdminShiftReportController {
     private final InventoryService inventoryService;
     private final SupplyService supplyService;
     private final SnackService snackService;
+    private final BookingService bookingService;
+    private final StaffShiftService staffShiftService;
 
     @GetMapping("/shift-summary")
     public ResponseEntity<ShiftSummaryDTO> getShiftSummary(
@@ -36,6 +40,8 @@ public class AdminShiftReportController {
             .ingredients(inventoryService.getDailyIngredientUsage(target))
             .supplies(supplyService.getDailySupplyUsage(target))
             .snackWarehouse(snackService.getDailySnackWarehouseUsage(target))
+            .shifts(staffShiftService.getDailyShifts(target))
+            .revenues(bookingService.getDailyShiftRevenue(target))
             .build();
 
         return ResponseEntity.ok(summary);

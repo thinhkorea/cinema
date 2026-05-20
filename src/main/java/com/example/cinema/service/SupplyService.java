@@ -40,6 +40,48 @@ public class SupplyService {
                 .collect(Collectors.toList());
     }
 
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> getSupplyMovements(Long supplyId) {
+        SupplyItem supply = supplyItemRepository.findById(supplyId)
+                .orElseThrow(() -> new IllegalArgumentException("Supply not found: " + supplyId));
+
+        List<Map<String, Object>> rows = supplyStockMovementRepository
+                .findTop50BySupply_SupplyIdOrderByCreatedAtDesc(supplyId)
+                .stream()
+                .map(movement -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("movementId", movement.getMovementId());
+                    row.put("supplyId", movement.getSupply().getSupplyId());
+                    row.put("supplyName", movement.getSupply().getSupplyName());
+                    row.put("quantityBefore", movement.getQuantityBefore());
+                    row.put("quantityChange", movement.getQuantityChange());
+                    row.put("quantityAfter", movement.getQuantityAfter());
+                    row.put("action", movement.getAction());
+                    row.put("note", movement.getNote());
+                    row.put("performedBy", movement.getPerformedBy());
+                    row.put("createdAt", movement.getCreatedAt());
+                    return row;
+                })
+                .collect(Collectors.toList());
+
+        double currentStock = supply.getStock() == null ? 0.0 : supply.getStock();
+        if (rows.isEmpty() && currentStock > 0) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("movementId", -supply.getSupplyId());
+            row.put("supplyId", supply.getSupplyId());
+            row.put("supplyName", supply.getSupplyName());
+            row.put("quantityBefore", 0.0);
+            row.put("quantityChange", currentStock);
+            row.put("quantityAfter", currentStock);
+            row.put("action", "CURRENT_STOCK");
+            row.put("note", "Vật tư đang có tồn kho nhưng chưa có lịch sử nhập/xuất trước đó.");
+            row.put("performedBy", "system");
+            row.put("createdAt", null);
+            rows.add(row);
+        }
+        return rows;
+    }
+
     @Transactional
     public SupplyItemDTO createSupply(SupplyItem payload) {
         payload.setSupplyId(null);
@@ -71,6 +113,15 @@ public class SupplyService {
         }
 
         return toDTO(supplyItemRepository.save(current));
+    }
+
+    @Transactional
+    public void deleteSupply(Long supplyId) {
+        if (!supplyItemRepository.existsById(supplyId)) {
+            throw new IllegalArgumentException("Supply not found: " + supplyId);
+        }
+        supplyStockMovementRepository.deleteBySupply_SupplyId(supplyId);
+        supplyItemRepository.deleteById(supplyId);
     }
 
     @Transactional

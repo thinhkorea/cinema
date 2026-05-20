@@ -10,6 +10,8 @@ public interface StaffRepository extends JpaRepository<Staff, Long> {
     // Tìm nhân viên bằng email (thông qua user)
     Optional<Staff> findByUser_Email(String email);
 
+    Optional<Staff> findByUser_Phone(String phone);
+
     // Tìm nhân viên bằng userId
     Optional<Staff> findByUser_UserId(Long userId);
 

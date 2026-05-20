@@ -65,6 +65,12 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
        List<Booking> findAllByStatusAndCreatedAtBefore(Booking.Status status, LocalDateTime timestamp);
 
+       @EntityGraph(attributePaths = { "soldByStaff.user" })
+       List<Booking> findByStatusAndCreatedAtBetween(Booking.Status status, LocalDateTime from, LocalDateTime to);
+
+       @EntityGraph(attributePaths = { "soldByStaff.user" })
+       List<Booking> findByPopcornAdditionalCollectedAtBetween(LocalDateTime from, LocalDateTime to);
+
        // ===================== THỐNG KÊ =====================
        @Query("""
                       SELECT FUNCTION('DATE_FORMAT', b.createdAt, '%Y-%m') AS month,
@@ -108,4 +114,16 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
                      ORDER BY totalRevenue DESC
                      """)
        List<Object[]> getRevenueByStaff();
+
+       @Query("""
+                     SELECT HOUR(b.showtime.startTime) AS showtimeHour,
+                            MINUTE(b.showtime.startTime) AS showtimeMinute,
+                            SUM(b.total - COALESCE(b.pointsUsed, 0) * 1000) AS revenue
+                     FROM Booking b
+                     WHERE b.status = com.example.cinema.domain.Booking$Status.PAID
+                       AND YEAR(b.showtime.startTime) = :year
+                     GROUP BY HOUR(b.showtime.startTime), MINUTE(b.showtime.startTime)
+                     ORDER BY showtimeHour, showtimeMinute
+                     """)
+       List<Object[]> getRevenueByShowtimeTime(@Param("year") int year);
 }
