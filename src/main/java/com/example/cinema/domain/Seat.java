@@ -29,6 +29,9 @@ public class Seat {
     @Column(nullable = false)
     private boolean booking = false;
 
+    @Column(nullable = false, columnDefinition = "boolean default true")
+    private Boolean active = true;
+
     public enum SeatType {
         NORMAL,
         VIP,

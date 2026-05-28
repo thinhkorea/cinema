@@ -22,4 +22,10 @@ public class Room {
     private Integer capacity;
 
     private String roomType; // 2D, 3D, IMAX...
+
+    @Column(columnDefinition = "TEXT")
+    private String layoutConfig;
+
+    @Column(nullable = false, columnDefinition = "boolean default true")
+    private Boolean active = true;
 }

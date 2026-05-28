@@ -1,8 +1,8 @@
 package com.example.cinema.service;
 
 import com.example.cinema.domain.Booking;
-import com.example.cinema.domain.BookingSnack;
 import com.example.cinema.domain.Snack;
+import com.example.cinema.domain.SnackOrderItem;
 import com.example.cinema.domain.SnackWarehouseMovement;
 import com.example.cinema.dto.AddSnacksRequestDTO;
 import com.example.cinema.dto.BookingSnackDTO;
@@ -12,7 +12,6 @@ import com.example.cinema.dto.SnackItemRequestDTO;
 import com.example.cinema.dto.SnackWarehouseDTO;
 import com.example.cinema.dto.UpdateSnackWarehouseStockRequestDTO;
 import com.example.cinema.repository.BookingRepository;
-import com.example.cinema.repository.BookingSnackRepository;
 import com.example.cinema.repository.SnackRepository;
 import com.example.cinema.repository.SnackWarehouseMovementRepository;
 import lombok.RequiredArgsConstructor;
@@ -37,8 +36,8 @@ import java.util.stream.Collectors;
 public class SnackService {
 
     private final SnackRepository snackRepository;
-    private final BookingSnackRepository bookingSnackRepository;
     private final BookingRepository bookingRepository;
+    private final SnackOrderService snackOrderService;
     private final SnackWarehouseMovementRepository snackWarehouseMovementRepository;
     private final InventoryService inventoryService;
 
@@ -302,85 +301,35 @@ public class SnackService {
     public void deleteSnack(Long snackId) {
         snackRepository.deleteById(snackId);
     }
-
     /**
-     * Thêm snacks vào các bookings của một transaction
-     * Sử dụng khi customer đã chọn snacks và cần lưu vào database
+     * Add selected snacks to a booking transaction.
      */
     @Transactional
     public Map<String, Object> addSnacksToBookings(AddSnacksRequestDTO request) {
         String txnRef = request.getTxnRef();
         List<SnackItemRequestDTO> snackItems = request.getSnacks();
-
-        // Tìm tất cả bookings trong transaction này
-        List<Booking> bookings = bookingRepository.findByTxnRef(txnRef);
-        if (bookings.isEmpty()) {
-            throw new RuntimeException("No bookings found with txnRef: " + txnRef);
-        }
-
-        // Tính tổng tiền snacks
-        double totalSnacksCost = 0.0;
-
-        // Thêm snacks vào từng booking (hoặc chỉ booking đầu tiên nếu muốn group)
-        // Ở đây tôi thêm vào booking đầu tiên trong txnRef
-        Booking firstBooking = bookings.get(0);
-
-        for (SnackItemRequestDTO item : snackItems) {
-            if (item.getQuantity() <= 0) {
-                continue;
-            }
-
-            Snack snack = getSnackById(item.getSnackId());
-
-            // Online booking chỉ ghi nhận món đã chọn.
-            // Việc kiểm tra/trừ nguyên liệu sẽ xử lý ở bước staff fulfill tại quầy.
-
-            // Tạo BookingSnack
-            BookingSnack bookingSnack = new BookingSnack();
-            bookingSnack.setBooking(firstBooking);
-            bookingSnack.setSnack(snack);
-            bookingSnack.setQuantity(item.getQuantity());
-            bookingSnack.setPriceAtPurchase(snack.getPrice());
-
-            bookingSnackRepository.save(bookingSnack);
-
-            totalSnacksCost += bookingSnack.getSubtotal();
-        }
+        double totalSnacksCost = snackOrderService.createOrReplaceBookingOrder(txnRef, snackItems).getTotalAmount();
 
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);
         response.put("txnRef", txnRef);
         response.put("totalSnacksCost", totalSnacksCost);
         response.put("message", "Snacks added successfully");
-
         return response;
     }
 
-    /**
-     * Lấy danh sách snacks của một booking
-     */
     public List<BookingSnackDTO> getBookingSnacks(Long bookingId) {
-        return bookingSnackRepository.findByBooking_BookingId(bookingId).stream()
-                .map(this::convertToBookingSnackDTO)
-                .collect(Collectors.toList());
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new RuntimeException("Booking not found with id: " + bookingId));
+        return snackOrderService.getBookingSnackDTOs(booking.getTxnRef());
     }
 
-    /**
-     * Lấy danh sách snacks của một transaction
-     */
     public List<BookingSnackDTO> getSnacksByTxnRef(String txnRef) {
-        return bookingSnackRepository.findByTxnRef(txnRef).stream()
-                .map(this::convertToBookingSnackDTO)
-                .collect(Collectors.toList());
+        return snackOrderService.getBookingSnackDTOs(txnRef);
     }
 
-    /**
-     * Tính tổng tiền snacks của một transaction
-     */
     public Double calculateSnacksTotalByTxnRef(String txnRef) {
-        return bookingSnackRepository.findByTxnRef(txnRef).stream()
-                .mapToDouble(BookingSnack::getSubtotal)
-                .sum();
+        return snackOrderService.getBookingSnackTotal(txnRef);
     }
 
     @Transactional
@@ -396,43 +345,45 @@ public class SnackService {
     @Transactional
     public Map<String, Object> fulfillSnacksByTxn(String txnRef, String actor, Long popcornSnackId, String additionalPaymentMethod) {
         if (txnRef == null || txnRef.isBlank()) {
-            throw new IllegalArgumentException("Mã giao dịch không hợp lệ.");
+            throw new IllegalArgumentException("Ma giao dich khong hop le.");
         }
 
         List<Booking> bookings = bookingRepository.findByTxnRef(txnRef);
         if (bookings.isEmpty()) {
-            throw new IllegalArgumentException("Không tìm thấy vé với mã giao dịch: " + txnRef);
+            throw new IllegalArgumentException("Khong tim thay ve voi ma giao dich: " + txnRef);
         }
 
         boolean alreadyFulfilled = bookings.stream().allMatch(Booking::isSnacksFulfilled);
         if (alreadyFulfilled) {
-            throw new IllegalStateException("Bắp nước đã được xuất kho cho mã giao dịch này.");
+            throw new IllegalStateException("Bap nuoc da duoc xuat kho cho ma giao dich nay.");
         }
 
         for (Booking booking : bookings) {
             if (booking.getStatus() != Booking.Status.PAID) {
-                throw new IllegalStateException("Vé chưa thanh toán, không thể xuất bắp nước.");
+                throw new IllegalStateException("Ve chua thanh toan, khong the xuat bap nuoc.");
             }
         }
 
-        List<BookingSnack> items = bookingSnackRepository.findByTxnRef(txnRef);
-        if (items.isEmpty()) {
+        List<SnackOrderItem> attachedOrderItems = snackOrderService.getBookingOrderItems(txnRef);
+        if (attachedOrderItems.isEmpty()) {
             bookings.forEach(b -> b.setSnacksFulfilled(true));
             bookingRepository.saveAll(bookings);
             return Map.of(
                     "success", true,
                     "txnRef", txnRef,
-                    "message", "Không có bắp nước để xuất.");
+                    "message", "Khong co bap nuoc de xuat.");
         }
 
         Snack defaultPopcorn = getDefaultPopcornSnack();
         Snack selectedPopcorn = resolveSelectedPopcorn(popcornSnackId, defaultPopcorn);
         int comboPopcornQty = 0;
         Map<Snack, Integer> expandedItems = new LinkedHashMap<>();
-        for (BookingSnack item : items) {
+
+        for (SnackOrderItem item : attachedOrderItems) {
             if (item.getSnack() == null) {
                 continue;
             }
+
             int qty = item.getQuantity() == null ? 0 : item.getQuantity();
             if (qty <= 0) {
                 continue;
@@ -457,15 +408,16 @@ public class SnackService {
             if (qty <= 0) {
                 continue;
             }
+
             summary.merge(snack.getSnackName(), qty, Integer::sum);
 
             if (isWarehouseTrackable(snack)) {
                 double before = snack.getWarehouseStock() == null ? 0.0 : snack.getWarehouseStock();
                 double after = before - qty;
                 if (after < 0) {
-                    throw new IllegalStateException(
-                            "Tồn kho thành phẩm không đủ cho " + snack.getSnackName());
+                    throw new IllegalStateException("Ton kho thanh pham khong du cho " + snack.getSnackName());
                 }
+
                 snack.setWarehouseStock(after);
                 snackRepository.save(snack);
 
@@ -490,7 +442,7 @@ public class SnackService {
         double additionalCharge = calculatePopcornAdditionalCharge(defaultPopcorn, selectedPopcorn, comboPopcornQty);
         String normalizedAdditionalPaymentMethod = normalizePaymentMethod(additionalPaymentMethod);
         if (additionalCharge > 0 && normalizedAdditionalPaymentMethod == null) {
-            throw new IllegalArgumentException("Vui lòng chọn phương thức thu phụ phí đổi bắp.");
+            throw new IllegalArgumentException("Vui long chon phuong thuc thu phu phi doi bap.");
         }
 
         bookings.forEach(b -> b.setSnacksFulfilled(true));
@@ -511,7 +463,7 @@ public class SnackService {
                 "selectedPopcorn", selectedPopcorn.getSnackName(),
                 "popcornQuantity", comboPopcornQty,
                 "additionalCharge", additionalCharge,
-                "message", "Đã xuất bắp nước thành công.");
+                "message", "Da xuat bap nuoc thanh cong.");
     }
 
     private String normalizePaymentMethod(String paymentMethod) {
@@ -668,17 +620,6 @@ public class SnackService {
     public SnackDTO updateSnackAndReturnDTO(Long snackId, Snack snackDetails) {
         Snack updated = updateSnack(snackId, snackDetails);
         return convertToDTO(updated);
-    }
-
-    private BookingSnackDTO convertToBookingSnackDTO(BookingSnack bs) {
-        return BookingSnackDTO.builder()
-            .id(bs.getId())
-            .snackId(bs.getSnack().getSnackId())
-            .snackName(bs.getSnack().getSnackName())
-            .quantity(bs.getQuantity())
-            .priceAtPurchase(bs.getPriceAtPurchase())
-            .subtotal(bs.getSubtotal())
-            .build();
     }
 
     private SnackWarehouseDTO convertToWarehouseDTO(Snack snack) {

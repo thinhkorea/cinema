@@ -36,7 +36,6 @@ public class DataSeeder {
             ShowtimeRepository showtimeRepo,
             BookingRepository bookingRepo,
             SnackRepository snackRepo,
-            BookingSnackRepository bookingSnackRepo,
             IngredientRepository ingredientRepo,
             IngredientBatchRepository ingredientBatchRepo,
             IngredientStockMovementRepository ingredientStockMovementRepo,
@@ -52,7 +51,6 @@ public class DataSeeder {
 
             if (seedReset) {
                 // Xóa dữ liệu cũ khi chủ động bật chế độ reset
-                bookingSnackRepo.deleteAll();
                 bookingRepo.deleteAll();
                 showtimeRepo.deleteAll();
                 seatRepo.deleteAll();

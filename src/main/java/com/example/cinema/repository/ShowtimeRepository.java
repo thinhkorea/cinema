@@ -12,11 +12,27 @@ import com.example.cinema.domain.Showtime;
 
 @Repository
 public interface ShowtimeRepository extends JpaRepository<Showtime, Long> {
-  List<Showtime> findByMovie_MovieId(Long movieId);
+  @Query("SELECT s FROM Showtime s WHERE s.room.active = true OR s.room.active IS NULL")
+  List<Showtime> findAllWithActiveRoom();
 
-  List<Showtime> findByMovie_MovieIdOrderByStartTimeAsc(Long movieId);
+  @Query("""
+      SELECT s
+      FROM Showtime s
+      WHERE s.movie.movieId = :movieId
+        AND (s.room.active = true OR s.room.active IS NULL)
+      """)
+  List<Showtime> findByMovie_MovieId(@Param("movieId") Long movieId);
 
-  @Query("SELECT DISTINCT s.movie FROM Showtime s WHERE s.startTime > CURRENT_TIMESTAMP")
+  @Query("""
+      SELECT s
+      FROM Showtime s
+      WHERE s.movie.movieId = :movieId
+        AND (s.room.active = true OR s.room.active IS NULL)
+      ORDER BY s.startTime ASC
+      """)
+  List<Showtime> findByMovie_MovieIdOrderByStartTimeAsc(@Param("movieId") Long movieId);
+
+  @Query("SELECT DISTINCT s.movie FROM Showtime s WHERE s.startTime > CURRENT_TIMESTAMP AND (s.room.active = true OR s.room.active IS NULL)")
   List<Movie> findUpcomingMovies();
 
   @Query("""
@@ -24,6 +40,7 @@ public interface ShowtimeRepository extends JpaRepository<Showtime, Long> {
           FROM Showtime s
                       WHERE s.movie.movieId = :movieId
             AND s.startTime >= CURRENT_DATE
+            AND (s.room.active = true OR s.room.active IS NULL)
           ORDER BY DATE(s.startTime)
       """)
   List<String> findShowDatesByMovie(@Param("movieId") Long movieId);
@@ -33,6 +50,7 @@ public interface ShowtimeRepository extends JpaRepository<Showtime, Long> {
         FROM Showtime s
         WHERE s.movie.movieId = :movieId
           AND DATE(s.startTime) = DATE(:dateStr)
+          AND (s.room.active = true OR s.room.active IS NULL)
         ORDER BY s.startTime
       """)
   List<Showtime> findByMovieAndDate(
@@ -52,5 +70,28 @@ public interface ShowtimeRepository extends JpaRepository<Showtime, Long> {
       @Param("roomId") Long roomId,
       @Param("startTime") LocalDateTime startTime,
       @Param("endTime") LocalDateTime endTime,
+      @Param("excludeShowtimeId") Long excludeShowtimeId);
+
+  @Query("""
+        SELECT s
+        FROM Showtime s
+        WHERE s.startTime = :startTime
+          AND (:excludeShowtimeId IS NULL OR s.showtimeId <> :excludeShowtimeId)
+        ORDER BY s.startTime
+      """)
+  List<Showtime> findSameStartTime(
+      @Param("startTime") LocalDateTime startTime,
+      @Param("excludeShowtimeId") Long excludeShowtimeId);
+
+  @Query("""
+        SELECT s
+        FROM Showtime s
+        WHERE s.startTime BETWEEN :windowStart AND :windowEnd
+          AND (:excludeShowtimeId IS NULL OR s.showtimeId <> :excludeShowtimeId)
+        ORDER BY s.startTime
+      """)
+  List<Showtime> findNearbyStartTimes(
+      @Param("windowStart") LocalDateTime windowStart,
+      @Param("windowEnd") LocalDateTime windowEnd,
       @Param("excludeShowtimeId") Long excludeShowtimeId);
 }

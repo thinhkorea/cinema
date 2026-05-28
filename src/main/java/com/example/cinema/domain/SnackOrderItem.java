@@ -2,23 +2,29 @@ package com.example.cinema.domain;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.EqualsAndHashCode;
+import lombok.ToString;
 
 @Entity
-@Table(name = "booking_snacks")
+@Table(name = "snack_order_items")
 @Data
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class BookingSnack {
+public class SnackOrderItem {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    private Long snackOrderItemId;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "booking_id", nullable = false)
-    private Booking booking;
+    @JoinColumn(name = "snack_order_id", nullable = false)
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    private SnackOrder snackOrder;
 
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "snack_id", nullable = false)
@@ -28,12 +34,9 @@ public class BookingSnack {
     private Integer quantity;
 
     @Column(nullable = false)
-    private Double priceAtPurchase; // Giá tại thời điểm mua (để lưu lại lịch sử)
+    private Double priceAtPurchase;
 
-    /**
-     * Tính tổng tiền của item này
-     */
     public Double getSubtotal() {
-        return priceAtPurchase * quantity;
+        return (priceAtPurchase == null ? 0.0 : priceAtPurchase) * (quantity == null ? 0 : quantity);
     }
 }

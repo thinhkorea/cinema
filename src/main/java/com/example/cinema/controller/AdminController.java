@@ -56,6 +56,16 @@ public class AdminController {
         return ResponseEntity.ok(bookingService.findAllDTO());
     }
 
+    @GetMapping("/users/{userId}/bookings")
+    public ResponseEntity<?> getCustomerBookingHistory(@PathVariable Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        if (user.getRole() != User.Role.CUSTOMER) {
+            throw new IllegalArgumentException("Chỉ có thể xem lịch sử giao dịch của khách hàng");
+        }
+        return ResponseEntity.ok(bookingService.findCustomerBookingHistoryForAdmin(userId));
+    }
+
     @GetMapping("/revenue")
     public ResponseEntity<?> getMonthlyRevenue(@RequestParam(required = false) Integer year) {
         if (year != null) {

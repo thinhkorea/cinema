@@ -33,7 +33,8 @@ public class BookingService {
     private final UserRepository userRepository;
     private final TicketEmailService ticketEmailService;
     private final PointService pointService;
-    private final BookingSnackRepository bookingSnackRepo;
+    private final SnackOrderService snackOrderService;
+    private final SnackOrderItemRepository snackOrderItemRepository;
 
     public BookingService(BookingRepository bookingRepo,
             ShowtimeRepository showtimeRepo,
@@ -43,7 +44,8 @@ public class BookingService {
             UserRepository userRepository,
             TicketEmailService ticketEmailService,
             PointService pointService,
-            BookingSnackRepository bookingSnackRepo) {
+            SnackOrderService snackOrderService,
+            SnackOrderItemRepository snackOrderItemRepository) {
         this.bookingRepo = bookingRepo;
         this.showtimeRepo = showtimeRepo;
         this.seatRepo = seatRepo;
@@ -52,7 +54,8 @@ public class BookingService {
         this.userRepository = userRepository;
         this.ticketEmailService = ticketEmailService;
         this.pointService = pointService;
-        this.bookingSnackRepo = bookingSnackRepo;
+        this.snackOrderService = snackOrderService;
+        this.snackOrderItemRepository = snackOrderItemRepository;
     }
 
     // ==================== ADMIN / USER ====================
@@ -84,6 +87,13 @@ public class BookingService {
 
     public List<Booking> findByUsername(String username) {
         return bookingRepo.findByCustomer_User_Email(username);
+    }
+
+    @Transactional(readOnly = true)
+    public List<SoldTicketDTO> findCustomerBookingHistoryForAdmin(Long userId) {
+        return bookingRepo.findByCustomer_User_UserIdOrderByCreatedAtDesc(userId).stream()
+            .map(SoldTicketDTO::fromBooking)
+            .collect(Collectors.toList());
     }
 
     public List<Booking> findByShowtimeId(Long showtimeId) {
@@ -253,6 +263,7 @@ public class BookingService {
                 pointService.earnPoints(customer, firstBooking, actualPaymentAmount);
             }
         }
+        snackOrderService.markPaidByBookingTxnRef(txnRef, paymentMethod);
 
         // Gửi email vé bất đồng bộ để tránh làm chậm response xác nhận thanh toán.
         if (hasNewlyPaidBooking && customer != null && customer.getUser() != null) {
@@ -272,7 +283,7 @@ public class BookingService {
     public List<Map<String, Object>> getMonthlyRevenue() {
         List<Object[]> results = bookingRepo.getMonthlyRevenue();
         List<Map<String, Object>> list = new ArrayList<>();
-        Map<Object, Double> snackRevenueByMonth = toRevenueMap(bookingSnackRepo.getMonthlySnackRevenue());
+        Map<Object, Double> snackRevenueByMonth = toRevenueMap(snackOrderItemRepository.getMonthlyAttachedSnackRevenue());
         for (Object[] r : results) {
             double ticketRevenue = toDouble(r[1]);
             double snackRevenue = snackRevenueByMonth.getOrDefault(r[0], 0.0);
@@ -295,7 +306,7 @@ public class BookingService {
     }
 
     public List<Map<String, Object>> getMonthlyRevenueByYear(int year) {
-        Map<Object, Double> snackRevenueByMonth = toRevenueMap(bookingSnackRepo.findMonthlySnackRevenueByYear(year));
+        Map<Object, Double> snackRevenueByMonth = toRevenueMap(snackOrderItemRepository.findMonthlyAttachedSnackRevenueByYear(year));
         List<Map<String, Object>> list = new ArrayList<>();
         for (Object[] r : bookingRepo.findMonthlyRevenueByYear(year)) {
             double ticketRevenue = toDouble(r[1]);
@@ -321,7 +332,7 @@ public class BookingService {
     public List<Map<String, Object>> getRevenueByMovie() {
         List<Object[]> results = bookingRepo.getRevenueByMovie();
         List<Map<String, Object>> movieRevenueList = new ArrayList<>();
-        Map<Object, Double> snackRevenueByMovie = toRevenueMap(bookingSnackRepo.getSnackRevenueByMovie());
+        Map<Object, Double> snackRevenueByMovie = toRevenueMap(snackOrderItemRepository.getAttachedSnackRevenueByMovie());
         for (Object[] row : results) {
             double ticketRevenue = toDouble(row[1]);
             double snackRevenue = snackRevenueByMovie.getOrDefault(row[0], 0.0);
@@ -346,7 +357,7 @@ public class BookingService {
     public List<Map<String, Object>> getRevenueByStaff() {
         List<Object[]> results = bookingRepo.getRevenueByStaff();
         List<Map<String, Object>> staffRevenueList = new ArrayList<>();
-        Map<Object, Double> snackRevenueByStaff = toRevenueMap(bookingSnackRepo.getSnackRevenueByStaff());
+        Map<Object, Double> snackRevenueByStaff = toRevenueMap(snackOrderItemRepository.getAttachedSnackRevenueByStaff());
         for (Object[] row : results) {
             double ticketRevenue = toDouble(row[1]);
             double snackRevenue = snackRevenueByStaff.getOrDefault(row[0], 0.0);
@@ -382,7 +393,7 @@ public class BookingService {
             }
         }
 
-        for (Object[] row : bookingSnackRepo.getSnackRevenueByShowtimeTime(year)) {
+        for (Object[] row : snackOrderItemRepository.getAttachedSnackRevenueByShowtimeTime(year)) {
             TimeSlotRevenue slot = slots.get(getTimeSlotKey(toInt(row[0]), toInt(row[1])));
             if (slot != null) {
                 slot.snackRevenue += toDouble(row[2]);
@@ -809,7 +820,7 @@ public class BookingService {
         String rowLabel = rowLabels.iterator().next();
         Set<Integer> selectedOrderSet = new HashSet<>(selectedOrders);
 
-        Set<Integer> bookedOrdersInRow = seatRepo.findByRoom_RoomId(showtime.getRoom().getRoomId()).stream()
+        Set<Integer> bookedOrdersInRow = seatRepo.findByRoom_RoomIdAndActiveTrue(showtime.getRoom().getRoomId()).stream()
                 .filter(seat -> rowLabel.equals(extractSeatRow(seat)))
                 .filter(seat -> bookingRepo.existsByShowtime_ShowtimeIdAndSeat_SeatId(showtimeId, seat.getSeatId()))
             .flatMap(seat -> extractSeatOrders(seat).stream())
@@ -1021,9 +1032,7 @@ public class BookingService {
         double ticketTotal = bookings.stream()
                 .mapToDouble(b -> b.getTotal() != null ? b.getTotal() : 0.0)
                 .sum();
-        double snackTotal = bookingSnackRepo.findByTxnRef(txnRef).stream()
-                .mapToDouble(BookingSnack::getSubtotal)
-                .sum();
+        double snackTotal = snackOrderService.getBookingSnackTotal(txnRef);
         double refundAmount = ticketTotal + snackTotal;
 
         for (Booking booking : bookings) {

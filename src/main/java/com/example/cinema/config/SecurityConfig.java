@@ -58,6 +58,8 @@ public class SecurityConfig {
                                                 // Cho phép cập nhật trạng thái thanh toán (VNPay / frontend callback)
                                                 .requestMatchers(HttpMethod.POST, "/api/bookings/pay-by-txn/{txnRef}")
                                                 .permitAll()
+                                                .requestMatchers(HttpMethod.POST, "/api/snack-orders/pay-by-code/**")
+                                                .permitAll()
 
                                                 // Snack admin APIs
                                                 .requestMatchers(HttpMethod.GET, "/api/snacks/admin/**").hasRole("ADMIN")
@@ -87,6 +89,9 @@ public class SecurityConfig {
 
                                                 // Voucher validate/redeem
                                                 .requestMatchers(HttpMethod.POST, "/api/vouchers/**")
+                                                .hasRole("CUSTOMER")
+
+                                                .requestMatchers("/api/snack-orders/**")
                                                 .hasRole("CUSTOMER")
 
                                                 // 2️STAFF zone (chỉ STAFF mới được truy cập) - phải đặt sau rule cụ thể

@@ -13,15 +13,19 @@ public class SeatService {
     private final SeatRepository seatRepo;
     private final ShowtimeRepository showtimeRepo;
     private final BookingRepository bookingRepo;
+    private final RoomRepository roomRepo;
 
-    public SeatService(SeatRepository seatRepo, ShowtimeRepository showtimeRepo, BookingRepository bookingRepo) {
+    public SeatService(SeatRepository seatRepo, ShowtimeRepository showtimeRepo, BookingRepository bookingRepo, RoomRepository roomRepo) {
         this.seatRepo = seatRepo;
         this.showtimeRepo = showtimeRepo;
         this.bookingRepo = bookingRepo;
+        this.roomRepo = roomRepo;
     }
 
     public List<Seat> findAll() {
-        return seatRepo.findAll();
+        return seatRepo.findAll().stream()
+                .filter(seat -> !Boolean.FALSE.equals(seat.getActive()))
+                .collect(Collectors.toList());
     }
 
     public Optional<Seat> findById(Long id) {
@@ -29,7 +33,7 @@ public class SeatService {
     }
 
     public List<Seat> findByRoom(Long roomId) {
-        return seatRepo.findByRoom_RoomId(roomId);
+        return seatRepo.findByRoom_RoomIdAndActiveTrueOrderBySeatNumberAsc(roomId);
     }
 
     public Seat save(Seat seat) {
@@ -37,7 +41,56 @@ public class SeatService {
     }
 
     public void delete(Long id) {
-        seatRepo.deleteById(id);
+        Seat seat = seatRepo.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Seat not found"));
+        seat.setActive(false);
+        seatRepo.save(seat);
+    }
+
+    public Seat createSeatForRoom(Long roomId, Seat request) {
+        Room room = roomRepo.findById(roomId)
+                .orElseThrow(() -> new IllegalArgumentException("Room not found"));
+        if (Boolean.FALSE.equals(room.getActive())) {
+            throw new IllegalArgumentException("Phòng chiếu đã bị vô hiệu hóa.");
+        }
+        String seatNumber = normalizeSeatNumber(request.getSeatNumber());
+        if (seatRepo.existsByRoom_RoomIdAndSeatNumberIgnoreCaseAndActiveTrue(roomId, seatNumber)) {
+            throw new IllegalArgumentException("Số ghế đã tồn tại trong phòng này.");
+        }
+
+        Seat seat = new Seat();
+        seat.setRoom(room);
+        seat.setSeatNumber(seatNumber);
+        seat.setSeatType(request.getSeatType() == null ? Seat.SeatType.NORMAL : request.getSeatType());
+        seat.setBooking(false);
+        seat.setActive(true);
+        return seatRepo.save(seat);
+    }
+
+    public Seat updateSeat(Long seatId, Seat request) {
+        Seat seat = seatRepo.findById(seatId)
+                .orElseThrow(() -> new IllegalArgumentException("Seat not found"));
+        String seatNumber = normalizeSeatNumber(request.getSeatNumber());
+        Long roomId = seat.getRoom().getRoomId();
+        if (seatRepo.existsByRoom_RoomIdAndSeatNumberIgnoreCaseAndActiveTrueAndSeatIdNot(roomId, seatNumber, seatId)) {
+            throw new IllegalArgumentException("Số ghế đã tồn tại trong phòng này.");
+        }
+
+        seat.setSeatNumber(seatNumber);
+        seat.setSeatType(request.getSeatType() == null ? Seat.SeatType.NORMAL : request.getSeatType());
+        seat.setActive(true);
+        return seatRepo.save(seat);
+    }
+
+    public void deleteSeat(Long seatId) {
+        delete(seatId);
+    }
+
+    private String normalizeSeatNumber(String seatNumber) {
+        if (seatNumber == null || seatNumber.isBlank()) {
+            throw new IllegalArgumentException("Số ghế không được để trống.");
+        }
+        return seatNumber.trim().toUpperCase(Locale.ROOT);
     }
 
     // Lấy ghế theo suất chiếu
@@ -46,7 +99,7 @@ public class SeatService {
                 .orElseThrow(() -> new RuntimeException("Showtime not found"));
 
         // Lấy toàn bộ ghế của phòng chiếu
-        List<Seat> seats = seatRepo.findByRoom_RoomId(showtime.getRoom().getRoomId());
+        List<Seat> seats = seatRepo.findByRoom_RoomIdAndActiveTrue(showtime.getRoom().getRoomId());
 
         // Lấy danh sách booking của suất chiếu đó
         List<Booking> bookings = bookingRepo.findByShowtime_ShowtimeId(showtimeId);
@@ -78,7 +131,7 @@ public class SeatService {
     // Initialize seats for a room (128 standard seats, optional sweetbox to 144)
     public void initializeSeatsForRoom(Room room) {
         // Check if seats already exist for this room
-        List<Seat> existingSeats = seatRepo.findByRoom_RoomId(room.getRoomId());
+        List<Seat> existingSeats = seatRepo.findByRoom_RoomIdAndActiveTrue(room.getRoomId());
         if (!existingSeats.isEmpty()) {
             return; // Seats already exist
         }
@@ -97,6 +150,7 @@ public class SeatService {
                         ? Seat.SeatType.NORMAL
                         : Seat.SeatType.VIP);
                 seat.setBooking(false);
+                seat.setActive(true);
                 seatsToCreate.add(seat);
             }
         }
@@ -109,6 +163,7 @@ public class SeatService {
                 sweetbox.setSeatNumber("I" + col + "-" + (col + 1));
                 sweetbox.setSeatType(Seat.SeatType.SWEETBOX);
                 sweetbox.setBooking(false);
+                sweetbox.setActive(true);
                 seatsToCreate.add(sweetbox);
             }
         }

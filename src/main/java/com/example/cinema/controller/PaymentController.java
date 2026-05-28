@@ -73,6 +73,7 @@ public class PaymentController {
                 String.valueOf(body.getOrDefault("orderDescription", "Thanh toan ve xem phim"))
         );
         String role = String.valueOf(body.getOrDefault("role", "customer"));
+        String flow = String.valueOf(body.getOrDefault("flow", "booking"));
 
         TimeZone vnTimeZone = TimeZone.getTimeZone("Asia/Ho_Chi_Minh");
         Calendar calendar = Calendar.getInstance(vnTimeZone);
@@ -84,7 +85,8 @@ public class PaymentController {
 
         String returnUrl = vnp_ReturnUrl
                 + (vnp_ReturnUrl.contains("?") ? "&" : "?")
-                + "role=" + URLEncoder.encode(role, StandardCharsets.UTF_8);
+                + "role=" + URLEncoder.encode(role, StandardCharsets.UTF_8)
+                + "&flow=" + URLEncoder.encode(flow, StandardCharsets.UTF_8);
 
         Map<String, String> vnp = new HashMap<>();
         vnp.put("vnp_Version", "2.1.0");
@@ -134,7 +136,8 @@ public class PaymentController {
         return ResponseEntity.ok(Map.of(
                 "paymentUrl", paymentUrl,
                 "txnRef", txnRef,
-                "role", role));
+                "role", role,
+                "flow", flow));
     }
 
     @GetMapping("/vnpay-return")
@@ -142,14 +145,18 @@ public class PaymentController {
         String responseCode = params.get("vnp_ResponseCode");
         String txnRef = params.get("vnp_TxnRef");
         String role = params.get("role");
+        String flow = params.get("flow");
 
         String redirectUrl;
+        boolean snackOrderFlow = "snack-order".equalsIgnoreCase(flow);
 
         if ("00".equals(responseCode)) {
             System.out.println("VNPay giao dịch thành công, mã đơn hàng: " + txnRef);
 
             // Nếu là nhân viên → redirect về staff/payment-result
-            if ("staff".equalsIgnoreCase(role)) {
+            if (snackOrderFlow) {
+                redirectUrl = "http://localhost:5173/snack-order-result?vnp_ResponseCode=00&vnp_TxnRef=" + txnRef;
+            } else if ("staff".equalsIgnoreCase(role)) {
                 redirectUrl = "http://localhost:5173/staff/payment-result?vnp_ResponseCode=00&vnp_TxnRef=" + txnRef;
             } else {
                 // Mặc định là khách hàng
@@ -159,7 +166,10 @@ public class PaymentController {
             System.out.println("VNPay thất bại, mã lỗi: " + responseCode);
             
             // Nếu thất bại
-            if ("staff".equalsIgnoreCase(role)) {
+            if (snackOrderFlow) {
+                redirectUrl = "http://localhost:5173/snack-order-result?vnp_ResponseCode=" + responseCode
+                        + "&vnp_TxnRef=" + txnRef;
+            } else if ("staff".equalsIgnoreCase(role)) {
                 redirectUrl = "http://localhost:5173/staff/payment-result?vnp_ResponseCode=" + responseCode
                         + "&vnp_TxnRef=" + txnRef;
             } else {

@@ -1,9 +1,8 @@
 package com.example.cinema.service;
 
 import com.example.cinema.domain.Booking;
-import com.example.cinema.domain.BookingSnack;
 import com.example.cinema.domain.User;
-import com.example.cinema.repository.BookingSnackRepository;
+import com.example.cinema.dto.BookingSnackDTO;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Service;
@@ -26,17 +25,17 @@ public class TicketEmailService {
 
     private final ApplicationContext applicationContext;
     private final TicketPDFService ticketPDFService;
-    private final BookingSnackRepository bookingSnackRepository;
+    private final SnackService snackService;
 
     @Value("${spring.mail.username:}")
     private String mailFrom;
 
     public TicketEmailService(ApplicationContext applicationContext,
             TicketPDFService ticketPDFService,
-            BookingSnackRepository bookingSnackRepository) {
+            SnackService snackService) {
         this.applicationContext = applicationContext;
         this.ticketPDFService = ticketPDFService;
-        this.bookingSnackRepository = bookingSnackRepository;
+        this.snackService = snackService;
     }
 
     public void sendPaidTicketEmail(List<Booking> paidBookings) {
@@ -64,8 +63,8 @@ public class TicketEmailService {
                 .mapToDouble(b -> b.getTotal() != null ? b.getTotal() : 0.0)
                 .sum();
 
-        List<BookingSnack> snacks = bookingSnackRepository.findByTxnRef(first.getTxnRef());
-        double snackTotal = snacks.stream().mapToDouble(BookingSnack::getSubtotal).sum();
+        List<BookingSnackDTO> snacks = snackService.getSnacksByTxnRef(first.getTxnRef());
+        double snackTotal = snacks.stream().mapToDouble(BookingSnackDTO::getSubtotal).sum();
 
         String html = buildEmailHtml(first, seats, total, snacks, snackTotal);
         byte[] qrPngBytes = ticketPDFService.generateTxnQrPng(first, 220);
@@ -135,7 +134,7 @@ public class TicketEmailService {
         method.invoke(helper, args);
         }
 
-    private String buildEmailHtml(Booking first, String seats, double total, List<BookingSnack> snacks, double snackTotal) {
+    private String buildEmailHtml(Booking first, String seats, double total, List<BookingSnackDTO> snacks, double snackTotal) {
         String fullName = first.getCustomer() != null && first.getCustomer().getUser() != null
                 ? first.getCustomer().getUser().getFullName()
                 : "bạn";
@@ -186,14 +185,14 @@ public class TicketEmailService {
                 grandTotalText);
     }
 
-    private String buildSnacksHtml(List<BookingSnack> snacks) {
+    private String buildSnacksHtml(List<BookingSnackDTO> snacks) {
         if (snacks == null || snacks.isEmpty()) {
             return "<p><strong>Bắp nước:</strong> Không có</p>";
         }
 
         LinkedHashMap<String, double[]> grouped = new LinkedHashMap<>();
-        for (BookingSnack item : snacks) {
-            String name = item.getSnack() != null ? item.getSnack().getSnackName() : "Snack";
+        for (BookingSnackDTO item : snacks) {
+            String name = item.getSnackName() != null ? item.getSnackName() : "Snack";
             grouped.putIfAbsent(name, new double[] { 0, 0 });
             grouped.get(name)[0] += item.getQuantity() != null ? item.getQuantity() : 0;
             grouped.get(name)[1] += item.getSubtotal() != null ? item.getSubtotal() : 0;

@@ -21,7 +21,7 @@ public class RoomService {
     }
 
     public List<Room> findAll() {
-        return roomRepository.findAll();
+        return roomRepository.findByActiveTrue();
     }
 
     public Optional<Room> findById(Long id) {
@@ -29,15 +29,22 @@ public class RoomService {
     }
 
     public Room save(Room room) {
+        if (room.getActive() == null) {
+            room.setActive(true);
+        }
         return roomRepository.save(room);
     }
 
     @Transactional
     public void delete(Long id) {
-        // Delete all seats associated with this room first
-        seatRepository.deleteByRoom_RoomId(id);
-        // Then delete the room
-        roomRepository.deleteById(id);
+        Room room = roomRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Room not found"));
+        room.setActive(false);
+        roomRepository.save(room);
+
+        List<com.example.cinema.domain.Seat> seats = seatRepository.findByRoom_RoomId(id);
+        seats.forEach(seat -> seat.setActive(false));
+        seatRepository.saveAll(seats);
     }
 
 }

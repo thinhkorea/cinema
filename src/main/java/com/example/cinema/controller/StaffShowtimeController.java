@@ -21,7 +21,7 @@ public class StaffShowtimeController {
     // Lấy toàn bộ danh sách suất chiếu (cho staff chọn)
     @GetMapping
     public List<Showtime> getAllShowtimes() {
-        return showtimeRepo.findAll();
+        return showtimeRepo.findAllWithActiveRoom();
     }
 
     // Lấy danh sách phim có suất chiếu sắp tới

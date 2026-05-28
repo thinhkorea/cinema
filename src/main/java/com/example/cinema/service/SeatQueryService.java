@@ -29,7 +29,7 @@ public class SeatQueryService {
                 Long roomId = showtime.getRoom().getRoomId();
 
                 // Lấy toàn bộ ghế trong phòng đó
-                List<Seat> seats = seatRepo.findByRoom_RoomId(roomId);
+                List<Seat> seats = seatRepo.findByRoom_RoomIdAndActiveTrue(roomId);
 
                 // Lấy tất cả booking thuộc suất chiếu đó
                 List<Booking> bookings = bookingRepo.findByShowtime_ShowtimeId(showtimeId);

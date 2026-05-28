@@ -18,6 +18,9 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
        @EntityGraph(attributePaths = { "customer.user", "showtime.movie", "showtime.room", "seat" })
        List<Booking> findByCustomer_User_Email(String email);
 
+       @EntityGraph(attributePaths = { "customer.user", "showtime.movie", "showtime.room", "seat" })
+       List<Booking> findByCustomer_User_UserIdOrderByCreatedAtDesc(Long userId);
+
        @EntityGraph(attributePaths = { "soldByStaff.user", "showtime.movie", "showtime.room", "seat" })
        List<Booking> findBySoldByStaff_User_EmailAndStatus(String email, Booking.Status status);
 
@@ -29,6 +32,8 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
        List<Booking> findByShowtime_ShowtimeId(Long showtimeId);
 
        boolean existsByShowtime_ShowtimeIdAndSeat_SeatId(Long showtimeId, Long seatId);
+
+       boolean existsBySeat_SeatId(Long seatId);
 
        List<Booking> findByStatus(Booking.Status status);
 
