@@ -4,6 +4,7 @@ import com.example.cinema.domain.Staff;
 import com.example.cinema.domain.StaffShift;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -11,6 +12,20 @@ import java.util.Optional;
 public interface StaffShiftRepository extends JpaRepository<StaffShift, Long> {
 
     Optional<StaffShift> findFirstByStaffAndStatusOrderByOpenedAtDesc(Staff staff, StaffShift.Status status);
+
+    Optional<StaffShift> findFirstByStaffAndWorkDateAndShiftSlotAndStatus(
+            Staff staff,
+            LocalDate workDate,
+            StaffShift.ShiftSlot shiftSlot,
+            StaffShift.Status status);
+
+    boolean existsByStaffAndWorkDateAndShiftSlot(Staff staff, LocalDate workDate, StaffShift.ShiftSlot shiftSlot);
+
+    long countByStaffAndWorkDate(Staff staff, LocalDate workDate);
+
+    List<StaffShift> findByWorkDateOrderByScheduledStartAsc(LocalDate workDate);
+
+    List<StaffShift> findByStaffAndWorkDateOrderByScheduledStartAsc(Staff staff, LocalDate workDate);
 
     List<StaffShift> findByStaffAndOpenedAtBetweenOrderByOpenedAtDesc(
             Staff staff,

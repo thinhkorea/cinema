@@ -1,4 +1,4 @@
-﻿package com.example.cinema.service;
+package com.example.cinema.service;
 
 import com.example.cinema.domain.Ingredient;
 import com.example.cinema.domain.IngredientBatch;

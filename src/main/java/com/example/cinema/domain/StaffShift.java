@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
@@ -22,7 +23,20 @@ public class StaffShift {
     @JoinColumn(name = "staff_id", nullable = false)
     private Staff staff;
 
-    @Column(nullable = false)
+    @Column
+    private LocalDate workDate;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private ShiftSlot shiftSlot;
+
+    @Column
+    private LocalDateTime scheduledStart;
+
+    @Column
+    private LocalDateTime scheduledEnd;
+
+    @Column
     private LocalDateTime openedAt;
 
     @Column
@@ -30,7 +44,7 @@ public class StaffShift {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private Status status = Status.OPEN;
+    private Status status = Status.ASSIGNED;
 
     @Column
     private Double expectedCash = 0.0;
@@ -44,8 +58,38 @@ public class StaffShift {
     @Column(length = 500)
     private String note;
 
+    @Column
+    private Integer lateMinutes = 0;
+
+    @Column
+    private Integer earlyLeaveMinutes = 0;
+
+    @Column
+    private Integer overtimeMinutes = 0;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 30)
+    private AttendanceStatus attendanceStatus = AttendanceStatus.ASSIGNED;
+
     public enum Status {
+        ASSIGNED,
         OPEN,
         CLOSED
+    }
+
+    public enum ShiftSlot {
+        SHIFT_1,
+        SHIFT_2,
+        SHIFT_3,
+        SHIFT_4
+    }
+
+    public enum AttendanceStatus {
+        ASSIGNED,
+        ON_TIME,
+        LATE,
+        EARLY_LEAVE,
+        LATE_AND_EARLY,
+        OVERTIME
     }
 }

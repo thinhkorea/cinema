@@ -43,6 +43,9 @@ public class ShowtimeController {
     private static final int MAX_PREVIEW_CREATED_SHOWTIMES = 20;
     private static final int MAX_CANDIDATE_SLOTS = 48;
     private static final int MAX_NEIGHBOR_EXPANSION_STEPS = 8;
+    private static final int MAX_PREVIEW_TARGET_CREATED_COUNT = 24;
+    private static final int MAX_PREVIEW_CANDIDATE_SLOTS = 18;
+    private static final int MAX_PREVIEW_SKIPPED_MESSAGES = 6;
     private static final DateTimeFormatter SHOWTIME_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
     private static final DateTimeFormatter TIME_SLOT_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
     private static final List<String> SESSION_ORDER = List.of("morning", "afternoon", "evening", "late");
@@ -236,12 +239,15 @@ public class ShowtimeController {
         List<String> candidateTimeSlots = buildCandidateTimeSlots(
                 req.getSessions(),
                 req.getTimeSlots(),
-                targetCreatedCount);
+                targetCreatedCount,
+                hasLimit,
+                persist);
 
         LocalDate showDate = req.getShowDate();
         Set<LocalDateTime> acceptedStartTimesInBatch = new HashSet<>();
         List<ShowtimeRequestDTO> acceptedRequestsInBatch = new ArrayList<>();
 
+        outer:
         for (String timeSlot : candidateTimeSlots) {
             if (hasLimit && result.getCreatedCount() >= maxCreatedCount) {
                 result.setLimitReached(true);
@@ -253,7 +259,7 @@ public class ShowtimeController {
                 slotTime = LocalTime.parse(timeSlot, TIME_SLOT_FORMAT);
             } catch (DateTimeParseException e) {
                 result.setSkippedCount(result.getSkippedCount() + 1);
-                addSkippedMessage(result, "Khung gio khong hop le: " + timeSlot);
+                    addSkippedMessage(result, "Khung gio khong hop le: " + timeSlot, !persist);
                 continue;
             }
 
@@ -314,25 +320,32 @@ public class ShowtimeController {
             if (selectedRoom == null || selectedRequest == null) {
                 if (lastFailure != null) {
                     result.setSkippedCount(result.getSkippedCount() + 1);
-                    addSkippedMessage(result, lastFailure);
+                    addSkippedMessage(result, lastFailure, !persist);
                 }
                 continue;
             }
 
-            Showtime processedShowtime = persist
-                    ? persistShowtime(movie, selectedRoom, selectedRequest)
-                    : buildPreviewShowtime(movie, selectedRoom, selectedRequest);
-
             acceptedRequestsInBatch.add(selectedRequest);
             acceptedStartTimesInBatch.add(startTime);
             result.setCreatedCount(result.getCreatedCount() + 1);
-            result.getCreatedShowtimes().add(ShowtimeRequestDTO.builder()
-                    .movieId(movie.getMovieId())
-                    .roomId(selectedRoom.getRoomId())
-                    .startTime(processedShowtime.getStartTime())
-                    .endTime(processedShowtime.getEndTime())
-                    .price(processedShowtime.getPrice())
-                    .build());
+
+            if (persist) {
+                persistShowtime(movie, selectedRoom, selectedRequest);
+            }
+
+            if (result.getCreatedShowtimes().size() < MAX_PREVIEW_CREATED_SHOWTIMES) {
+                result.getCreatedShowtimes().add(ShowtimeRequestDTO.builder()
+                        .movieId(movie.getMovieId())
+                        .roomId(selectedRoom.getRoomId())
+                        .startTime(selectedRequest.getStartTime())
+                        .endTime(selectedRequest.getEndTime())
+                        .price(resolvePrice(selectedRequest))
+                        .build());
+            }
+
+            if (!persist && hasLimit && result.getCreatedCount() >= targetCreatedCount) {
+                break outer;
+            }
         }
 
         return result;
@@ -340,6 +353,9 @@ public class ShowtimeController {
 
     private int resolveTargetCreatedCount(BulkShowtimeRequestDTO req, int roomCount, boolean hasLimit, boolean persist) {
         if (hasLimit && req.getMaxCreatedCount() != null) {
+            if (!persist) {
+                return Math.min(req.getMaxCreatedCount(), MAX_PREVIEW_TARGET_CREATED_COUNT);
+            }
             return req.getMaxCreatedCount();
         }
 
@@ -348,7 +364,7 @@ public class ShowtimeController {
         int basePreferenceCount = Math.max(preferredSlotCount, selectedSessionCount * 2);
         int defaultTarget = Math.max(basePreferenceCount, Math.max(roomCount, 1) * 3);
         if (!persist) {
-            defaultTarget = Math.min(defaultTarget, MAX_PREVIEW_CREATED_SHOWTIMES);
+            defaultTarget = Math.min(defaultTarget, MAX_PREVIEW_TARGET_CREATED_COUNT);
         }
         return Math.max(defaultTarget, 1);
     }
@@ -356,31 +372,51 @@ public class ShowtimeController {
     private List<String> buildCandidateTimeSlots(
             List<String> sessions,
             List<String> preferredTimeSlots,
-            int targetCreatedCount) {
+            int targetCreatedCount,
+            boolean hasLimit,
+            boolean persist) {
         LinkedHashSet<String> candidates = new LinkedHashSet<>();
-        List<String> orderedPreferredSlots = buildPreferredTimeSlots(sessions, preferredTimeSlots);
+        List<String> orderedSessions = orderSessions(sessions);
+        boolean restrictToSelectedSessions = !orderedSessions.isEmpty();
+        List<String> orderedPreferredSlots = buildPreferredTimeSlots(sessions, preferredTimeSlots, targetCreatedCount);
         for (String slot : orderedPreferredSlots) {
-            if (slot != null && !slot.isBlank()) {
+            if (slot != null && !slot.isBlank() && isTimeSlotAllowedForSessions(slot, orderedSessions)) {
                 candidates.add(slot.trim());
             }
         }
 
         int preferredCount = candidates.size();
-        int candidateLimit = Math.min(
-                MAX_CANDIDATE_SLOTS,
-                Math.max(Math.max(targetCreatedCount, preferredCount) * 4, preferredCount + 8));
+        int candidateLimit;
+        if (hasLimit) {
+            int maxCandidateSlots = persist ? MAX_CANDIDATE_SLOTS : MAX_PREVIEW_CANDIDATE_SLOTS;
+            int multiplier = persist ? 4 : 2;
+            int extraSlots = persist ? 8 : 4;
+            candidateLimit = Math.min(
+                    maxCandidateSlots,
+                    Math.max(Math.max(targetCreatedCount, preferredCount) * multiplier, preferredCount + extraSlots));
+        } else {
+            candidateLimit = resolveUnlimitedCandidateLimit(orderedSessions, preferredCount);
+        }
 
-        addNeighborCandidateTimeSlots(candidates, orderedPreferredSlots, candidateLimit);
+        addNeighborCandidateTimeSlots(candidates, orderedPreferredSlots, candidateLimit, orderedSessions);
 
-        LocalTime cursor = OPENING_TIME;
         List<String> generatedSlots = new ArrayList<>(candidateLimit);
-        while (!cursor.isAfter(LAST_SHOWTIME_START) && generatedSlots.size() < candidateLimit) {
-            generatedSlots.add(cursor.format(TIME_SLOT_FORMAT));
-            cursor = cursor.plusMinutes(AUTO_SLOT_STEP_MINUTES);
+        if (restrictToSelectedSessions) {
+            for (String session : orderedSessions) {
+                generatedSlots.addAll(buildTimeSlotsForSession(session));
+            }
+        } else {
+            LocalTime cursor = OPENING_TIME;
+            while (!cursor.isAfter(LAST_SHOWTIME_START) && generatedSlots.size() < candidateLimit) {
+                generatedSlots.add(cursor.format(TIME_SLOT_FORMAT));
+                cursor = cursor.plusMinutes(AUTO_SLOT_STEP_MINUTES);
+            }
         }
 
         for (String slot : orderBulkTimeSlots(generatedSlots)) {
-            candidates.add(slot);
+            if (isTimeSlotAllowedForSessions(slot, orderedSessions)) {
+                candidates.add(slot);
+            }
             if (candidates.size() >= candidateLimit) {
                 break;
             }
@@ -389,10 +425,59 @@ public class ShowtimeController {
         return new ArrayList<>(candidates);
     }
 
-    private List<String> buildPreferredTimeSlots(List<String> sessions, List<String> preferredTimeSlots) {
+    private int resolveUnlimitedCandidateLimit(List<String> orderedSessions, int preferredCount) {
+        if (orderedSessions != null && !orderedSessions.isEmpty()) {
+            int sessionSlotCount = 0;
+            for (String session : orderedSessions) {
+                sessionSlotCount += buildTimeSlotsForSession(session).size();
+            }
+            return Math.max(sessionSlotCount, preferredCount);
+        }
+        return Math.max(MAX_CANDIDATE_SLOTS, preferredCount);
+    }
+
+    private boolean isTimeSlotAllowedForSessions(String slot, List<String> orderedSessions) {
+        if (orderedSessions == null || orderedSessions.isEmpty()) {
+            return true;
+        }
+        try {
+            LocalTime slotTime = LocalTime.parse(slot.trim(), TIME_SLOT_FORMAT);
+            String slotSession = resolveSessionForTime(slotTime);
+            return orderedSessions.contains(slotSession);
+        } catch (DateTimeParseException e) {
+            return false;
+        }
+    }
+
+    private List<String> buildPreferredTimeSlots(List<String> sessions, List<String> preferredTimeSlots, int targetCreatedCount) {
         LinkedHashSet<String> preferredSlots = new LinkedHashSet<>();
-        for (String session : orderSessions(sessions)) {
-            preferredSlots.addAll(buildTimeSlotsForSession(session));
+        List<String> orderedSessions = orderSessions(sessions);
+
+        if (!orderedSessions.isEmpty()) {
+            List<List<String>> sessionSlots = new ArrayList<>();
+            for (String session : orderedSessions) {
+                sessionSlots.add(buildTimeSlotsForSession(session));
+            }
+
+            int roundIndex = 0;
+            boolean addedInRound = true;
+            int preferredTarget = targetCreatedCount > 0
+                    ? Math.max(targetCreatedCount * 3, orderedSessions.size() * 6)
+                    : Integer.MAX_VALUE;
+
+            while (preferredSlots.size() < preferredTarget && addedInRound) {
+                addedInRound = false;
+                for (List<String> slots : sessionSlots) {
+                    if (roundIndex < slots.size()) {
+                        preferredSlots.add(slots.get(roundIndex));
+                        addedInRound = true;
+                        if (preferredSlots.size() >= preferredTarget) {
+                            break;
+                        }
+                    }
+                }
+                roundIndex++;
+            }
         }
 
         if (preferredSlots.isEmpty()) {
@@ -452,6 +537,25 @@ public class ShowtimeController {
         return orderBulkTimeSlots(slots);
     }
 
+    private String resolveSessionForTime(LocalTime time) {
+        if (time == null) {
+            return null;
+        }
+        if (!time.isBefore(OPENING_TIME) && time.isBefore(LocalTime.NOON)) {
+            return "morning";
+        }
+        if (!time.isBefore(LocalTime.NOON) && time.isBefore(LocalTime.of(18, 0))) {
+            return "afternoon";
+        }
+        if (!time.isBefore(LocalTime.of(18, 0)) && time.isBefore(LocalTime.of(23, 0))) {
+            return "evening";
+        }
+        if (!time.isBefore(LocalTime.of(23, 0)) && !time.isAfter(LAST_SHOWTIME_START)) {
+            return "late";
+        }
+        return null;
+    }
+
     private String normalizeSession(String session) {
         if (session == null || session.isBlank()) {
             return null;
@@ -473,7 +577,11 @@ public class ShowtimeController {
         return SESSION_ORDER.contains(normalized) ? normalized : null;
     }
 
-    private void addNeighborCandidateTimeSlots(Set<String> candidates, List<String> preferredTimeSlots, int candidateLimit) {
+    private void addNeighborCandidateTimeSlots(
+            Set<String> candidates,
+            List<String> preferredTimeSlots,
+            int candidateLimit,
+            List<String> orderedSessions) {
         if (preferredTimeSlots == null || preferredTimeSlots.isEmpty() || candidates.size() >= candidateLimit) {
             return;
         }
@@ -488,12 +596,12 @@ public class ShowtimeController {
                     continue;
                 }
 
-                addCandidateTime(candidates, baseTime.plusMinutes(minuteOffset), candidateLimit);
+                addCandidateTime(candidates, baseTime.plusMinutes(minuteOffset), candidateLimit, orderedSessions);
                 if (candidates.size() >= candidateLimit) {
                     break;
                 }
 
-                addCandidateTime(candidates, baseTime.minusMinutes(minuteOffset), candidateLimit);
+                addCandidateTime(candidates, baseTime.minusMinutes(minuteOffset), candidateLimit, orderedSessions);
                 if (candidates.size() >= candidateLimit) {
                     break;
                 }
@@ -501,11 +609,15 @@ public class ShowtimeController {
         }
     }
 
-    private void addCandidateTime(Set<String> candidates, LocalTime slotTime, int candidateLimit) {
+    private void addCandidateTime(Set<String> candidates, LocalTime slotTime, int candidateLimit, List<String> orderedSessions) {
         if (candidates.size() >= candidateLimit) {
             return;
         }
         if (slotTime.isBefore(OPENING_TIME) || slotTime.isAfter(LAST_SHOWTIME_START)) {
+            return;
+        }
+        if (orderedSessions != null && !orderedSessions.isEmpty()
+                && !orderedSessions.contains(resolveSessionForTime(slotTime))) {
             return;
         }
         candidates.add(slotTime.format(TIME_SLOT_FORMAT));
@@ -548,6 +660,9 @@ public class ShowtimeController {
         boolean hasTimeSlots = req.getTimeSlots() != null && !req.getTimeSlots().isEmpty();
         if (!hasSessions && !hasTimeSlots) {
             return "Vui long chon it nhat mot buoi chieu.";
+        }
+        if (hasSessions && req.getSessions().size() != 1) {
+            return "Moi lan tao hang loat chi duoc chon dung 1 buoi chieu.";
         }
         if (req.getMaxCreatedCount() != null && req.getMaxCreatedCount() <= 0) {
             return "Gioi han so suat phai lon hon 0 neu co nhap.";
@@ -607,8 +722,9 @@ public class ShowtimeController {
         return "[" + roomName + "] " + startTime.format(SHOWTIME_FORMAT) + " - " + reason;
     }
 
-    private void addSkippedMessage(BulkShowtimeResultDTO result, String message) {
-        if (result.getSkippedMessages().size() >= MAX_SKIPPED_MESSAGES) {
+    private void addSkippedMessage(BulkShowtimeResultDTO result, String message, boolean previewMode) {
+        int maxMessages = previewMode ? MAX_PREVIEW_SKIPPED_MESSAGES : MAX_SKIPPED_MESSAGES;
+        if (result.getSkippedMessages().size() >= maxMessages) {
             return;
         }
         result.getSkippedMessages().add(message);
