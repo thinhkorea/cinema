@@ -26,6 +26,7 @@ public class MovieService {
     }
 
     public Movie save(Movie movie) {
+        movie.setSearchEmbedding(null);
         return movieRepo.save(movie);
     }
 
@@ -51,6 +52,7 @@ public class MovieService {
                     existing.setStatus(updated.getStatus());
                     existing.setAgeRating(updated.getAgeRating());
                     existing.setActors(updated.getActors());
+                    existing.setSearchEmbedding(null);
                     System.out.println("Before save - Status: " + existing.getStatus());
                     Movie saved = movieRepo.save(existing);
                     System.out.println("After save - Status: " + saved.getStatus());

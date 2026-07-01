@@ -107,6 +107,7 @@ public class SnackService {
      */
     @Transactional
     public Snack createSnack(Snack snack) {
+        snack.setSearchEmbedding(null);
         Snack created = snackRepository.save(snack);
         double initialStock = created.getWarehouseStock() == null ? 0.0 : created.getWarehouseStock();
         if (isWarehouseTrackable(created) && initialStock > 0) {
@@ -145,6 +146,7 @@ public class SnackService {
         if (snackDetails.getWarehouseReorderLevel() != null && snackDetails.getWarehouseReorderLevel() >= 0) {
             snack.setWarehouseReorderLevel(snackDetails.getWarehouseReorderLevel());
         }
+        snack.setSearchEmbedding(null);
         return snackRepository.save(snack);
     }
 
@@ -193,6 +195,7 @@ public class SnackService {
             snack.setWarehouseReorderLevel(request.getReorderLevel());
         }
 
+        snack.setSearchEmbedding(null);
         snackRepository.save(snack);
 
         SnackWarehouseMovement movement = new SnackWarehouseMovement();
@@ -419,6 +422,7 @@ public class SnackService {
                 }
 
                 snack.setWarehouseStock(after);
+                snack.setSearchEmbedding(null);
                 snackRepository.save(snack);
 
                 SnackWarehouseMovement movement = new SnackWarehouseMovement();

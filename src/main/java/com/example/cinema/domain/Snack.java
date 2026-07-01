@@ -49,6 +49,11 @@ public class Snack {
 
     @Column(columnDefinition = "TEXT")
     private String recipeInstructions;
+
+    @Lob
+    @Column(name = "search_embedding", columnDefinition = "TEXT")
+    private String searchEmbedding;
+
     public enum SnackCategory {
         COMBO,     
         DRINK,       

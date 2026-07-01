@@ -41,6 +41,10 @@ public class Movie {
     @Column(length = 2000)
     private String actors;
 
+    @Lob
+    @Column(name = "search_embedding", columnDefinition = "TEXT")
+    private String searchEmbedding;
+
     public enum MovieStatus {
         NOW_SHOWING,
         COMING_SOON,

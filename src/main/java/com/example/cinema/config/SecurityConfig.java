@@ -56,6 +56,8 @@ public class SecurityConfig {
                                                 .permitAll()
 
                                                 // Cho phép cập nhật trạng thái thanh toán (VNPay / frontend callback)
+                                                .requestMatchers(HttpMethod.POST, "/api/v1/bot/chat")
+                                                .permitAll()
                                                 .requestMatchers(HttpMethod.POST, "/api/bookings/pay-by-txn/{txnRef}")
                                                 .permitAll()
                                                 .requestMatchers(HttpMethod.POST, "/api/snack-orders/pay-by-code/**")
