@@ -74,6 +74,7 @@ public class PaymentController {
         );
         String role = String.valueOf(body.getOrDefault("role", "customer"));
         String flow = String.valueOf(body.getOrDefault("flow", "booking"));
+        String client = String.valueOf(body.getOrDefault("client", "web"));
 
         TimeZone vnTimeZone = TimeZone.getTimeZone("Asia/Ho_Chi_Minh");
         Calendar calendar = Calendar.getInstance(vnTimeZone);
@@ -86,7 +87,8 @@ public class PaymentController {
         String returnUrl = vnp_ReturnUrl
                 + (vnp_ReturnUrl.contains("?") ? "&" : "?")
                 + "role=" + URLEncoder.encode(role, StandardCharsets.UTF_8)
-                + "&flow=" + URLEncoder.encode(flow, StandardCharsets.UTF_8);
+                + "&flow=" + URLEncoder.encode(flow, StandardCharsets.UTF_8)
+                + "&client=" + URLEncoder.encode(client, StandardCharsets.UTF_8);
 
         Map<String, String> vnp = new HashMap<>();
         vnp.put("vnp_Version", "2.1.0");
@@ -137,7 +139,8 @@ public class PaymentController {
                 "paymentUrl", paymentUrl,
                 "txnRef", txnRef,
                 "role", role,
-                "flow", flow));
+                "flow", flow,
+                "client", client));
     }
 
     @GetMapping("/vnpay-return")
@@ -146,15 +149,21 @@ public class PaymentController {
         String txnRef = params.get("vnp_TxnRef");
         String role = params.get("role");
         String flow = params.get("flow");
+        String client = params.get("client");
 
         String redirectUrl;
         boolean snackOrderFlow = "snack-order".equalsIgnoreCase(flow);
+        boolean mobileClient = "mobile".equalsIgnoreCase(client);
 
         if ("00".equals(responseCode)) {
             System.out.println("VNPay giao dịch thành công, mã đơn hàng: " + txnRef);
 
             // Nếu là nhân viên → redirect về staff/payment-result
-            if (snackOrderFlow) {
+            if (mobileClient && snackOrderFlow) {
+                redirectUrl = "cinemaapp:///snack-order-result?vnp_ResponseCode=00&vnp_TxnRef=" + txnRef;
+            } else if (mobileClient) {
+                redirectUrl = "cinemaapp:///payment-result?vnp_ResponseCode=00&vnp_TxnRef=" + txnRef;
+            } else if (snackOrderFlow) {
                 redirectUrl = "http://localhost:5173/snack-order-result?vnp_ResponseCode=00&vnp_TxnRef=" + txnRef;
             } else if ("staff".equalsIgnoreCase(role)) {
                 redirectUrl = "http://localhost:5173/staff/payment-result?vnp_ResponseCode=00&vnp_TxnRef=" + txnRef;
@@ -166,7 +175,13 @@ public class PaymentController {
             System.out.println("VNPay thất bại, mã lỗi: " + responseCode);
             
             // Nếu thất bại
-            if (snackOrderFlow) {
+            if (mobileClient && snackOrderFlow) {
+                redirectUrl = "cinemaapp:///snack-order-result?vnp_ResponseCode=" + responseCode
+                        + "&vnp_TxnRef=" + txnRef;
+            } else if (mobileClient) {
+                redirectUrl = "cinemaapp:///payment-result?vnp_ResponseCode=" + responseCode
+                        + "&vnp_TxnRef=" + txnRef;
+            } else if (snackOrderFlow) {
                 redirectUrl = "http://localhost:5173/snack-order-result?vnp_ResponseCode=" + responseCode
                         + "&vnp_TxnRef=" + txnRef;
             } else if ("staff".equalsIgnoreCase(role)) {

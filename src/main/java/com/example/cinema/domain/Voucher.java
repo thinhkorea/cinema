@@ -42,6 +42,12 @@ public class Voucher {
     @Column
     private Double minOrder;
 
+    @Column
+    private Double requiredTotalSpent;
+
+    @Column
+    private Integer spendingWindowDays;
+
     @Column(nullable = false)
     private Boolean active = true;
 

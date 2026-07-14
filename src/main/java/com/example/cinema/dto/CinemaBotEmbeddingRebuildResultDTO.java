@@ -7,6 +7,9 @@ public record CinemaBotEmbeddingRebuildResultDTO(
         int processedSnacks,
         int updatedSnacks,
         int failedSnacks,
+        int processedPolicyDocuments,
+        int updatedPolicyDocuments,
+        int failedPolicyDocuments,
         String message
 ) {
 }

@@ -20,4 +20,6 @@ public class VoucherValidateResponseDTO {
     private Double finalAmount;
     private Double maxDiscount;
     private Double minOrder;
+    private Double requiredTotalSpent;
+    private Integer spendingWindowDays;
 }

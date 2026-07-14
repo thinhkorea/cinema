@@ -1,0 +1,287 @@
+termGroups:
+  quick-greeting:
+    - chào
+    - chào bạn
+    - chào bot
+    - xin chào
+    - xin chào bạn
+    - xin chào bot
+    - hi
+    - hello
+
+  quick-goodbye-thanks:
+    - tạm biệt
+    - cảm ơn
+    - bye
+    - goodbye
+    - tks
+    - thanks
+
+  identity:
+    - tôi là ai
+    - mình là ai
+    - biết tôi không
+    - biết mình không
+
+  capability:
+    - hỗ trợ gì
+    - hỗ trợ những gì
+    - giúp gì
+    - giúp được gì
+    - làm được gì
+    - có chức năng gì
+    - chức năng của bạn
+    - bạn hỗ trợ gì
+    - chatbot hỗ trợ gì
+    - rạp hỗ trợ gì
+
+  business:
+    - phim
+    - chiếu
+    - suất
+    - lịch
+    - vé
+    - booking
+    - đặt
+    - ghế
+    - điểm
+    - voucher
+    - mã giảm giá
+    - khuyến mãi
+    - combo
+    - bắp
+    - nước
+    - snack
+    - rạp
+
+  showtime-suggestion:
+    - suất chiếu
+    - lịch chiếu
+    - giờ chiếu
+    - đặt vé
+    - chọn ghế
+    - mua vé
+
+  implicit-showtime:
+    - chiếu
+    - đang chiếu
+    - có phim nào
+    - có phim gì
+    - rạp có gì
+
+  explicit-showtime:
+    - suất chiếu
+    - lịch chiếu
+    - giờ chiếu
+    - phòng chiếu
+    - chiếu gì
+    - đang chiếu gì
+    - chiếu lúc
+    - mấy giờ chiếu
+
+  movie-list-exact:
+    - phim đang chiếu
+    - phim sắp chiếu
+    - danh sách phim
+    - danh sách phim đang chiếu
+    - danh sách phim sắp chiếu
+
+  movie-list:
+    - phim đang chiếu
+    - phim sắp chiếu
+    - phim nào đang chiếu
+    - phim nào sắp chiếu
+    - đang có phim gì
+
+  movie-search:
+    - thể loại
+    - loại phim
+    - đang được chiếu
+    - đang chiếu
+
+  movie-light-mood:
+    - nhẹ nhàng
+    - dễ xem
+    - thư giãn
+    - không căng thẳng
+    - không kinh dị
+    - vui vẻ
+    - cảm xúc
+    - xem cùng gia đình
+
+    - de chiu
+    - de xem
+    - thu gian
+    - khong cang thang
+    - khong kinh di
+    - khong phim ma
+    - khong qua nang dau
+    - nhe cam xuc
+
+  movie-family-mood:
+    - di voi ba me
+    - di voi bo me
+    - xem cung ba me
+    - xem cung bo me
+    - xem cung gia dinh
+    - hop voi ba me
+    - hop voi bo me
+    - hop voi gia dinh
+    - phu hop voi gia dinh
+    - di voi gia dinh
+    - cuoi tuan
+
+  now-showing:
+    - đang chiếu
+    - đang được chiếu
+
+  coming-soon:
+    - sắp chiếu
+
+  snack:
+    - bắp nước
+    - combo
+    - đồ ăn
+    - đồ uống
+    - nước gì
+    - bắp gì
+    - snack
+
+  booking:
+    - vé của tôi
+    - vé đã đặt
+    - lịch sử đặt vé
+    - booking của tôi
+    - tôi đã đặt vé
+    - hủy vé
+    - huỷ vé
+    - hủy booking
+    - huỷ booking
+    - hủy đơn
+    - huỷ đơn
+    - cách hủy
+    - cách huỷ
+    - hủy được
+    - huỷ được
+    - muốn hủy vé
+    - muốn huỷ vé
+
+  booking-cancellation:
+    - hủy vé
+    - huỷ vé
+    - hủy booking
+    - huỷ booking
+    - hủy đơn
+    - huỷ đơn
+    - cách hủy
+    - cách huỷ
+    - hủy được
+    - huỷ được
+    - muốn hủy vé
+    - muốn huỷ vé
+
+  booking-refund:
+    - hoàn tiền
+    - hoàn lại tiền
+    - trả tiền
+    - hoàn điểm
+    - refund
+
+  booking-condition:
+    - điều kiện
+    - khi nào
+    - hủy được không
+    - huỷ được không
+    - có được hủy
+    - có được huỷ
+
+  booking-eligibility:
+    - vé nào
+    - đơn nào
+    - booking nào
+    - còn hủy
+    - còn huỷ
+    - có vé
+    - có đơn
+
+  loyalty:
+    - điểm của tôi
+    - điểm tích lũy
+    - điểm thành viên
+
+  voucher:
+    - voucher
+    - mã giảm giá
+    - khuyến mãi
+    - ưu đãi
+
+  context-expiry:
+    - hạn sử dụng
+    - hạn dùng
+
+  date:
+    - hôm nay
+    - tối nay
+    - sáng nay
+    - trưa nay
+    - chiều nay
+    - hôm qua
+    - tối qua
+    - ngày mai
+    - tối mai
+
+  yesterday:
+    - hôm qua
+    - tối qua
+
+  today:
+    - hôm nay
+    - tối nay
+    - sáng nay
+    - trưa nay
+    - chiều nay
+
+  tomorrow:
+    - ngày mai
+    - tối mai
+
+genreAliases:
+  tình cảm:
+    - tình cảm
+    - tình
+    - lãng mạn
+    - tình yêu
+    - romance
+  hành động:
+    - hành động
+    - võ thuật
+    - chiến đấu
+    - đánh nhau
+    - action
+  kinh dị:
+    - kinh dị
+    - phim ma
+    - rùng rợn
+    - horror
+  hoạt hình:
+    - hoạt hình
+    - animation
+    - anime
+  hài:
+    - hài
+    - hài hước
+    - vui nhộn
+    - comedy
+  phiêu lưu:
+    - phiêu lưu
+    - mạo hiểm
+    - adventure
+  khoa học viễn tưởng:
+    - khoa học viễn tưởng
+    - viễn tưởng
+    - sci-fi
+    - science fiction
+  tâm lý:
+    - tâm lý
+    - chính kịch
+    - drama

@@ -50,4 +50,24 @@ public class VoucherController {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
+
+    @GetMapping("/my")
+    public ResponseEntity<?> myVouchers(Authentication authentication) {
+        try {
+            String username = authentication.getName();
+            return ResponseEntity.ok(voucherService.getMyVouchers(username));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/{code}/claim")
+    public ResponseEntity<?> claim(@PathVariable String code, Authentication authentication) {
+        try {
+            String username = authentication.getName();
+            return ResponseEntity.ok(voucherService.claim(code, username));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
 }

@@ -53,6 +53,25 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
        boolean existsByCustomer_User_UserIdAndStatus(Long userId, Booking.Status status);
 
+       @Query("""
+                     SELECT COALESCE(SUM(b.total - COALESCE(b.pointsUsed, 0) * 1000), 0)
+                     FROM Booking b
+                     WHERE b.customer.user.userId = :userId
+                       AND b.status = com.example.cinema.domain.Booking$Status.PAID
+                     """)
+       Double sumPaidAmountByCustomerUserId(@Param("userId") Long userId);
+
+       @Query("""
+                     SELECT COALESCE(SUM(b.total - COALESCE(b.pointsUsed, 0) * 1000), 0)
+                     FROM Booking b
+                     WHERE b.customer.user.userId = :userId
+                       AND b.status = com.example.cinema.domain.Booking$Status.PAID
+                       AND b.createdAt >= :from
+                     """)
+       Double sumPaidAmountByCustomerUserIdSince(
+                     @Param("userId") Long userId,
+                     @Param("from") LocalDateTime from);
+
        // Kiểm tra xem user có booking PAID cho phim này với showtime đã kết thúc
        @Query("""
               SELECT CASE WHEN COUNT(b) > 0 THEN true ELSE false END

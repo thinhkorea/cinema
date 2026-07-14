@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
 @Builder
 public class MovieReviewResponseDTO {
     private Long reviewId;
+    private Long userId;
     private Integer rating;
     private String comment;
     private String username;

@@ -21,6 +21,8 @@ public class VoucherResponseDTO {
     private Double value;
     private Double maxDiscount;
     private Double minOrder;
+    private Double requiredTotalSpent;
+    private Integer spendingWindowDays;
     private Boolean active;
     private LocalDateTime startAt;
     private LocalDateTime endAt;

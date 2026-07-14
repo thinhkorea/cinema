@@ -1,15 +1,16 @@
 package com.example.cinema.service;
 
 import com.example.cinema.domain.Movie;
+import com.example.cinema.domain.SearchDocument;
 import com.example.cinema.domain.Snack;
 import com.example.cinema.dto.CinemaBotEmbeddingRebuildResultDTO;
 import com.example.cinema.dto.CinemaBotEmbeddingStatusDTO;
 import com.example.cinema.repository.MovieRepository;
+import com.example.cinema.repository.SearchDocumentRepository;
 import com.example.cinema.repository.SnackRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -33,6 +34,12 @@ class CinemaRetrievalServiceTest {
     @Mock
     private SnackRepository snackRepository;
 
+    @Mock
+    private SearchDocumentRepository searchDocumentRepository;
+
+    @Mock
+    private CinemaQdrantService qdrantService;
+
     private final CinemaSearchDocumentBuilder documentBuilder = new CinemaSearchDocumentBuilder();
 
     @Test
@@ -41,7 +48,9 @@ class CinemaRetrievalServiceTest {
                 embeddingService,
                 documentBuilder,
                 movieRepository,
-                snackRepository
+                snackRepository,
+                searchDocumentRepository,
+                qdrantService
         );
         Movie romance = movie(1L, "Một Ngày Mưa", "Tình cảm", "Câu chuyện nhẹ nhàng cảm động");
         Movie action = movie(2L, "Bão Lửa", "Hành động", "Nhiều pha rượt đuổi");
@@ -58,7 +67,9 @@ class CinemaRetrievalServiceTest {
                 embeddingService,
                 documentBuilder,
                 movieRepository,
-                snackRepository
+                snackRepository,
+                searchDocumentRepository,
+                qdrantService
         );
         Movie embeddedMovie = movie(1L, "Mai", "Tình cảm", "Mô tả");
         embeddedMovie.setSearchEmbedding("movie-ok");
@@ -69,19 +80,32 @@ class CinemaRetrievalServiceTest {
 
         when(movieRepository.findAll()).thenReturn(List.of(embeddedMovie, missingMovie));
         when(snackRepository.findAll()).thenReturn(List.of(embeddedSnack));
+        when(searchDocumentRepository.findBySourceTypeAndActiveTrue(SearchDocument.SourceType.POLICY))
+                .thenReturn(List.of(policyDocument("POLICY:CANCEL_BOOKING", "policy-ok")));
         when(embeddingService.readEmbedding("movie-ok")).thenReturn(List.of(0.1, 0.2));
         when(embeddingService.readEmbedding("movie-missing")).thenReturn(List.of());
         when(embeddingService.readEmbedding("snack-ok")).thenReturn(List.of(0.3, 0.4));
+        when(embeddingService.readEmbedding("policy-ok")).thenReturn(List.of(0.5, 0.6));
         when(embeddingService.isAvailable()).thenReturn(true);
+        when(qdrantService.isAvailable()).thenReturn(false);
+        when(qdrantService.countBySourceType("MOVIE")).thenReturn(1L);
+        when(qdrantService.countBySourceType("SNACK")).thenReturn(1L);
+        when(qdrantService.countBySourceType("POLICY")).thenReturn(1L);
 
         CinemaBotEmbeddingStatusDTO status = service.getEmbeddingStatus();
 
         assertThat(status.embeddingProviderAvailable()).isTrue();
+        assertThat(status.qdrantAvailable()).isFalse();
         assertThat(status.totalMovies()).isEqualTo(2);
         assertThat(status.embeddedMovies()).isEqualTo(1);
         assertThat(status.missingMovieEmbeddings()).isEqualTo(1);
+        assertThat(status.qdrantMoviePoints()).isEqualTo(1);
         assertThat(status.totalSnacks()).isEqualTo(1);
         assertThat(status.embeddedSnacks()).isEqualTo(1);
+        assertThat(status.qdrantSnackPoints()).isEqualTo(1);
+        assertThat(status.totalPolicyDocuments()).isEqualTo(1);
+        assertThat(status.embeddedPolicyDocuments()).isEqualTo(1);
+        assertThat(status.qdrantPolicyDocumentPoints()).isEqualTo(1);
     }
 
     @Test
@@ -90,13 +114,18 @@ class CinemaRetrievalServiceTest {
                 embeddingService,
                 documentBuilder,
                 movieRepository,
-                snackRepository
+                snackRepository,
+                searchDocumentRepository,
+                qdrantService
         );
         Movie movie = movie(1L, "Mai", "Tình cảm", "Mô tả");
         Snack snack = snack(1L, "Combo", "Bắp nước");
 
         when(movieRepository.findAll()).thenReturn(List.of(movie));
         when(snackRepository.findAll()).thenReturn(List.of(snack));
+        when(searchDocumentRepository.findBySourceTypeAndActiveTrue(SearchDocument.SourceType.POLICY))
+                .thenReturn(List.of(policyDocument("POLICY:CANCEL_BOOKING", null)));
+        when(searchDocumentRepository.save(any(SearchDocument.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(embeddingService.createEmbedding(anyString())).thenReturn(List.of(0.1, 0.2, 0.3));
         when(embeddingService.writeEmbedding(any())).thenReturn("{\"version\":3,\"values\":[0.1,0.2,0.3]}");
 
@@ -106,6 +135,9 @@ class CinemaRetrievalServiceTest {
         assertThat(result.updatedSnacks()).isEqualTo(1);
         assertThat(result.failedMovies()).isZero();
         assertThat(result.failedSnacks()).isZero();
+        assertThat(result.processedPolicyDocuments()).isEqualTo(1);
+        assertThat(result.updatedPolicyDocuments()).isEqualTo(1);
+        assertThat(result.failedPolicyDocuments()).isZero();
 
         ArgumentCaptor<Movie> movieCaptor = ArgumentCaptor.forClass(Movie.class);
         ArgumentCaptor<Snack> snackCaptor = ArgumentCaptor.forClass(Snack.class);
@@ -136,5 +168,16 @@ class CinemaRetrievalServiceTest {
         snack.setAvailable(true);
         snack.setWarehouseStock(10.0);
         return snack;
+    }
+
+    private SearchDocument policyDocument(String sourceKey, String embedding) {
+        SearchDocument document = new SearchDocument();
+        document.setSourceType(SearchDocument.SourceType.POLICY);
+        document.setSourceKey(sourceKey);
+        document.setTitle("Policy");
+        document.setContent("Policy content");
+        document.setSearchEmbedding(embedding);
+        document.setActive(true);
+        return document;
     }
 }

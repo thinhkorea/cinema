@@ -173,11 +173,16 @@ public class BookingController {
     }
 
     @GetMapping(value = "/{bookingId}/ticket", produces = "application/pdf")
-    public ResponseEntity<byte[]> downloadTicket(@PathVariable Long bookingId) {
+    public ResponseEntity<byte[]> downloadTicket(@PathVariable Long bookingId, Authentication authentication) {
         var booking = bookingService.findById(bookingId) // bạn thêm method này trong service
                 .orElseThrow(() -> new RuntimeException("Booking not found: " + bookingId));
 
         // chỉ cho tải nếu đã thanh toán
+        if (!canDownloadTicket(booking, authentication)) {
+            return ResponseEntity.status(403)
+                    .body(("Khong co quyen tai ve nay").getBytes());
+        }
+
         if (booking.getStatus() != Booking.Status.PAID) {
             return ResponseEntity.status(403)
                     .body(("Vé chưa thanh toán - không thể xuất PDF").getBytes());
@@ -189,6 +194,31 @@ public class BookingController {
         return ResponseEntity.ok()
                 .header("Content-Disposition", "attachment; filename=\"" + filename + "\"")
                 .body(pdf);
+    }
+
+    private boolean canDownloadTicket(Booking booking, Authentication authentication) {
+        if (authentication == null || authentication.getName() == null) {
+            return false;
+        }
+
+        boolean staffOrAdmin = authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_STAFF".equals(authority.getAuthority())
+                        || "ROLE_ADMIN".equals(authority.getAuthority()));
+        if (staffOrAdmin) {
+            return true;
+        }
+
+        boolean customerRole = authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_CUSTOMER".equals(authority.getAuthority()));
+        if (!customerRole || booking.getCustomer() == null || booking.getCustomer().getUser() == null) {
+            return false;
+        }
+
+        String username = authentication.getName();
+        String ownerEmail = booking.getCustomer().getUser().getEmail();
+        String ownerPhone = booking.getCustomer().getUser().getPhone();
+        return (ownerEmail != null && ownerEmail.equalsIgnoreCase(username))
+                || (ownerPhone != null && ownerPhone.equalsIgnoreCase(username));
     }
 
     // ==================== CUSTOMER ====================

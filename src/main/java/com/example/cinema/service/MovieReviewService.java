@@ -1,5 +1,6 @@
 package com.example.cinema.service;
 
+import com.example.cinema.domain.Booking;
 import com.example.cinema.domain.Movie;
 import com.example.cinema.domain.MovieReview;
 import com.example.cinema.domain.User;
@@ -82,13 +83,13 @@ public class MovieReviewService {
         boolean hasPaidBooking = bookingRepo.existsByCustomer_User_EmailAndShowtime_Movie_MovieIdAndStatus(
                 userEmail,
                 movieId,
-                com.example.cinema.domain.Booking.Status.PAID);
+                Booking.Status.PAID);
 
         if (!hasPaidBooking) {
             boolean hasCancelled = bookingRepo.existsByCustomer_User_EmailAndShowtime_Movie_MovieIdAndStatus(
                     userEmail,
                     movieId,
-                    com.example.cinema.domain.Booking.Status.CANCELLED);
+                    Booking.Status.CANCELLED);
 
             if (hasCancelled) {
                 throw new IllegalArgumentException("Vé đã hủy không được đánh giá");
@@ -100,14 +101,14 @@ public class MovieReviewService {
         boolean hasCompletedShowtime = bookingRepo.existsCompletedShowtimeBooking(
                 userEmail,
                 movieId,
-                com.example.cinema.domain.Booking.Status.PAID,
+                Booking.Status.PAID,
                 java.time.LocalDateTime.now());
 
         if (!hasCompletedShowtime) {
             throw new IllegalArgumentException("Bạn chỉ có thể đánh giá sau khi suất chiếu đã kết thúc");
         }
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       boolean alreadyReviewed = reviewRepo.findByMovie_MovieIdAndUser_UserId(movieId, user.getUserId()).isPresent();
+        boolean alreadyReviewed = reviewRepo.findByMovie_MovieIdAndUser_UserId(movieId, user.getUserId()).isPresent();
         if (alreadyReviewed) {
             throw new IllegalArgumentException("Bạn chỉ được đánh giá phim này 1 lần duy nhất");
         }
@@ -122,10 +123,12 @@ public class MovieReviewService {
         MovieReview saved = reviewRepo.save(review);
         return toResponse(saved);
     }
+
     private MovieReviewResponseDTO toResponse(MovieReview review) {
         User u = review.getUser();
         return MovieReviewResponseDTO.builder()
                 .reviewId(review.getReviewId())
+                .userId(u != null ? u.getUserId() : null)
                 .rating(review.getRating())
                 .comment(review.getComment())
                 .username(u != null ? u.getEmail() : "")

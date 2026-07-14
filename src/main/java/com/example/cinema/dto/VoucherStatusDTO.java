@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class VoucherRequestDTO {
+public class VoucherStatusDTO {
     private String code;
     private String name;
     private String description;
@@ -22,10 +22,13 @@ public class VoucherRequestDTO {
     private Double minOrder;
     private Double requiredTotalSpent;
     private Integer spendingWindowDays;
-    private Boolean active;
+    private Double currentTotalSpent;
+    private Double remainingAmount;
+    private Boolean eligible;
+    private Boolean claimed;
+    private Boolean claimable;
+    private String reason;
+    private Boolean newMemberOnly;
     private LocalDateTime startAt;
     private LocalDateTime endAt;
-    private Integer usageLimit;
-    private Integer perUserLimit;
-    private Boolean newMemberOnly;
 }

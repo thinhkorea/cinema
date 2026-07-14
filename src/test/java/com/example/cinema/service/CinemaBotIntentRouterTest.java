@@ -26,6 +26,112 @@ class CinemaBotIntentRouterTest {
     }
 
     @Test
+    void routesTodayGenericMovieQuestionToShowtimesWithDateFilter() {
+        CinemaBotService.QueryAnalysis result = router.route(
+                "Hôm nay có phim gì?",
+                analysis("GENERAL")
+        );
+
+        assertThat(result.intent).isEqualTo("SHOWTIMES");
+        assertThat(result.filters).contains("date:" + router.normalize("hôm nay"));
+    }
+
+    @Test
+    void routesTonightShowingQuestionToShowtimesWithDateFilter() {
+        CinemaBotService.QueryAnalysis result = router.route(
+                "Tối nay chiếu gì?",
+                analysis("GENERAL")
+        );
+
+        assertThat(result.intent).isEqualTo("SHOWTIMES");
+        assertThat(result.filters).contains("date:" + router.normalize("hôm nay"));
+    }
+
+    @Test
+    void routesTomorrowRomanceShowtimeQuestionWithGenreFilter() {
+        CinemaBotService.QueryAnalysis result = router.route(
+                "Ngày mai có phim tình cảm nào chiếu không?",
+                analysis("GENERAL")
+        );
+
+        assertThat(result.intent).isEqualTo("SHOWTIMES");
+        assertThat(result.filters).contains("date:" + router.normalize("ngày mai"), "genre:tình cảm");
+    }
+
+    @Test
+    void extractsSnackPriceAndComboFilter() {
+        CinemaBotService.QueryAnalysis result = router.route(
+                "Rạp có combo nào dưới 80 nghìn không?",
+                analysis("GENERAL")
+        );
+
+        assertThat(result.intent).isEqualTo("SNACKS");
+        assertThat(result.filters).contains("category:COMBO", "price_max:80000");
+    }
+
+    @Test
+    void extractsVoucherMinimumOrderFilter() {
+        CinemaBotService.QueryAnalysis result = router.route(
+                "Tôi có voucher nào dùng được cho đơn trên 100 nghìn không?",
+                analysis("GENERAL")
+        );
+
+        assertThat(result.intent).isEqualTo("VOUCHERS");
+        assertThat(result.filters).contains("price_min:100000");
+    }
+
+    @Test
+    void detectsLoginAcknowledgementWithoutBookingIntent() {
+        assertThat(router.isLoginAcknowledgement("Tôi đã đăng nhập rồi mà")).isTrue();
+        assertThat(router.route("Tôi đã đăng nhập rồi mà", analysis("GENERAL")).intent).isEqualTo("GENERAL");
+    }
+
+    @Test
+    void routesMovieRecommendationRequestToMovies() {
+        CinemaBotService.QueryAnalysis result = router.route(
+                "Tôi muốn đặt vé nhưng chưa biết chọn phim nào",
+                analysis("GENERAL")
+        );
+
+        assertThat(result.intent).isEqualTo("MOVIES");
+        assertThat(result.filters).contains("status:NOW_SHOWING");
+    }
+
+    @Test
+    void routesLightMoodMovieQuestionWithMoodFilter() {
+        CinemaBotService.QueryAnalysis result = router.route(
+                "có thể loại phim nhẹ nhàng nào không?",
+                analysis("GENERAL")
+        );
+
+        assertThat(result.intent).isEqualTo("MOVIES");
+        assertThat(result.filters).contains("mood:LIGHT");
+    }
+
+    @Test
+    void doesNotTreatNegatedHorrorAsHorrorGenre() {
+        CinemaBotService.QueryAnalysis result = router.route(
+                "Toi muon xem phim de chiu khong kinh di khong cang thang",
+                analysis("GENERAL")
+        );
+
+        assertThat(result.intent).isEqualTo("MOVIES");
+        assertThat(result.filters).contains("mood:LIGHT");
+        assertThat(result.filters).noneMatch(filter -> filter != null && filter.startsWith("genre:"));
+    }
+
+    @Test
+    void routesFamilyMovieQuestionWithFamilyMoodFilter() {
+        CinemaBotService.QueryAnalysis result = router.route(
+                "Co phim nao hop de di voi ba me cuoi tuan khong?",
+                analysis("GENERAL")
+        );
+
+        assertThat(result.intent).isEqualTo("MOVIES");
+        assertThat(result.filters).contains("mood:FAMILY");
+    }
+
+    @Test
     void routesYesterdayShowtimeQuestionToShowtimesWithDateFilter() {
         CinemaBotService.QueryAnalysis result = router.route(
                 "Hôm qua hệ thống có suất chiếu nào?",
@@ -104,6 +210,13 @@ class CinemaBotIntentRouterTest {
     void detectsBookingCancellationQuestion() {
         assertThat(router.isBookingCancellationQuestion("Làm sao để có thể hủy vé khi đã đặt rồi?")).isTrue();
         assertThat(router.isBookingCancellationQuestion("Tôi muốn huỷ booking")).isTrue();
+    }
+
+    @Test
+    void detectsBookingCancellationSubQuestions() {
+        assertThat(router.isBookingCancellationRefundQuestion("Hủy vé có được hoàn tiền khong?")).isTrue();
+        assertThat(router.isBookingCancellationConditionQuestion("Điều kiện để hủy vé là gì?")).isTrue();
+        assertThat(router.isBookingCancellationEligibilityQuestion("Tôi còn vé nào hủy được không?")).isTrue();
     }
 
     @Test

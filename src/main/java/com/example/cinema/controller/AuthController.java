@@ -9,6 +9,8 @@ import com.example.cinema.dto.RefreshTokenRequestDTO;
 import com.example.cinema.dto.RegisterRequestDTO;
 import com.example.cinema.dto.VerifyOtpRequestDTO;
 import com.example.cinema.repository.CustomerRepository;
+import com.example.cinema.repository.BookingRepository;
+import com.example.cinema.repository.SnackOrderRepository;
 import com.example.cinema.repository.StaffRepository;
 import com.example.cinema.repository.UserRepository;
 import com.example.cinema.security.JwtUtil;
@@ -18,6 +20,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -27,21 +31,28 @@ import java.util.Optional;
 @CrossOrigin("*")
 public class AuthController {
 
+    private static final int PROFILE_SPENDING_WINDOW_DAYS = 365;
+
     private final JwtUtil jwtUtil;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final RegistrationOtpService registrationOtpService;
     private final CustomerRepository customerRepository;
+    private final BookingRepository bookingRepository;
+    private final SnackOrderRepository snackOrderRepository;
     private final StaffRepository staffRepository;
 
     public AuthController(JwtUtil jwtUtil, UserRepository userRepository, PasswordEncoder passwordEncoder,
                           RegistrationOtpService registrationOtpService,
-                          CustomerRepository customerRepository, StaffRepository staffRepository) {
+                          CustomerRepository customerRepository, BookingRepository bookingRepository,
+                          SnackOrderRepository snackOrderRepository, StaffRepository staffRepository) {
         this.jwtUtil = jwtUtil;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.registrationOtpService = registrationOtpService;
         this.customerRepository = customerRepository;
+        this.bookingRepository = bookingRepository;
+        this.snackOrderRepository = snackOrderRepository;
         this.staffRepository = staffRepository;
     }
 
@@ -242,6 +253,10 @@ public class AuthController {
                 customerProfile.put("address", customer.getAddress());
                 customerProfile.put("gender", customer.getGender());
                 customerProfile.put("loyaltyPoints", customer.getLoyaltyPoints());
+                customerProfile.put("totalSpent", getTotalSpent(userId));
+                customerProfile.put("spendingWindowDays", PROFILE_SPENDING_WINDOW_DAYS);
+                customerProfile.put("spendingYear", LocalDate.now().getYear());
+                customerProfile.put("lifetimeTotalSpent", getLifetimeTotalSpent(userId));
 
                 Map<String, Object> userInfo = new HashMap<>();
                 userInfo.put("userId", user.getUserId());
@@ -261,6 +276,10 @@ public class AuthController {
             Map<String, Object> userProfile = new HashMap<>();
             userProfile.put("userId", user.getUserId());
             userProfile.put("loyaltyPoints", 0);
+            userProfile.put("totalSpent", 0.0);
+            userProfile.put("spendingWindowDays", PROFILE_SPENDING_WINDOW_DAYS);
+            userProfile.put("spendingYear", LocalDate.now().getYear());
+            userProfile.put("lifetimeTotalSpent", 0.0);
 
             Map<String, Object> userInfo = new HashMap<>();
             userInfo.put("userId", user.getUserId());
@@ -279,6 +298,30 @@ public class AuthController {
             e.printStackTrace();
             return ResponseEntity.status(500).body(Map.of("error", "Lỗi khi tải profile: " + e.getMessage()));
         }
+    }
+
+    private double getTotalSpent(Long userId) {
+        LocalDateTime from = getSpendingWindowStart(PROFILE_SPENDING_WINDOW_DAYS);
+        Double bookingSpent = bookingRepository.sumPaidAmountByCustomerUserIdSince(userId, from);
+        Double snackSpent = snackOrderRepository.sumPaidStandaloneAmountByCustomerUserIdSince(userId, from);
+        return defaultAmount(bookingSpent) + defaultAmount(snackSpent);
+    }
+
+    private LocalDateTime getSpendingWindowStart(int windowDays) {
+        LocalDate today = LocalDate.now();
+        int years = Math.max(1, Math.round(windowDays / 365.0f));
+        int startYear = today.getYear() - years + 1;
+        return LocalDate.of(startYear, 1, 1).atStartOfDay();
+    }
+
+    private double getLifetimeTotalSpent(Long userId) {
+        Double bookingSpent = bookingRepository.sumPaidAmountByCustomerUserId(userId);
+        Double snackSpent = snackOrderRepository.sumPaidStandaloneAmountByCustomerUserId(userId);
+        return defaultAmount(bookingSpent) + defaultAmount(snackSpent);
+    }
+
+    private double defaultAmount(Double value) {
+        return value == null ? 0.0 : value;
     }
 
     @Transactional

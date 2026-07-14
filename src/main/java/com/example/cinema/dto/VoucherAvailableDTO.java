@@ -18,6 +18,8 @@ public class VoucherAvailableDTO {
     private Double value;
     private Double maxDiscount;
     private Double minOrder;
+    private Double requiredTotalSpent;
+    private Integer spendingWindowDays;
     private Double discountAmount;
     private Double finalAmount;
     private Boolean newMemberOnly;

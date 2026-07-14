@@ -22,6 +22,10 @@ public class SnackOrderController {
     @PostMapping
     public ResponseEntity<?> createOrder(@RequestBody CreateSnackOrderRequestDTO request, Principal principal) {
         try {
+            if (principal == null || principal.getName() == null || principal.getName().isBlank()) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("error", "Ban can dang nhap bang tai khoan khach hang de dat bap nuoc."));
+            }
             SnackOrderResponseDTO result = snackOrderService.createOrder(principal.getName(), request);
             return ResponseEntity.status(HttpStatus.CREATED).body(result);
         } catch (IllegalArgumentException ex) {
@@ -32,6 +36,10 @@ public class SnackOrderController {
     @GetMapping("/my-orders")
     public ResponseEntity<?> getMyOrders(Principal principal) {
         try {
+            if (principal == null || principal.getName() == null || principal.getName().isBlank()) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("error", "Ban can dang nhap de xem don bap nuoc."));
+            }
             List<SnackOrderResponseDTO> orders = snackOrderService.getMyOrders(principal.getName());
             return ResponseEntity.ok(orders);
         } catch (IllegalArgumentException ex) {

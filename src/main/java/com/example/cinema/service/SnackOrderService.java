@@ -5,6 +5,7 @@ import com.example.cinema.domain.Customer;
 import com.example.cinema.domain.Snack;
 import com.example.cinema.domain.SnackOrder;
 import com.example.cinema.domain.SnackOrderItem;
+import com.example.cinema.domain.User;
 import com.example.cinema.dto.BookingSnackDTO;
 import com.example.cinema.dto.CreateSnackOrderRequestDTO;
 import com.example.cinema.dto.SnackItemRequestDTO;
@@ -15,6 +16,7 @@ import com.example.cinema.repository.CustomerRepository;
 import com.example.cinema.repository.SnackOrderItemRepository;
 import com.example.cinema.repository.SnackOrderRepository;
 import com.example.cinema.repository.SnackRepository;
+import com.example.cinema.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,11 +36,11 @@ public class SnackOrderService {
     private final SnackRepository snackRepository;
     private final CustomerRepository customerRepository;
     private final BookingRepository bookingRepository;
+    private final UserRepository userRepository;
 
     @Transactional
     public SnackOrderResponseDTO createOrder(String username, CreateSnackOrderRequestDTO request) {
-        Customer customer = customerRepository.findByUser_Email(username)
-                .orElseThrow(() -> new IllegalArgumentException("Khong tim thay khach hang tuong ung."));
+        Customer customer = resolveCustomerByPrincipal(username);
 
         if (request == null || request.getItems() == null || request.getItems().isEmpty()) {
             throw new IllegalArgumentException("Vui long chon it nhat mot mon bap nuoc.");
@@ -95,8 +97,7 @@ public class SnackOrderService {
 
     @Transactional(readOnly = true)
     public List<SnackOrderResponseDTO> getMyOrders(String username) {
-        Customer customer = customerRepository.findByUser_Email(username)
-                .orElseThrow(() -> new IllegalArgumentException("Khong tim thay khach hang tuong ung."));
+        Customer customer = resolveCustomerByPrincipal(username);
 
         return snackOrderRepository.findByCustomer_CustomerIdOrderByCreatedAtDesc(customer.getCustomerId())
                 .stream()
@@ -169,16 +170,14 @@ public class SnackOrderService {
     }
 
     private SnackOrderResponseDTO saveOrderItems(SnackOrder order, List<SnackItemRequestDTO> itemRequests) {
-        snackOrderRepository.save(order);
-
-        List<SnackOrderItem> existingItems = loadItems(order);
-        if (!existingItems.isEmpty()) {
-            snackOrderItemRepository.deleteAll(existingItems);
-            order.getItems().clear();
+        SnackOrder managedOrder = snackOrderRepository.save(order);
+        if (managedOrder.getItems() == null) {
+            managedOrder.setItems(new ArrayList<>());
         }
+        List<SnackOrderItem> managedItems = managedOrder.getItems();
+        managedItems.clear();
 
         double totalAmount = 0.0;
-        List<SnackOrderItem> items = new ArrayList<>();
 
         if (itemRequests != null) {
             for (SnackItemRequestDTO itemRequest : itemRequests) {
@@ -197,21 +196,24 @@ public class SnackOrderService {
                 }
 
                 SnackOrderItem orderItem = SnackOrderItem.builder()
-                        .snackOrder(order)
+                        .snackOrder(managedOrder)
                         .snack(snack)
                         .quantity(itemRequest.getQuantity())
                         .priceAtPurchase(snack.getPrice())
                         .build();
                 totalAmount += orderItem.getSubtotal();
-                items.add(orderItem);
+                managedItems.add(orderItem);
             }
         }
 
-        order.setItems(items);
-        order.setTotalAmount(totalAmount);
-        snackOrderRepository.save(order);
+        if (managedItems.isEmpty() && managedOrder.getOrderType() == SnackOrder.OrderType.STANDALONE) {
+            throw new IllegalArgumentException("Vui long chon it nhat mot mon bap nuoc hop le.");
+        }
 
-        return toResponse(order, items);
+        managedOrder.setTotalAmount(totalAmount);
+        snackOrderRepository.save(managedOrder);
+
+        return toResponse(managedOrder, new ArrayList<>(managedItems));
     }
 
     private List<SnackOrderItem> loadItems(SnackOrder order) {
@@ -220,6 +222,20 @@ public class SnackOrderService {
 
     private String generateOrderCode() {
         return "SNK-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase(Locale.ROOT);
+    }
+
+    private Customer resolveCustomerByPrincipal(String principal) {
+        if (principal == null || principal.isBlank()) {
+            throw new IllegalArgumentException("Ban can dang nhap bang tai khoan khach hang de dat bap nuoc.");
+        }
+
+        return customerRepository.findByUser_Email(principal)
+                .or(() -> {
+                    User user = userRepository.findByEmailOrPhone(principal, principal);
+                    return user == null ? java.util.Optional.empty() : customerRepository.findByUserUserId(user.getUserId());
+                })
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Tai khoan chua co ho so khach hang. Vui long cap nhat ho so truoc khi dat bap nuoc."));
     }
 
     private String normalizePaymentMethod(String paymentMethod) {

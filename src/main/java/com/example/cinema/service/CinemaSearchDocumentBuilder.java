@@ -70,4 +70,5 @@ public class CinemaSearchDocumentBuilder {
     private String safeText(String value) {
         return value == null ? "" : value;
     }
+
 }

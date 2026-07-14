@@ -54,6 +54,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return true;
         }
 
+        if ("POST".equals(method) && path.startsWith("/api/snack-orders/pay-by-code/")) {
+            return true;
+        }
+
         if (("GET".equals(method) || "HEAD".equals(method)) && (path.startsWith("/api/movies") ||
                 path.startsWith("/api/showtimes") ||
                 path.startsWith("/api/seats") ||
@@ -64,6 +68,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         return false;
     }
 
+    private boolean isOptionalAuthEndpoint(HttpServletRequest request) {
+        return "POST".equals(request.getMethod()) && "/api/v1/bot/chat".equals(request.getRequestURI());
+    }
+
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
@@ -72,6 +80,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         String header = request.getHeader("Authorization");
 
         if (header == null || !header.startsWith("Bearer ")) {
+            if (isOptionalAuthEndpoint(request)) {
+                filterChain.doFilter(request, response);
+                return;
+            }
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.setContentType("application/json");
             response.getWriter().write("{\"error\": \"Unauthorized - token missing or invalid\"}");

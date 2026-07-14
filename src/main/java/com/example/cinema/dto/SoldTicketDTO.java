@@ -14,10 +14,12 @@ import java.time.LocalDateTime;
 @Builder
 public class SoldTicketDTO {
     private Long bookingId;
+    private Long movieId;
     private String movieTitle;
     private String roomName;
     private String seatNumber;
     private LocalDateTime startTime;
+    private LocalDateTime endTime;
     private String paymentMethod;
     private String status;
     private LocalDateTime createdAt;
@@ -28,11 +30,12 @@ public class SoldTicketDTO {
     private boolean snacksFulfilled;
     private Integer pointsUsed; // Điểm tích lũy được dùng
 
-    // Constructor để chuyển đổi từ Booking Entity sang DTO
+    // Constructor để chuyển đổi từ Booking Entity sang DTO.
     public SoldTicketDTO(Booking booking) {
         this.bookingId = booking.getBookingId();
         if (booking.getShowtime() != null) {
             if (booking.getShowtime().getMovie() != null) {
+                this.movieId = booking.getShowtime().getMovie().getMovieId();
                 this.movieTitle = booking.getShowtime().getMovie().getTitle();
                 this.moviePoster = booking.getShowtime().getMovie().getPosterUrl();
             }
@@ -40,6 +43,7 @@ public class SoldTicketDTO {
                 this.roomName = booking.getShowtime().getRoom().getRoomName();
             }
             this.startTime = booking.getShowtime().getStartTime();
+            this.endTime = booking.getShowtime().getEndTime();
         }
         if (booking.getSeat() != null) {
             this.seatNumber = booking.getSeat().getSeatNumber();
@@ -61,5 +65,4 @@ public class SoldTicketDTO {
     public static SoldTicketDTO fromBooking(Booking booking) {
         return new SoldTicketDTO(booking);
     }
-
 }
