@@ -1,6 +1,7 @@
 package com.example.cinema.config;
 
 import com.example.cinema.dto.ApiErrorDTO;
+import com.example.cinema.exception.CustomerNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.*;
@@ -35,6 +36,11 @@ public class GlobalErrorHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiErrorDTO> handleIllegalArg(IllegalArgumentException ex, HttpServletRequest req) {
         return build(HttpStatus.BAD_REQUEST, "Bad Request", ex.getMessage(), req);
+    }
+
+    @ExceptionHandler(CustomerNotFoundException.class)
+    public ResponseEntity<ApiErrorDTO> handleCustomerNotFound(CustomerNotFoundException ex, HttpServletRequest req) {
+        return build(HttpStatus.NOT_FOUND, "Not Found", ex.getMessage(), req);
     }
 
     // Lỗi quyền hạn ở service (ví dụ cancel vé của người khác)
