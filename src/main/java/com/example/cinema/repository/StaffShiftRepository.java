@@ -23,6 +23,8 @@ public interface StaffShiftRepository extends JpaRepository<StaffShift, Long> {
 
     long countByStaffAndWorkDate(Staff staff, LocalDate workDate);
 
+    long countByWorkDateAndShiftSlot(LocalDate workDate, StaffShift.ShiftSlot shiftSlot);
+
     List<StaffShift> findByWorkDateOrderByScheduledStartAsc(LocalDate workDate);
 
     List<StaffShift> findByStaffAndWorkDateOrderByScheduledStartAsc(Staff staff, LocalDate workDate);

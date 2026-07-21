@@ -6,6 +6,7 @@ import com.example.cinema.repository.ShowtimeRepository;
 
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @RestController
@@ -18,10 +19,10 @@ public class StaffShowtimeController {
         this.showtimeRepo = showtimeRepo;
     }
 
-    // Lấy toàn bộ danh sách suất chiếu (cho staff chọn)
+    // Lấy danh sách suất chiếu sắp tới (cho staff chọn)
     @GetMapping
     public List<Showtime> getAllShowtimes() {
-        return showtimeRepo.findAllWithActiveRoom();
+        return showtimeRepo.findUpcomingWithActiveRoom(LocalDateTime.now());
     }
 
     // Lấy danh sách phim có suất chiếu sắp tới
@@ -47,7 +48,7 @@ public class StaffShowtimeController {
     // Lấy danh sách suất chiếu theo phim (để frontend nhóm theo ngày)
     @GetMapping("/movie/{movieId}")
     public List<Showtime> getShowtimesForMovie(@PathVariable Long movieId) {
-        return showtimeRepo.findByMovie_MovieIdOrderByStartTimeAsc(movieId);
+        return showtimeRepo.findUpcomingByMovieIdOrderByStartTimeAsc(movieId, LocalDateTime.now());
     }
 
 }

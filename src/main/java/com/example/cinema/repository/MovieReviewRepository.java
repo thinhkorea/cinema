@@ -13,6 +13,8 @@ public interface MovieReviewRepository extends JpaRepository<MovieReview, Long> 
 
     List<MovieReview> findByMovie_MovieIdOrderByCreatedAtDesc(Long movieId);
 
+    List<MovieReview> findByModerationStatusOrderByCreatedAtDesc(MovieReview.ModerationStatus moderationStatus);
+
     Optional<MovieReview> findByMovie_MovieIdAndUser_UserId(Long movieId, Long userId);
 
     long countByMovie_MovieId(Long movieId);

@@ -18,6 +18,15 @@ public interface ShowtimeRepository extends JpaRepository<Showtime, Long> {
   @Query("""
       SELECT s
       FROM Showtime s
+      WHERE s.startTime > :now
+        AND (s.room.active = true OR s.room.active IS NULL)
+      ORDER BY s.startTime ASC
+      """)
+  List<Showtime> findUpcomingWithActiveRoom(@Param("now") LocalDateTime now);
+
+  @Query("""
+      SELECT s
+      FROM Showtime s
       WHERE s.movie.movieId = :movieId
         AND (s.room.active = true OR s.room.active IS NULL)
       """)
@@ -31,6 +40,18 @@ public interface ShowtimeRepository extends JpaRepository<Showtime, Long> {
       ORDER BY s.startTime ASC
       """)
   List<Showtime> findByMovie_MovieIdOrderByStartTimeAsc(@Param("movieId") Long movieId);
+
+  @Query("""
+      SELECT s
+      FROM Showtime s
+      WHERE s.movie.movieId = :movieId
+        AND s.startTime > :now
+        AND (s.room.active = true OR s.room.active IS NULL)
+      ORDER BY s.startTime ASC
+      """)
+  List<Showtime> findUpcomingByMovieIdOrderByStartTimeAsc(
+      @Param("movieId") Long movieId,
+      @Param("now") LocalDateTime now);
 
   @Query("SELECT DISTINCT s.movie FROM Showtime s WHERE s.startTime > CURRENT_TIMESTAMP AND (s.room.active = true OR s.room.active IS NULL)")
   List<Movie> findUpcomingMovies();

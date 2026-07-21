@@ -1,6 +1,7 @@
 package com.example.cinema.controller;
 
 import com.example.cinema.dto.StaffShiftCloseRequestDTO;
+import com.example.cinema.dto.StaffShiftRegisterRequestDTO;
 import com.example.cinema.service.StaffShiftService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -45,6 +46,33 @@ public class StaffShiftReportController {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("openShift", staffShiftService.getOpenShift(authentication.getName()));
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/shift-registration")
+    public ResponseEntity<?> getShiftRegistrationOptions(
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            Authentication authentication) {
+        if (authentication == null || authentication.getName() == null || authentication.getName().isBlank()) {
+            return ResponseEntity.status(401).body(Map.of("error", "Ban can dang nhap de xem ca dang ky."));
+        }
+        return ResponseEntity.ok(Map.of(
+                "date", date == null ? LocalDate.now() : date,
+                "slots", staffShiftService.getShiftRegistrationOptions(authentication.getName(), date)));
+    }
+
+    @PostMapping("/shift/register")
+    public ResponseEntity<?> registerShift(
+            @RequestBody StaffShiftRegisterRequestDTO request,
+            Authentication authentication) {
+        try {
+            if (authentication == null || authentication.getName() == null || authentication.getName().isBlank()) {
+                return ResponseEntity.status(401).body(Map.of("error", "Ban can dang nhap de dang ky ca."));
+            }
+            return ResponseEntity.ok(Map.of("shift", staffShiftService.registerShift(authentication.getName(), request)));
+        } catch (IllegalArgumentException | IllegalStateException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
     }
 
     @PostMapping("/shift/start")

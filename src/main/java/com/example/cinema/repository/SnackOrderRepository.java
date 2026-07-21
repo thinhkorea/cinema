@@ -18,6 +18,11 @@ public interface SnackOrderRepository extends JpaRepository<SnackOrder, Long> {
     @EntityGraph(attributePaths = {"customer.user"})
     List<SnackOrder> findByCustomer_CustomerIdOrderByCreatedAtDesc(Long customerId);
 
+    List<SnackOrder> findAllByStatusAndOrderTypeAndCreatedAtBefore(
+            SnackOrder.Status status,
+            SnackOrder.OrderType orderType,
+            LocalDateTime timestamp);
+
     @EntityGraph(attributePaths = {"booking", "customer.user"})
     Optional<SnackOrder> findFirstByBookingTxnRefOrderByCreatedAtDesc(String bookingTxnRef);
 

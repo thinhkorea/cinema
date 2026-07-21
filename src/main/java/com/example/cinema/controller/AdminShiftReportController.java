@@ -3,6 +3,8 @@ package com.example.cinema.controller;
 import com.example.cinema.dto.ShiftSummaryDTO;
 import com.example.cinema.dto.StaffOptionDTO;
 import com.example.cinema.dto.StaffShiftAssignRequestDTO;
+import com.example.cinema.dto.StaffShiftCapacityDTO;
+import com.example.cinema.dto.StaffShiftCapacityRequestDTO;
 import com.example.cinema.service.BookingService;
 import com.example.cinema.service.InventoryService;
 import com.example.cinema.service.SnackService;
@@ -44,6 +46,22 @@ public class AdminShiftReportController {
     public ResponseEntity<?> assignShifts(@RequestBody StaffShiftAssignRequestDTO request) {
         try {
             return ResponseEntity.ok(staffShiftService.assignShifts(request));
+        } catch (IllegalArgumentException | IllegalStateException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
+    @GetMapping("/shift-capacities")
+    public ResponseEntity<List<StaffShiftCapacityDTO>> getShiftCapacities(
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        return ResponseEntity.ok(staffShiftService.getDailyShiftCapacities(date));
+    }
+
+    @PostMapping("/shift-capacities")
+    public ResponseEntity<?> saveShiftCapacity(@RequestBody StaffShiftCapacityRequestDTO request) {
+        try {
+            return ResponseEntity.ok(staffShiftService.saveShiftCapacity(request));
         } catch (IllegalArgumentException | IllegalStateException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
         }

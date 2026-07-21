@@ -22,7 +22,7 @@ import java.util.Map;
 @Service
 public class CinemaEmbeddingService {
 
-    private static final int EMBEDDING_DOCUMENT_VERSION = 3;
+    private static final int EMBEDDING_DOCUMENT_VERSION = 4;
 
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -32,11 +32,13 @@ public class CinemaEmbeddingService {
     public CinemaEmbeddingService(
             RestTemplateBuilder restTemplateBuilder,
             @Value("${cinema.bot.embedding-url:http://localhost:11434/api/embeddings}") String ollamaEmbeddingUrl,
-            @Value("${cinema.bot.embedding-model:nomic-embed-text}") String embeddingModelName
+            @Value("${cinema.bot.embedding-model:nomic-embed-text}") String embeddingModelName,
+            @Value("${cinema.bot.embedding-connect-timeout-seconds:10}") int connectTimeoutSeconds,
+            @Value("${cinema.bot.embedding-read-timeout-seconds:180}") int readTimeoutSeconds
     ) {
         this.restTemplate = restTemplateBuilder
-                .setConnectTimeout(Duration.ofSeconds(5))
-                .setReadTimeout(Duration.ofSeconds(60))
+                .setConnectTimeout(Duration.ofSeconds(connectTimeoutSeconds))
+                .setReadTimeout(Duration.ofSeconds(readTimeoutSeconds))
                 .build();
         this.ollamaEmbeddingUrl = ollamaEmbeddingUrl;
         this.embeddingModelName = embeddingModelName;
@@ -89,6 +91,10 @@ public class CinemaEmbeddingService {
             if (!root.isObject() || root.path("version").asInt(-1) != EMBEDDING_DOCUMENT_VERSION) {
                 return Collections.emptyList();
             }
+            String cachedModel = root.path("model").asText("");
+            if (!embeddingModelName.equals(cachedModel)) {
+                return Collections.emptyList();
+            }
 
             JsonNode valuesNode = root.path("values");
             if (!valuesNode.isArray()) {
@@ -111,6 +117,7 @@ public class CinemaEmbeddingService {
         try {
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("version", EMBEDDING_DOCUMENT_VERSION);
+            payload.put("model", embeddingModelName);
             payload.put("values", embedding);
             return objectMapper.writeValueAsString(payload);
         } catch (Exception ex) {

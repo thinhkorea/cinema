@@ -37,7 +37,35 @@ public class MovieReview {
     @Column(length = 1000)
     private String comment;
 
+    @Enumerated(EnumType.STRING)
+    @Column(length = 30)
+    private ModerationStatus moderationStatus = ModerationStatus.APPROVED;
+
+    @Column
+    private Boolean flagged = false;
+
+    @Column(length = 50)
+    private String violationType;
+
+    @Column(length = 30)
+    private String violationSeverity;
+
+    @Column(length = 1000)
+    private String violationReason;
+
+    @Column(length = 50)
+    private String moderationProvider;
+
+    private LocalDateTime moderatedAt;
+
     @CreatedDate
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
+
+    public enum ModerationStatus {
+        APPROVED,
+        FLAGGED,
+        REJECTED,
+        PENDING_REVIEW
+    }
 }

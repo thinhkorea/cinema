@@ -87,6 +87,22 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
                @Param("status") Booking.Status status,
                @Param("currentTime") LocalDateTime currentTime);
 
+       @Query("""
+              SELECT CASE WHEN COUNT(b) > 0 THEN true ELSE false END
+              FROM Booking b
+              WHERE b.customer.user.email = :email
+                AND b.showtime.movie.movieId = :movieId
+                AND b.status = :status
+                AND b.showtime.endTime < :currentTime
+                AND b.showtime.endTime >= :reviewWindowStart
+              """)
+       boolean existsEligibleReviewBooking(
+               @Param("email") String email,
+               @Param("movieId") Long movieId,
+               @Param("status") Booking.Status status,
+               @Param("currentTime") LocalDateTime currentTime,
+               @Param("reviewWindowStart") LocalDateTime reviewWindowStart);
+
        List<Booking> findAllByStatusAndCreatedAtBefore(Booking.Status status, LocalDateTime timestamp);
 
        @EntityGraph(attributePaths = { "soldByStaff.user" })

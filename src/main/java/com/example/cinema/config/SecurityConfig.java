@@ -58,10 +58,14 @@ public class SecurityConfig {
                                                 // Cho phép cập nhật trạng thái thanh toán (VNPay / frontend callback)
                                                 .requestMatchers(HttpMethod.POST, "/api/v1/bot/chat")
                                                 .permitAll()
-                                                .requestMatchers(HttpMethod.POST, "/api/bookings/pay-by-txn/{txnRef}")
-                                                .permitAll()
-                                                .requestMatchers(HttpMethod.POST, "/api/snack-orders/pay-by-code/**")
-                                                .permitAll()
+
+                                                // Manual payment update endpoints are admin-only.
+                                                // Normal VNPay payments are confirmed by /api/payments/confirm-vnpay using a token from vnpay-return.
+                                                .requestMatchers(HttpMethod.POST,
+                                                                "/api/bookings/pay-by-txn/*",
+                                                                "/api/bookings/confirm-payment/*",
+                                                                "/api/snack-orders/pay-by-code/**")
+                                                .hasRole("ADMIN")
 
                                                 // Snack admin APIs
                                                 .requestMatchers(HttpMethod.GET, "/api/snacks/admin/**").hasRole("ADMIN")
@@ -87,6 +91,10 @@ public class SecurityConfig {
 
                                                 // Cho phép người dùng đã đăng nhập gửi review phim
                                                 .requestMatchers(HttpMethod.POST, "/api/movies/*/reviews")
+                                                .hasRole("CUSTOMER")
+                                                .requestMatchers(HttpMethod.PUT, "/api/movies/*/reviews/*")
+                                                .hasRole("CUSTOMER")
+                                                .requestMatchers(HttpMethod.DELETE, "/api/movies/*/reviews/*")
                                                 .hasRole("CUSTOMER")
 
                                                 // Voucher validate/redeem

@@ -31,6 +31,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class SnackOrderService {
 
+    private static final int STANDALONE_PENDING_TIMEOUT_MINUTES = 30;
+
     private final SnackOrderRepository snackOrderRepository;
     private final SnackOrderItemRepository snackOrderItemRepository;
     private final SnackRepository snackRepository;
@@ -126,6 +128,16 @@ public class SnackOrderService {
     public SnackOrderResponseDTO markPaidByOrderCode(String orderCode, String paymentMethod) {
         SnackOrder order = snackOrderRepository.findByOrderCode(orderCode)
                 .orElseThrow(() -> new IllegalArgumentException("Khong tim thay don bap nuoc."));
+
+        if (isExpiredStandalonePendingOrder(order)) {
+            throw new IllegalArgumentException("Don bap nuoc da qua han thanh toan. Vui long tao don moi.");
+        }
+        if (order.getStatus() == SnackOrder.Status.CANCELLED) {
+            throw new IllegalArgumentException("Don bap nuoc da bi huy. Vui long tao don moi.");
+        }
+        if (order.getStatus() == SnackOrder.Status.PAID) {
+            return toResponse(order, loadItems(order));
+        }
 
         order.setStatus(SnackOrder.Status.PAID);
         order.setPaymentMethod(normalizePaymentMethod(paymentMethod));
@@ -243,6 +255,13 @@ public class SnackOrderService {
             return "VNPAY";
         }
         return paymentMethod.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private boolean isExpiredStandalonePendingOrder(SnackOrder order) {
+        return order.getOrderType() == SnackOrder.OrderType.STANDALONE
+                && order.getStatus() == SnackOrder.Status.PENDING
+                && order.getCreatedAt() != null
+                && order.getCreatedAt().isBefore(LocalDateTime.now().minusMinutes(STANDALONE_PENDING_TIMEOUT_MINUTES));
     }
 
     private SnackOrder.Status resolveBookingSnackStatus(List<Booking> bookings) {

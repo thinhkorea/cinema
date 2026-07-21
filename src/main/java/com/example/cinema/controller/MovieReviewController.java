@@ -40,4 +40,36 @@ public class MovieReviewController {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
+
+    @PutMapping("/{reviewId}")
+    public ResponseEntity<?> updateReview(
+            @PathVariable Long movieId,
+            @PathVariable Long reviewId,
+            @RequestBody MovieReviewRequestDTO request,
+            Authentication authentication) {
+        try {
+            if (authentication == null) {
+                return ResponseEntity.status(401).body(Map.of("error", "Bạn cần đăng nhập để chỉnh sửa đánh giá"));
+            }
+            return ResponseEntity.ok(reviewService.updateReview(movieId, reviewId, authentication.getName(), request));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @DeleteMapping("/{reviewId}")
+    public ResponseEntity<?> deleteReview(
+            @PathVariable Long movieId,
+            @PathVariable Long reviewId,
+            Authentication authentication) {
+        try {
+            if (authentication == null) {
+                return ResponseEntity.status(401).body(Map.of("error", "Bạn cần đăng nhập để xóa đánh giá"));
+            }
+            reviewService.deleteReview(movieId, reviewId, authentication.getName());
+            return ResponseEntity.ok(Map.of("message", "Đã xóa đánh giá"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
 }

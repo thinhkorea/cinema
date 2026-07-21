@@ -2,11 +2,16 @@ package com.example.cinema.service;
 
 import com.example.cinema.domain.Staff;
 import com.example.cinema.domain.StaffShift;
+import com.example.cinema.domain.StaffShiftCapacity;
 import com.example.cinema.dto.ShiftRevenueItemDTO;
 import com.example.cinema.dto.StaffOptionDTO;
 import com.example.cinema.dto.StaffShiftAssignRequestDTO;
+import com.example.cinema.dto.StaffShiftCapacityDTO;
+import com.example.cinema.dto.StaffShiftCapacityRequestDTO;
 import com.example.cinema.dto.StaffShiftDTO;
+import com.example.cinema.dto.StaffShiftRegisterRequestDTO;
 import com.example.cinema.repository.StaffRepository;
+import com.example.cinema.repository.StaffShiftCapacityRepository;
 import com.example.cinema.repository.StaffShiftRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -28,6 +33,7 @@ public class StaffShiftService {
 
     private final StaffRepository staffRepository;
     private final StaffShiftRepository staffShiftRepository;
+    private final StaffShiftCapacityRepository staffShiftCapacityRepository;
     private final BookingService bookingService;
 
     @Transactional(readOnly = true)
@@ -61,6 +67,10 @@ public class StaffShiftService {
 
         StaffShift.ShiftSlot shiftSlot = parseShiftSlot(request.getShiftSlot());
         ShiftSchedule schedule = buildSchedule(request.getWorkDate(), shiftSlot);
+        StaffShiftCapacity capacity = staffShiftCapacityRepository
+                .findByWorkDateAndShiftSlot(request.getWorkDate(), shiftSlot)
+                .orElseThrow(() -> new IllegalStateException("Vui long tao ca lam truoc khi xep nhan vien."));
+        int maxStaff = capacity.getMaxStaff() == null ? 0 : capacity.getMaxStaff();
 
         int assignedCount = 0;
         int skippedCount = 0;
@@ -90,6 +100,13 @@ public class StaffShiftService {
             if (staffShiftRepository.countByStaffAndWorkDate(staff, request.getWorkDate()) >= MAX_SHIFTS_PER_DAY) {
                 skippedCount++;
                 skippedMessages.add(resolveStaffName(staff) + " đã đủ 2 ca trong ngày.");
+                continue;
+            }
+
+            long registeredCount = staffShiftRepository.countByWorkDateAndShiftSlot(request.getWorkDate(), shiftSlot);
+            if (registeredCount >= maxStaff) {
+                skippedCount++;
+                skippedMessages.add("Ca " + resolveShiftLabel(shiftSlot) + " da du " + maxStaff + " nhan vien.");
                 continue;
             }
 
@@ -214,6 +231,114 @@ public class StaffShiftService {
                 .stream()
                 .map(StaffShiftDTO::fromEntity)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<StaffShiftCapacityDTO> getDailyShiftCapacities(LocalDate date) {
+        LocalDate target = date == null ? LocalDate.now() : date;
+        return staffShiftCapacityRepository.findByWorkDateOrderByShiftSlotAsc(target)
+                .stream()
+                .map(capacity -> StaffShiftCapacityDTO.fromEntity(
+                        capacity,
+                        staffShiftRepository.countByWorkDateAndShiftSlot(target, capacity.getShiftSlot()),
+                        false))
+                .toList();
+    }
+
+    @Transactional
+    public StaffShiftCapacityDTO saveShiftCapacity(StaffShiftCapacityRequestDTO request) {
+        if (request == null || request.getWorkDate() == null) {
+            throw new IllegalArgumentException("Vui long chon ngay lam viec.");
+        }
+        StaffShift.ShiftSlot shiftSlot = parseShiftSlot(request.getShiftSlot());
+        int maxStaff = request.getMaxStaff() == null ? 0 : request.getMaxStaff();
+        if (maxStaff < 1 || maxStaff > 50) {
+            throw new IllegalArgumentException("So nhan vien toi da phai tu 1 den 50.");
+        }
+
+        long registeredCount = staffShiftRepository.countByWorkDateAndShiftSlot(request.getWorkDate(), shiftSlot);
+        if (maxStaff < registeredCount) {
+            throw new IllegalStateException("Ca nay dang co " + registeredCount
+                    + " nhan vien, khong the giam gioi han xuong " + maxStaff + ".");
+        }
+
+        StaffShiftCapacity capacity = staffShiftCapacityRepository
+                .findByWorkDateAndShiftSlot(request.getWorkDate(), shiftSlot)
+                .orElseGet(StaffShiftCapacity::new);
+        capacity.setWorkDate(request.getWorkDate());
+        capacity.setShiftSlot(shiftSlot);
+        capacity.setMaxStaff(maxStaff);
+
+        StaffShiftCapacity saved = staffShiftCapacityRepository.save(capacity);
+        return StaffShiftCapacityDTO.fromEntity(saved, registeredCount, false);
+    }
+
+    @Transactional(readOnly = true)
+    public List<StaffShiftCapacityDTO> getShiftRegistrationOptions(String username, LocalDate date) {
+        Staff staff = resolveStaff(username);
+        LocalDate target = date == null ? LocalDate.now() : date;
+        return staffShiftCapacityRepository.findByWorkDateOrderByShiftSlotAsc(target)
+                .stream()
+                .map(capacity -> StaffShiftCapacityDTO.fromEntity(
+                        capacity,
+                        staffShiftRepository.countByWorkDateAndShiftSlot(target, capacity.getShiftSlot()),
+                        staffShiftRepository.existsByStaffAndWorkDateAndShiftSlot(staff, target, capacity.getShiftSlot())))
+                .toList();
+    }
+
+    @Transactional
+    public StaffShiftDTO registerShift(String username, StaffShiftRegisterRequestDTO request) {
+        if (request == null || request.getWorkDate() == null) {
+            throw new IllegalArgumentException("Vui long chon ngay lam viec.");
+        }
+
+        Staff staff = resolveStaff(username);
+        if (staff.getStatus() != Staff.Status.ACTIVE) {
+            throw new IllegalStateException("Tai khoan nhan vien chua hoat dong.");
+        }
+
+        StaffShift.ShiftSlot shiftSlot = parseShiftSlot(request.getShiftSlot());
+        ShiftSchedule schedule = buildSchedule(request.getWorkDate(), shiftSlot);
+        LocalDateTime now = LocalDateTime.now();
+        if (request.getWorkDate().isBefore(now.toLocalDate()) || !schedule.end().isAfter(now)) {
+            throw new IllegalStateException("Khong the dang ky ca da ket thuc.");
+        }
+
+        StaffShiftCapacity capacity = staffShiftCapacityRepository
+                .findLockedByWorkDateAndShiftSlot(request.getWorkDate(), shiftSlot)
+                .orElseThrow(() -> new IllegalStateException("Ca nay chua duoc admin mo dang ky."));
+        int maxStaff = capacity.getMaxStaff() == null ? 0 : capacity.getMaxStaff();
+        if (maxStaff < 1) {
+            throw new IllegalStateException("Ca nay dang dong dang ky.");
+        }
+
+        if (staffShiftRepository.existsByStaffAndWorkDateAndShiftSlot(staff, request.getWorkDate(), shiftSlot)) {
+            throw new IllegalStateException("Ban da dang ky hoac duoc xep vao ca nay.");
+        }
+        if (staffShiftRepository.countByStaffAndWorkDate(staff, request.getWorkDate()) >= MAX_SHIFTS_PER_DAY) {
+            throw new IllegalStateException("Bạn chỉ được đăng ký tối đa 2 ca trong ngày.");
+        }
+
+        long registeredCount = staffShiftRepository.countByWorkDateAndShiftSlot(request.getWorkDate(), shiftSlot);
+        if (registeredCount >= maxStaff) {
+            throw new IllegalStateException("Ca nay da du " + maxStaff + " nhan vien.");
+        }
+
+        StaffShift shift = new StaffShift();
+        shift.setStaff(staff);
+        shift.setWorkDate(request.getWorkDate());
+        shift.setShiftSlot(shiftSlot);
+        shift.setScheduledStart(schedule.start());
+        shift.setScheduledEnd(schedule.end());
+        shift.setStatus(StaffShift.Status.ASSIGNED);
+        shift.setAttendanceStatus(StaffShift.AttendanceStatus.ASSIGNED);
+        shift.setExpectedCash(0.0);
+        shift.setActualCash(0.0);
+        shift.setCashDifference(0.0);
+        shift.setLateMinutes(0);
+        shift.setEarlyLeaveMinutes(0);
+        shift.setOvertimeMinutes(0);
+        return StaffShiftDTO.fromEntity(staffShiftRepository.save(shift));
     }
 
     private double getExpectedCashForShift(String username, LocalDateTime openedAt, LocalDateTime closedAt) {

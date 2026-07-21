@@ -1,6 +1,8 @@
 package com.example.cinema.controller;
 
 import com.example.cinema.domain.Movie;
+import com.example.cinema.dto.MovieDiscoveryResultDTO;
+import com.example.cinema.service.MovieDiscoveryService;
 import com.example.cinema.service.MovieService;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
@@ -24,16 +26,26 @@ import java.util.UUID;
 public class MovieController {
 
     private final MovieService movieService;
+    private final MovieDiscoveryService movieDiscoveryService;
     private static final Path MOVIE_UPLOAD_DIR = Paths.get("uploads", "movies");
 
-    public MovieController(MovieService movieService) {
+    public MovieController(MovieService movieService, MovieDiscoveryService movieDiscoveryService) {
         this.movieService = movieService;
+        this.movieDiscoveryService = movieDiscoveryService;
     }
 
     // Lấy tất cả phim
     @GetMapping
     public ResponseEntity<List<Movie>> getAllMovies() {
         return ResponseEntity.ok(movieService.findAll());
+    }
+
+    @GetMapping("/discover")
+    public ResponseEntity<List<MovieDiscoveryResultDTO>> discoverMovies(
+            @RequestParam String query,
+            @RequestParam(defaultValue = "1") Integer limit,
+            @RequestParam(defaultValue = "false") boolean includeEnded) {
+        return ResponseEntity.ok(movieDiscoveryService.discover(query, limit, includeEnded));
     }
 
     // Lấy phim theo ID
