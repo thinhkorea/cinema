@@ -31,32 +31,46 @@ public class MovieService {
     }
 
     public Movie update(Long id, Movie updated) {
-        System.out.println("=== UPDATE MOVIE ===");
-        System.out.println("ID: " + id);
-        System.out.println("Updated Movie: " + updated);
-        System.out.println("Title: " + updated.getTitle());
-        System.out.println("Status: " + updated.getStatus());
-        System.out.println("AgeRating: " + updated.getAgeRating());
-        System.out.println("Actors: " + updated.getActors());
-        System.out.println("Description: " + updated.getDescription());
-        
         return movieRepo.findById(id)
                 .map(existing -> {
-                    System.out.println("Found existing movie: " + existing.getTitle());
-                    existing.setTitle(updated.getTitle());
-                    existing.setDuration(updated.getDuration());
-                    existing.setGenre(updated.getGenre());
-                    existing.setDescription(updated.getDescription());
-                    existing.setPosterUrl(updated.getPosterUrl());
-                    existing.setTrailerUrl(updated.getTrailerUrl());
-                    existing.setStatus(updated.getStatus());
-                    existing.setAgeRating(updated.getAgeRating());
-                    existing.setActors(updated.getActors());
-                    existing.setSearchEmbedding(null);
-                    System.out.println("Before save - Status: " + existing.getStatus());
-                    Movie saved = movieRepo.save(existing);
-                    System.out.println("After save - Status: " + saved.getStatus());
-                    return saved;
+                    boolean searchableFieldsChanged = false;
+
+                    if (updated.getTitle() != null) {
+                        existing.setTitle(updated.getTitle());
+                        searchableFieldsChanged = true;
+                    }
+                    if (updated.getDuration() != null) {
+                        existing.setDuration(updated.getDuration());
+                    }
+                    if (updated.getGenre() != null) {
+                        existing.setGenre(updated.getGenre());
+                        searchableFieldsChanged = true;
+                    }
+                    if (updated.getDescription() != null) {
+                        existing.setDescription(updated.getDescription());
+                        searchableFieldsChanged = true;
+                    }
+                    if (updated.getPosterUrl() != null) {
+                        existing.setPosterUrl(updated.getPosterUrl());
+                    }
+                    if (updated.getTrailerUrl() != null) {
+                        existing.setTrailerUrl(updated.getTrailerUrl());
+                    }
+                    if (updated.getStatus() != null) {
+                        existing.setStatus(updated.getStatus());
+                        searchableFieldsChanged = true;
+                    }
+                    if (updated.getAgeRating() != null) {
+                        existing.setAgeRating(updated.getAgeRating());
+                    }
+                    if (updated.getActors() != null) {
+                        existing.setActors(updated.getActors());
+                        searchableFieldsChanged = true;
+                    }
+                    if (searchableFieldsChanged) {
+                        existing.setSearchEmbedding(null);
+                    }
+                    return movieRepo.save(existing);
                 })
                 .orElseThrow(() -> new IllegalArgumentException("Movie not found: " + id));
     }

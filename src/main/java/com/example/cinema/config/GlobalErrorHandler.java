@@ -50,8 +50,23 @@ public class GlobalErrorHandler {
         String message = "Data integrity violation";
         if (path != null && path.contains("/admin/inventory/snacks/") && path.endsWith("/recipe")) {
             message = "Cong thuc co nguyen lieu trung hoac du lieu khong hop le.";
+        } else if (path != null && path.startsWith("/api/movies")) {
+            String detail = rootMessage(ex).toLowerCase();
+            if (detail.contains("data too long") || detail.contains("too long for column")) {
+                message = "Du lieu phim qua dai. Hay rut gon hoac khoi dong lai backend de cap nhat cot mo ta sang TEXT.";
+            } else {
+                message = "Du lieu phim khong hop le. Vui long kiem tra tieu de, thoi luong, trailer, poster va mo ta.";
+            }
         }
         return build(HttpStatus.BAD_REQUEST, "Bad Request", message, req);
+    }
+
+    private String rootMessage(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null && current.getCause() != null) {
+            current = current.getCause();
+        }
+        return current == null || current.getMessage() == null ? "" : current.getMessage();
     }
 
     // Fallback

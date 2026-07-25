@@ -6,6 +6,8 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 @Component
 @RequiredArgsConstructor
 @Slf4j
@@ -19,6 +21,7 @@ public class LegacySchemaMigrationRunner implements CommandLineRunner {
         dropColumnIfExists("users", "username");
         dropColumnIfExists("customers", "email");
         dropColumnIfExists("customers", "phone");
+        widenColumnToTextIfExists("movies", "description");
         restoreActiveFlagsIfAllInactive("rooms");
         restoreActiveFlagsIfAllInactive("seats");
     }
@@ -72,5 +75,29 @@ public class LegacySchemaMigrationRunner implements CommandLineRunner {
 
         Integer count = jdbcTemplate.queryForObject(existsSql, Integer.class, tableName, columnName);
         return count != null && count > 0;
+    }
+
+    private void widenColumnToTextIfExists(String tableName, String columnName) {
+        String typeSql = """
+                SELECT DATA_TYPE
+                FROM information_schema.columns
+                WHERE table_schema = DATABASE()
+                  AND table_name = ?
+                  AND column_name = ?
+                """;
+
+        List<String> dataTypes = jdbcTemplate.queryForList(typeSql, String.class, tableName, columnName);
+        if (dataTypes.isEmpty()) {
+            return;
+        }
+
+        String dataType = dataTypes.get(0);
+        if ("text".equalsIgnoreCase(dataType)) {
+            return;
+        }
+
+        String alterSql = "ALTER TABLE " + tableName + " MODIFY COLUMN " + columnName + " TEXT";
+        jdbcTemplate.execute(alterSql);
+        log.info("Widened legacy column {}.{} from {} to TEXT", tableName, columnName, dataType);
     }
 }
