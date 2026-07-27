@@ -14,7 +14,9 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -105,6 +107,38 @@ class MovieDiscoveryServiceTest {
         List<MovieDiscoveryResultDTO> results = service.discover("nguoi chau cham soc ba bi benh", 3, true);
 
         assertThat(results).extracting(MovieDiscoveryResultDTO::getMovieId).containsExactly(3L);
+    }
+
+    @Test
+    void discoverUsesExistingEmbeddingSearchWhenEmbeddingIsEnabled() {
+        service = new MovieDiscoveryService(
+                movieRepository,
+                retrievalService,
+                rerankService,
+                true,
+                "test-embedding",
+                5
+        );
+        Movie movie = movie(
+                4L,
+                "Bo Gia",
+                "Gia dinh, hai",
+                "Nguoi cha don than va nhung mau thuan gia dinh",
+                Movie.MovieStatus.NOW_SHOWING
+        );
+
+        when(movieRepository.findAll()).thenReturn(List.of(movie));
+        when(retrievalService.denseSearchMoviesUsingExistingEmbeddings(anyString(), anyList()))
+                .thenReturn(List.of(new CinemaRetrievalService.DenseCandidate<>(movie, 0.8)));
+        when(rerankService.rerank(anyString(), anyList()))
+                .thenReturn(MovieDiscoveryRerankService.RerankResponse.empty());
+
+        List<MovieDiscoveryResultDTO> results = service.discover("phim ve gia dinh", 1, false);
+
+        assertThat(results).extracting(MovieDiscoveryResultDTO::getMovieId).containsExactly(4L);
+        assertThat(results.get(0).getMatchSource()).isEqualTo("EMBEDDING_MODEL");
+        verify(retrievalService).denseSearchMoviesUsingExistingEmbeddings(anyString(), anyList());
+        verifyNoMoreInteractions(retrievalService);
     }
 
     private Movie movie(Long id, String title, String genre, String description, Movie.MovieStatus status) {

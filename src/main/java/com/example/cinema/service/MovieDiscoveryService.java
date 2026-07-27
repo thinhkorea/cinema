@@ -366,7 +366,7 @@ public class MovieDiscoveryService {
 
     private Map<Long, Double> findDenseScores(String query, List<Movie> movies) {
         try {
-            return retrievalService.denseSearchMovies(query, movies).stream()
+            return retrievalService.denseSearchMoviesUsingExistingEmbeddings(query, movies).stream()
                     .filter(candidate -> candidate.item() != null && candidate.item().getMovieId() != null)
                     .collect(Collectors.toMap(
                             candidate -> candidate.item().getMovieId(),

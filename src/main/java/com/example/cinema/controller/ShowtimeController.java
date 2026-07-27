@@ -22,6 +22,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -68,6 +69,23 @@ public class ShowtimeController {
     @GetMapping
     public ResponseEntity<List<Showtime>> getAllShowtimes() {
         return ResponseEntity.ok(showtimeRepository.findAllWithActiveRoom());
+    }
+
+    @GetMapping("/upcoming/grouped-by-movie")
+    public ResponseEntity<Map<Long, List<Showtime>>> getUpcomingShowtimesGroupedByMovie() {
+        List<Showtime> upcomingShowtimes = showtimeRepository.findUpcomingWithActiveRoom(LocalDateTime.now());
+        Map<Long, List<Showtime>> groupedShowtimes = new LinkedHashMap<>();
+
+        for (Showtime showtime : upcomingShowtimes) {
+            if (showtime.getMovie() == null || showtime.getMovie().getMovieId() == null) {
+                continue;
+            }
+            groupedShowtimes
+                    .computeIfAbsent(showtime.getMovie().getMovieId(), ignored -> new ArrayList<>())
+                    .add(showtime);
+        }
+
+        return ResponseEntity.ok(groupedShowtimes);
     }
 
     @GetMapping("/{id}")

@@ -85,6 +85,36 @@ public class CinemaRetrievalService {
         return results;
     }
 
+    public List<DenseCandidate<Movie>> denseSearchMoviesUsingExistingEmbeddings(String query, List<Movie> allMovies) {
+        List<Double> queryEmbedding = embeddingService.createEmbedding(query);
+        if (queryEmbedding.isEmpty() || allMovies == null || allMovies.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<DenseCandidate<Movie>> qdrantResults = denseSearchMoviesWithQdrant(queryEmbedding, allMovies);
+        if (!qdrantResults.isEmpty()) {
+            return qdrantResults;
+        }
+
+        List<DenseCandidate<Movie>> candidates = new ArrayList<>();
+        for (Movie movie : allMovies) {
+            List<Double> documentEmbedding = movie == null
+                    ? Collections.emptyList()
+                    : embeddingService.readEmbedding(movie.getSearchEmbedding());
+            double similarity = embeddingService.cosineSimilarity(queryEmbedding, documentEmbedding);
+            if (similarity > 0.0) {
+                candidates.add(new DenseCandidate<>(movie, embeddingService.normalizeCosineScore(similarity)));
+            }
+        }
+
+        candidates.sort((a, b) -> Double.compare(b.score(), a.score()));
+        List<DenseCandidate<Movie>> results = candidates.stream()
+                .limit(DENSE_RESULT_LIMIT)
+                .collect(Collectors.toList());
+        log.debug("[CinemaRetrieval] denseMoviesExisting candidates={}, returned={}", candidates.size(), results.size());
+        return results;
+    }
+
     public List<DenseCandidate<Snack>> denseSearchSnacks(String query, List<Snack> allSnacks) {
         List<Double> queryEmbedding = embeddingService.createEmbedding(query);
         if (queryEmbedding.isEmpty() || allSnacks == null || allSnacks.isEmpty()) {
