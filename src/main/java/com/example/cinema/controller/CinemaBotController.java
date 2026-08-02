@@ -36,7 +36,7 @@ public class CinemaBotController {
             String question = request != null ? request.question() : null;
             String conversationId = request != null ? request.conversationId() : null;
             String answer = cinemaBotService.askBot(question, conversationId);
-            List<CinemaBotShowtimeSuggestionDTO> showtimeSuggestions = cinemaBotService.suggestShowtimes(question);
+            List<CinemaBotShowtimeSuggestionDTO> showtimeSuggestions = cinemaBotService.suggestShowtimes(question, conversationId);
             return ResponseEntity.ok(new CinemaBotChatResponseDTO(answer, showtimeSuggestions));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));

@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -14,6 +15,18 @@ public interface MovieReviewRepository extends JpaRepository<MovieReview, Long> 
     List<MovieReview> findByMovie_MovieIdOrderByCreatedAtDesc(Long movieId);
 
     List<MovieReview> findByModerationStatusOrderByCreatedAtDesc(MovieReview.ModerationStatus moderationStatus);
+
+    List<MovieReview> findByModerationStatusInOrderByModeratedAtDescCreatedAtDesc(
+            Collection<MovieReview.ModerationStatus> moderationStatuses);
+
+    @Query("""
+            select r from MovieReview r
+            where r.moderationStatus in :moderationStatuses
+               or upper(coalesce(r.violationType, '')) = 'USER_REPORT'
+            order by r.moderatedAt desc, r.createdAt desc
+            """)
+    List<MovieReview> findReviewsNeedingAdminAttention(
+            Collection<MovieReview.ModerationStatus> moderationStatuses);
 
     Optional<MovieReview> findByMovie_MovieIdAndUser_UserId(Long movieId, Long userId);
 

@@ -35,6 +35,7 @@ public class BookingService {
     private final PointService pointService;
     private final SnackOrderService snackOrderService;
     private final SnackOrderItemRepository snackOrderItemRepository;
+    private final SnackOrderRepository snackOrderRepository;
 
     public BookingService(BookingRepository bookingRepo,
             ShowtimeRepository showtimeRepo,
@@ -45,7 +46,8 @@ public class BookingService {
             TicketEmailService ticketEmailService,
             PointService pointService,
             SnackOrderService snackOrderService,
-            SnackOrderItemRepository snackOrderItemRepository) {
+            SnackOrderItemRepository snackOrderItemRepository,
+            SnackOrderRepository snackOrderRepository) {
         this.bookingRepo = bookingRepo;
         this.showtimeRepo = showtimeRepo;
         this.seatRepo = seatRepo;
@@ -56,6 +58,7 @@ public class BookingService {
         this.pointService = pointService;
         this.snackOrderService = snackOrderService;
         this.snackOrderItemRepository = snackOrderItemRepository;
+        this.snackOrderRepository = snackOrderRepository;
     }
 
     // ==================== ADMIN / USER ====================
@@ -379,6 +382,30 @@ public class BookingService {
         return staffRevenueList;
     }
 
+    public List<Map<String, Object>> getTopCustomerSpendingByMonth(int year, int month) {
+        LocalDateTime from = LocalDate.of(year, month, 1).atStartOfDay();
+        LocalDateTime to = from.plusMonths(1);
+        Map<Long, CustomerSpendingAccumulator> rows = new LinkedHashMap<>();
+
+        for (Object[] row : bookingRepo.getCustomerTicketSpendingBetween(from, to)) {
+            CustomerSpendingAccumulator accumulator = getCustomerSpendingRow(rows, row);
+            accumulator.ticketCount += toLong(row[4]);
+            accumulator.ticketRevenue += toDouble(row[5]);
+        }
+
+        for (Object[] row : snackOrderRepository.getCustomerSnackSpendingBetween(from, to)) {
+            CustomerSpendingAccumulator accumulator = getCustomerSpendingRow(rows, row);
+            accumulator.snackOrderCount += toLong(row[4]);
+            accumulator.snackRevenue += toDouble(row[5]);
+        }
+
+        return rows.values().stream()
+                .sorted((left, right) -> Double.compare(right.getTotalSpent(), left.getTotalSpent()))
+                .limit(5)
+                .map(CustomerSpendingAccumulator::toMap)
+                .collect(Collectors.toList());
+    }
+
     public List<Map<String, Object>> getRevenueByTimeSlot(int year) {
         Map<String, TimeSlotRevenue> slots = new LinkedHashMap<>();
         slots.put("morning", new TimeSlotRevenue("morning", "Sáng", "08:30 - 11:59", 0));
@@ -548,6 +575,21 @@ public class BookingService {
         return value instanceof Number number ? number.intValue() : 0;
     }
 
+    private long toLong(Object value) {
+        return value instanceof Number number ? number.longValue() : 0L;
+    }
+
+    private CustomerSpendingAccumulator getCustomerSpendingRow(
+            Map<Long, CustomerSpendingAccumulator> rows,
+            Object[] row) {
+        Long customerId = toLong(row[0]);
+        return rows.computeIfAbsent(customerId, id -> new CustomerSpendingAccumulator(
+                id,
+                String.valueOf(row[1] != null ? row[1] : "Khách hàng"),
+                row[2] != null ? String.valueOf(row[2]) : "",
+                row[3] != null ? String.valueOf(row[3]) : ""));
+    }
+
     private String getTimeSlotKey(int hour, int minute) {
         int time = hour * 60 + minute;
         if (time >= 8 * 60 + 30 && time < 12 * 60) {
@@ -648,6 +690,41 @@ public class BookingService {
             this.label = label;
             this.timeRange = timeRange;
             this.order = order;
+        }
+    }
+
+    private static class CustomerSpendingAccumulator {
+        private final Long customerId;
+        private final String customerName;
+        private final String email;
+        private final String phone;
+        private long ticketCount;
+        private long snackOrderCount;
+        private double ticketRevenue;
+        private double snackRevenue;
+
+        private CustomerSpendingAccumulator(Long customerId, String customerName, String email, String phone) {
+            this.customerId = customerId;
+            this.customerName = customerName;
+            this.email = email;
+            this.phone = phone;
+        }
+
+        private double getTotalSpent() {
+            return ticketRevenue + snackRevenue;
+        }
+
+        private Map<String, Object> toMap() {
+            return Map.of(
+                    "customerId", customerId,
+                    "customerName", customerName,
+                    "email", email,
+                    "phone", phone,
+                    "ticketCount", ticketCount,
+                    "snackOrderCount", snackOrderCount,
+                    "ticketRevenue", ticketRevenue,
+                    "snackRevenue", snackRevenue,
+                    "totalSpent", getTotalSpent());
         }
     }
 

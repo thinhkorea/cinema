@@ -49,4 +49,26 @@ public interface SnackOrderRepository extends JpaRepository<SnackOrder, Long> {
     Double sumPaidStandaloneAmountByCustomerUserIdSince(
             @Param("userId") Long userId,
             @Param("from") LocalDateTime from);
+
+    @Query("""
+           SELECT c.customerId AS customerId,
+                  u.fullName AS customerName,
+                  u.email AS email,
+                  u.phone AS phone,
+                  COUNT(o.snackOrderId) AS snackOrderCount,
+                  SUM(o.totalAmount) AS totalSpent
+           FROM SnackOrder o
+           JOIN o.customer c
+           JOIN c.user u
+           WHERE o.status = com.example.cinema.domain.SnackOrder$Status.PAID
+             AND (
+                 (o.paidAt IS NOT NULL AND o.paidAt >= :from AND o.paidAt < :to)
+                 OR (o.paidAt IS NULL AND o.createdAt >= :from AND o.createdAt < :to)
+             )
+           GROUP BY c.customerId, u.fullName, u.email, u.phone
+           ORDER BY totalSpent DESC
+           """)
+    List<Object[]> getCustomerSnackSpendingBetween(
+            @Param("from") LocalDateTime from,
+            @Param("to") LocalDateTime to);
 }

@@ -71,6 +71,7 @@ public class CinemaBotIntentRouter {
             return result;
         }
 
+        addContextualFiltersIfNeeded(result, normalized);
         return result;
     }
 
@@ -143,6 +144,9 @@ public class CinemaBotIntentRouter {
         }
         String normalized = normalize(userMessage);
         String normalizedPreviousIntent = previousIntent.toUpperCase(Locale.ROOT);
+        if (isCarryableContextIntent(normalizedPreviousIntent) && isPriceOrSelectionFollowUp(normalized)) {
+            return normalizedPreviousIntent;
+        }
         if (clarificationService.hasReferenceTerm(normalized)
                 && clarificationService.isExpiryQuestion(normalized)
                 && !lexicon.contains(normalized, "voucher")) {
@@ -154,6 +158,24 @@ public class CinemaBotIntentRouter {
             }
         }
         return null;
+    }
+
+    private boolean isCarryableContextIntent(String previousIntent) {
+        return "SNACKS".equals(previousIntent)
+                || "SHOWTIMES".equals(previousIntent)
+                || "VOUCHERS".equals(previousIntent)
+                || "MOVIES".equals(previousIntent);
+    }
+
+    private boolean isPriceOrSelectionFollowUp(String normalizedMessage) {
+        return hasPriceCue(normalizedMessage)
+                || hasDateTerm(normalizedMessage)
+                || containsAny(normalizedMessage,
+                "cai nao", "mon nao", "loai nao", "cai do", "mon do", "loai do",
+                "cai nay", "mon nay", "loai nay", "o tren", "vua roi", "thi sao",
+                "vay con", "con cai nao", "con mon nao", "con loai nao",
+                "con san pham", "san pham khac", "khong con", "con nua", "con khong",
+                "co cai nao", "co loai nao");
     }
 
     public String normalize(String value) {
@@ -307,8 +329,42 @@ public class CinemaBotIntentRouter {
         if (hasFilter(analysis, "category")) {
             return;
         }
+        if (containsAny(normalizedMessage, "bap nuoc", "thuc don", "menu")) {
+            return;
+        }
         if (lexicon.contains(normalizedMessage, "combo")) {
             analysis.filters.add("category:COMBO");
+        } else if (containsAny(normalizedMessage,
+                "nuoc uong", "do uong", "nuoc ngot", "drink", "coca", "fanta", "sprite", "dasani")) {
+            analysis.filters.add("category:DRINK");
+        } else if (containsAny(normalizedMessage, "bap rang", "popcorn", "do an", "snack")) {
+            analysis.filters.add("category:SNACK");
+        }
+    }
+
+    private void addContextualFiltersIfNeeded(CinemaBotService.QueryAnalysis analysis, String normalizedMessage) {
+        if (analysis == null || analysis.intent == null || "GENERAL".equalsIgnoreCase(analysis.intent)) {
+            return;
+        }
+        switch (analysis.intent.toUpperCase(Locale.ROOT)) {
+            case "SNACKS" -> {
+                addPriceFilterIfNeeded(analysis, normalizedMessage, "price_max");
+                addSnackCategoryFilterIfNeeded(analysis, normalizedMessage);
+            }
+            case "SHOWTIMES" -> {
+                addDateFilterIfNeeded(analysis, normalizedMessage);
+                addMovieGenreFilterIfNeeded(analysis, normalizedMessage);
+                addMovieMoodFilterIfNeeded(analysis, normalizedMessage);
+                addPriceFilterIfNeeded(analysis, normalizedMessage, "price_max");
+            }
+            case "MOVIES" -> {
+                addMovieStatusFilterIfNeeded(analysis, normalizedMessage);
+                addMovieGenreFilterIfNeeded(analysis, normalizedMessage);
+                addMovieMoodFilterIfNeeded(analysis, normalizedMessage);
+            }
+            case "VOUCHERS" -> addPriceFilterIfNeeded(analysis, normalizedMessage, "price_min");
+            default -> {
+            }
         }
     }
 
@@ -361,6 +417,11 @@ public class CinemaBotIntentRouter {
             return value;
         }
         return null;
+    }
+
+    private boolean hasPriceCue(String normalizedMessage) {
+        return extractMoneyAmount(normalizedMessage) != null
+                || containsAny(normalizedMessage, "duoi", "tren", "nho hon", "lon hon", "toi da", "toi thieu");
     }
 
     private boolean containsAny(String normalizedMessage, String... phrases) {

@@ -5,6 +5,7 @@ import com.example.cinema.domain.Movie;
 import com.example.cinema.domain.MovieReview;
 import com.example.cinema.domain.User;
 import com.example.cinema.domain.UserViolationLog;
+import com.example.cinema.dto.MovieReviewReportRequestDTO;
 import com.example.cinema.dto.MovieReviewRequestDTO;
 import com.example.cinema.dto.MovieReviewResponseDTO;
 import com.example.cinema.repository.BookingRepository;
@@ -15,6 +16,8 @@ import com.example.cinema.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -25,6 +28,8 @@ import java.util.Optional;
 public class MovieReviewService {
 
     private static final int REVIEW_WINDOW_DAYS = 7;
+    private static final Charset WINDOWS_1252 = Charset.forName("Windows-1252");
+    private static final String REPLACEMENT_CHARACTER = String.valueOf((char) 65533);
 
     private final MovieReviewRepository reviewRepo;
     private final MovieRepository movieRepo;
@@ -94,7 +99,8 @@ public class MovieReviewService {
             }
 
             if (review.getModerationStatus() == MovieReview.ModerationStatus.FLAGGED
-                    || review.getModerationStatus() == MovieReview.ModerationStatus.PENDING_REVIEW) {
+                    || (review.getModerationStatus() == MovieReview.ModerationStatus.PENDING_REVIEW
+                    && !isUserReportedReview(review))) {
                 throw new IllegalArgumentException("Đánh giá của bạn đang chờ kiểm duyệt. Vui lòng đợi admin xử lý trước khi gửi lại.");
             }
 
@@ -134,6 +140,47 @@ public class MovieReviewService {
         MovieReview review = getOwnedReview(movieId, reviewId, user);
         violationLogRepo.deleteByReview_ReviewId(review.getReviewId());
         reviewRepo.delete(review);
+    }
+
+    @Transactional
+    public MovieReviewResponseDTO reportReview(
+            Long movieId,
+            Long reviewId,
+            String username,
+            MovieReviewReportRequestDTO request) {
+        User reporter = getCustomerUser(username);
+        MovieReview review = reviewRepo.findById(reviewId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy đánh giá"));
+
+        Long reviewMovieId = review.getMovie() != null ? review.getMovie().getMovieId() : null;
+        if (!movieId.equals(reviewMovieId)) {
+            throw new IllegalArgumentException("Đánh giá không thuộc phim này");
+        }
+        if (review.getUser() != null && reporter.getUserId().equals(review.getUser().getUserId())) {
+            throw new IllegalArgumentException("Bạn không thể báo cáo đánh giá của chính mình");
+        }
+        if (review.getModerationStatus() == MovieReview.ModerationStatus.REJECTED) {
+            throw new IllegalArgumentException("Đánh giá này đã bị từ chối");
+        }
+
+        String reason = request == null || request.getReason() == null ? "" : request.getReason().trim();
+        if (reason.length() > 500) {
+            throw new IllegalArgumentException("Lý do báo cáo tối đa 500 ký tự");
+        }
+
+        if (review.getModerationStatus() == null) {
+            review.setModerationStatus(MovieReview.ModerationStatus.APPROVED);
+        }
+        review.setFlagged(false);
+        review.setViolationType("USER_REPORT");
+        review.setViolationSeverity("MEDIUM");
+        review.setViolationReason(truncate(buildReportReason(reporter, reason), 1000));
+        review.setModerationProvider("USER_REPORT");
+        review.setModeratedAt(LocalDateTime.now());
+        MovieReview saved = reviewRepo.save(review);
+
+        logUserReport(reporter, saved, reason);
+        return toResponse(saved);
     }
 
     private User getCustomerUser(String username) {
@@ -227,7 +274,12 @@ public class MovieReviewService {
             return !reviewModerationService.looksUnsafeByRules(review.getComment());
         }
         return review.getModerationStatus() == MovieReview.ModerationStatus.APPROVED
-                && !Boolean.TRUE.equals(review.getFlagged());
+                || (review.getModerationStatus() == MovieReview.ModerationStatus.PENDING_REVIEW
+                && isUserReportedReview(review));
+    }
+
+    private boolean isUserReportedReview(MovieReview review) {
+        return "USER_REPORT".equalsIgnoreCase(review.getViolationType());
     }
 
     private void applyModerationResult(MovieReview review, ReviewModerationService.ModerationResult moderation) {
@@ -259,11 +311,55 @@ public class MovieReviewService {
         violationLogRepo.save(log);
     }
 
+    private void logUserReport(User reporter, MovieReview review, String reason) {
+        User reviewOwner = review.getUser();
+        UserViolationLog log = new UserViolationLog();
+        log.setUser(reviewOwner != null ? reviewOwner : reporter);
+        log.setReview(review);
+        log.setSourceType("MOVIE_REVIEW_REPORT");
+        log.setViolationType("USER_REPORT");
+        log.setSeverity("MEDIUM");
+        log.setReason(truncate(buildReportReason(reporter, reason), 1000));
+        log.setContentSnapshot(truncate(review.getComment(), 1000));
+        log.setModerationProvider("USER_REPORT");
+        violationLogRepo.save(log);
+    }
+
+    private String buildReportReason(User reporter, String reason) {
+        String detail = reason == null || reason.isBlank() ? "Khách hàng không nhập lý do cụ thể." : reason;
+        return "Khách hàng " + reporter.getEmail() + " báo cáo: " + normalizeStoredText(detail);
+    }
+
     private String truncate(String value, int maxLength) {
         if (value == null) {
             return null;
         }
         return value.length() <= maxLength ? value : value.substring(0, maxLength);
+    }
+
+    private String normalizeStoredText(String value) {
+        if (value == null || value.isEmpty()) {
+            return value;
+        }
+
+        String normalized = value;
+        for (int i = 0; i < 2; i++) {
+            String decoded = repairStoredTextOnce(normalized);
+            if (decoded.equals(normalized)) {
+                return normalized;
+            }
+            normalized = decoded;
+        }
+        return normalized;
+    }
+
+    private String repairStoredTextOnce(String value) {
+        try {
+            String decoded = new String(value.getBytes(WINDOWS_1252), StandardCharsets.UTF_8);
+            return decoded.contains(REPLACEMENT_CHARACTER) ? value : decoded;
+        } catch (RuntimeException ignored) {
+            return value;
+        }
     }
 
     private MovieReviewResponseDTO toResponse(MovieReview review) {
@@ -282,7 +378,7 @@ public class MovieReviewService {
                 .flagged(review.getFlagged())
                 .violationType(review.getViolationType())
                 .violationSeverity(review.getViolationSeverity())
-                .violationReason(review.getViolationReason())
+                .violationReason(normalizeStoredText(review.getViolationReason()))
                 .createdAt(review.getCreatedAt())
                 .build();
     }

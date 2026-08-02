@@ -3,6 +3,7 @@ package com.example.cinema.service;
 import com.example.cinema.domain.Movie;
 import com.example.cinema.domain.Room;
 import com.example.cinema.domain.Showtime;
+import com.example.cinema.domain.Snack;
 import com.example.cinema.repository.BookingRepository;
 import com.example.cinema.repository.MovieRepository;
 import com.example.cinema.repository.MovieReviewRepository;
@@ -22,6 +23,8 @@ import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -143,6 +146,48 @@ class CinemaBotServiceQuickReplyTest {
 
         assertThat(answer).contains("rạp chưa có suất chiếu");
         assertThat(answer).doesNotContain("Lật Mặt 7");
+    }
+
+    @Test
+    void snackPriceFollowUpReplacesPreviousPriceFilter() {
+        Snack combo = snack(1L, "Combo Gau", Snack.SnackCategory.COMBO, 119000.0);
+        Snack coke = snack(2L, "Coke 32oz", Snack.SnackCategory.DRINK, 37000.0);
+        Snack poca = snack(3L, "Poca Wavy 54gr", Snack.SnackCategory.SNACK, 28000.0);
+        List<Snack> snacks = List.of(combo, coke, poca);
+
+        when(snackRepository.findAll()).thenReturn(snacks);
+        when(snackRepository.findByAvailableTrue()).thenReturn(snacks);
+        when(retrievalService.denseSearchSnacks(anyString(), any())).thenReturn(List.of());
+        when(retrievalService.sparseSearchSnacks(any(), any())).thenReturn(List.of());
+
+        CinemaBotService service = service();
+
+        service.askBot("Hien tai rap dang co nhung loai bap nuoc nao?", "snack-price-context");
+        String expensiveAnswer = service.askBot("Co nhung loai nao tren 100k khong?", "snack-price-context");
+        String cheapAnswer = service.askBot("Nhung loai duoi 50k thi sao?", "snack-price-context");
+        String userSelectedCheapAnswer = service.askBot("Doi lai duoi 30k di", "snack-price-context");
+
+        assertThat(expensiveAnswer).contains("Combo Gau");
+        assertThat(cheapAnswer)
+                .contains("Coke 32oz")
+                .contains("Poca Wavy 54gr")
+                .doesNotContain("chua co")
+                .doesNotContain("Combo Gau");
+        assertThat(userSelectedCheapAnswer)
+                .contains("Poca Wavy 54gr")
+                .doesNotContain("Coke 32oz")
+                .doesNotContain("Combo Gau");
+    }
+
+    private Snack snack(Long id, String name, Snack.SnackCategory category, Double price) {
+        Snack snack = new Snack();
+        snack.setSnackId(id);
+        snack.setSnackName(name);
+        snack.setCategory(category);
+        snack.setPrice(price);
+        snack.setDescription("");
+        snack.setAvailable(true);
+        return snack;
     }
 
     private CinemaBotService service() {

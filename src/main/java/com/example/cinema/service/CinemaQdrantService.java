@@ -87,6 +87,30 @@ public class CinemaQdrantService {
         }
     }
 
+    public boolean deleteDocument(String sourceType, Long sourceId, String sourceKey) {
+        if (!enabled || sourceType == null || (sourceId == null && (sourceKey == null || sourceKey.isBlank()))) {
+            return false;
+        }
+
+        String resolvedSourceKey = sourceKey != null && !sourceKey.isBlank()
+                ? sourceKey
+                : String.valueOf(sourceId);
+        String pointId = stablePointId(sourceType, resolvedSourceKey);
+        Map<String, Object> request = Map.of("points", List.of(pointId));
+
+        try {
+            restTemplate.exchange(
+                    qdrantUrl + "/collections/" + collectionName + "/points/delete?wait=true",
+                    HttpMethod.POST,
+                    new HttpEntity<>(request, jsonHeaders()),
+                    Map.class
+            );
+            return true;
+        } catch (RestClientException ex) {
+            return false;
+        }
+    }
+
     public List<QdrantMatch> search(String sourceType, List<Double> queryEmbedding, int limit) {
         if (!enabled || sourceType == null || queryEmbedding == null || queryEmbedding.isEmpty()) {
             return List.of();

@@ -13,6 +13,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -20,6 +22,9 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/admin/review-moderation")
 public class AdminReviewModerationController {
+
+    private static final Charset WINDOWS_1252 = Charset.forName("Windows-1252");
+    private static final String REPLACEMENT_CHARACTER = String.valueOf((char) 65533);
 
     private final MovieReviewRepository reviewRepo;
     private final UserViolationLogRepository violationLogRepo;
@@ -37,7 +42,9 @@ public class AdminReviewModerationController {
     @GetMapping("/flagged-reviews")
     @Transactional(readOnly = true)
     public List<MovieReviewResponseDTO> getFlaggedReviews() {
-        return reviewRepo.findByModerationStatusOrderByCreatedAtDesc(MovieReview.ModerationStatus.FLAGGED)
+        return reviewRepo.findReviewsNeedingAdminAttention(List.of(
+                        MovieReview.ModerationStatus.FLAGGED,
+                        MovieReview.ModerationStatus.PENDING_REVIEW))
                 .stream()
                 .map(this::toReviewResponse)
                 .toList();
@@ -117,7 +124,7 @@ public class AdminReviewModerationController {
                 .flagged(review.getFlagged())
                 .violationType(review.getViolationType())
                 .violationSeverity(review.getViolationSeverity())
-                .violationReason(review.getViolationReason())
+                .violationReason(normalizeStoredText(review.getViolationReason()))
                 .createdAt(review.getCreatedAt())
                 .build();
     }
@@ -137,10 +144,35 @@ public class AdminReviewModerationController {
                 .sourceType(log.getSourceType())
                 .violationType(log.getViolationType())
                 .severity(log.getSeverity())
-                .reason(log.getReason())
-                .contentSnapshot(log.getContentSnapshot())
+                .reason(normalizeStoredText(log.getReason()))
+                .contentSnapshot(normalizeStoredText(log.getContentSnapshot()))
                 .moderationProvider(log.getModerationProvider())
                 .createdAt(log.getCreatedAt())
                 .build();
+    }
+
+    private String normalizeStoredText(String value) {
+        if (value == null || value.isEmpty()) {
+            return value;
+        }
+
+        String normalized = value;
+        for (int i = 0; i < 2; i++) {
+            String decoded = repairStoredTextOnce(normalized);
+            if (decoded.equals(normalized)) {
+                return normalized;
+            }
+            normalized = decoded;
+        }
+        return normalized;
+    }
+
+    private String repairStoredTextOnce(String value) {
+        try {
+            String decoded = new String(value.getBytes(WINDOWS_1252), StandardCharsets.UTF_8);
+            return decoded.contains(REPLACEMENT_CHARACTER) ? value : decoded;
+        } catch (RuntimeException ignored) {
+            return value;
+        }
     }
 }

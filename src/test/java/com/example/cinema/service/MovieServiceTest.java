@@ -21,6 +21,9 @@ class MovieServiceTest {
     @Mock
     private MovieRepository movieRepository;
 
+    @Mock
+    private CinemaQdrantService qdrantService;
+
     @Test
     void updateDescriptionDoesNotClearRequiredFieldsWhenPayloadIsPartial() {
         Movie existing = new Movie();
@@ -42,7 +45,7 @@ class MovieServiceTest {
         when(movieRepository.findById(1L)).thenReturn(Optional.of(existing));
         when(movieRepository.save(any(Movie.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Movie updated = new MovieService(movieRepository).update(1L, partialUpdate);
+        Movie updated = new MovieService(movieRepository, qdrantService).update(1L, partialUpdate);
 
         assertThat(updated.getTitle()).isEqualTo("MAI");
         assertThat(updated.getDuration()).isEqualTo(131);
@@ -53,5 +56,6 @@ class MovieServiceTest {
         ArgumentCaptor<Movie> savedMovie = ArgumentCaptor.forClass(Movie.class);
         verify(movieRepository).save(savedMovie.capture());
         assertThat(savedMovie.getValue().getTitle()).isEqualTo("MAI");
+        verify(qdrantService).deleteDocument("MOVIE", 1L, "MOVIE:1");
     }
 }

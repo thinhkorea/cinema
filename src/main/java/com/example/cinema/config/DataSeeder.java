@@ -317,7 +317,7 @@ public class DataSeeder {
                 "Trấn Thành, Tuấn Trần");
 
             Movie m22 = createMovie("Mắt Biếc", 117, "Lãng mạn, Chính kịch",
-                "Dựa trên truyện của Nguyễn Nhật Ánh, phim là câu chuyện tình đơn phương của Ngạn dành cho Hà Lan, cô bạn có đôi mắt biếc.",
+                "Dựa trên truyện của Nguyễn Nhật Ánh, phim là câu chuyện tình đơn phương của Ngạn dành cho Hà Lan, cô bạn thanh mai trúc mã lớn lên cùng Ngạn ở làng Đo Đo. Khi trưởng thành, Ngạn lên thành phố Huế học, còn Hà Lan ở quê rồi sau đó cũng lên thành phố. Hà Lan bị cuốn vào mối tình với Dũng, mang thai và sinh con gái Trà Long nhưng bị bỏ rơi. Ngạn vẫn âm thầm chăm sóc, yêu thương Hà Lan và chở che cho Trà Long suốt nhiều năm.",
                 "https://upload.wikimedia.org/wikipedia/vi/4/42/%C3%81p_ph%C3%ADch_phim_M%E1%BA%AFt_bi%E1%BA%BFc.jpg",
                 "https://www.youtube.com/watch?v=MNm77lvTfi4",
                 Movie.MovieStatus.COMING_SOON,

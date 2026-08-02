@@ -12,9 +12,11 @@ import java.util.Optional;
 public class MovieService {
 
     private final MovieRepository movieRepo;
+    private final CinemaQdrantService qdrantService;
 
-    public MovieService(MovieRepository movieRepo) {
+    public MovieService(MovieRepository movieRepo, CinemaQdrantService qdrantService) {
         this.movieRepo = movieRepo;
+        this.qdrantService = qdrantService;
     }
 
     public List<Movie> findAll() {
@@ -69,6 +71,7 @@ public class MovieService {
                     }
                     if (searchableFieldsChanged) {
                         existing.setSearchEmbedding(null);
+                        qdrantService.deleteDocument("MOVIE", existing.getMovieId(), "MOVIE:" + existing.getMovieId());
                     }
                     return movieRepo.save(existing);
                 })

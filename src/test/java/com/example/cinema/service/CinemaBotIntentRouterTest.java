@@ -70,6 +70,17 @@ class CinemaBotIntentRouterTest {
     }
 
     @Test
+    void routesBroadConcessionQuestionWithoutSnackCategoryFilter() {
+        CinemaBotService.QueryAnalysis result = router.route(
+                "Trong rap hien tai co kinh doanh bap nuoc nao?",
+                analysis("GENERAL")
+        );
+
+        assertThat(result.intent).isEqualTo("SNACKS");
+        assertThat(result.filters).noneMatch(filter -> filter != null && filter.startsWith("category:"));
+    }
+
+    @Test
     void extractsVoucherMinimumOrderFilter() {
         CinemaBotService.QueryAnalysis result = router.route(
                 "Tôi có voucher nào dùng được cho đơn trên 100 nghìn không?",
@@ -78,6 +89,54 @@ class CinemaBotIntentRouterTest {
 
         assertThat(result.intent).isEqualTo("VOUCHERS");
         assertThat(result.filters).contains("price_min:100000");
+    }
+
+    @Test
+    void resolvesSnackPriceFollowUpFromPreviousSnackContext() {
+        String intent = router.resolveContextualIntent("Co cai nao duoi 100k khong?", "SNACKS");
+
+        assertThat(intent).isEqualTo("SNACKS");
+
+        CinemaBotService.QueryAnalysis result = router.route(
+                "Co cai nao duoi 100k khong?",
+                analysis(intent)
+        );
+
+        assertThat(result.intent).isEqualTo("SNACKS");
+        assertThat(result.filters).contains("price_max:100000");
+    }
+
+    @Test
+    void resolvesMoreProductsFollowUpFromPreviousSnackContext() {
+        String intent = router.resolveContextualIntent("Khong con san pham khac ha?", "SNACKS");
+
+        assertThat(intent).isEqualTo("SNACKS");
+    }
+
+    @Test
+    void routesDrinkMinimumPriceQuestionToSnacks() {
+        CinemaBotService.QueryAnalysis result = router.route(
+                "Co nuoc uong nao tren 100k khong?",
+                analysis("GENERAL")
+        );
+
+        assertThat(result.intent).isEqualTo("SNACKS");
+        assertThat(result.filters).contains("category:DRINK", "price_min:100000");
+    }
+
+    @Test
+    void resolvesShowtimeDateFollowUpFromPreviousShowtimeContext() {
+        String intent = router.resolveContextualIntent("Ngay mai thi sao?", "SHOWTIMES");
+
+        assertThat(intent).isEqualTo("SHOWTIMES");
+
+        CinemaBotService.QueryAnalysis result = router.route(
+                "Ngay mai thi sao?",
+                analysis(intent)
+        );
+
+        assertThat(result.intent).isEqualTo("SHOWTIMES");
+        assertThat(result.filters).contains("date:" + router.normalize("ngay mai"));
     }
 
     @Test

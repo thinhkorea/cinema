@@ -156,6 +156,26 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
        List<Object[]> getRevenueByStaff();
 
        @Query("""
+                     SELECT c.customerId AS customerId,
+                            u.fullName AS customerName,
+                            u.email AS email,
+                            u.phone AS phone,
+                            COUNT(b.bookingId) AS ticketCount,
+                            SUM(b.total - COALESCE(b.pointsUsed, 0) * 1000) AS totalSpent
+                     FROM Booking b
+                     JOIN b.customer c
+                     JOIN c.user u
+                     WHERE b.status = com.example.cinema.domain.Booking$Status.PAID
+                       AND b.createdAt >= :from
+                       AND b.createdAt < :to
+                     GROUP BY c.customerId, u.fullName, u.email, u.phone
+                     ORDER BY totalSpent DESC
+                     """)
+       List<Object[]> getCustomerTicketSpendingBetween(
+                     @Param("from") LocalDateTime from,
+                     @Param("to") LocalDateTime to);
+
+       @Query("""
                      SELECT HOUR(b.showtime.startTime) AS showtimeHour,
                             MINUTE(b.showtime.startTime) AS showtimeMinute,
                             SUM(b.total - COALESCE(b.pointsUsed, 0) * 1000) AS revenue

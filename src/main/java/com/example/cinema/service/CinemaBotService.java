@@ -144,6 +144,8 @@ public class CinemaBotService {
 
         // ===== GIAI ĐOẠN 1: Phân tích & Tiền xử lý (Query Transformation) =====
         QueryAnalysis analysis = resolveQueryAnalysis(userMessage, contextualIntent);
+        analysis = mergeContextualAnalysis(analysis, previousContext, contextualIntent);
+        analysis = enrichEntityFilters(analysis, userMessage);
         String intent = analysis != null && analysis.intent != null ? analysis.intent.toUpperCase() : "GENERAL";
         List<String> keywords = analysis != null ? analysis.keywords : null;
         List<String> filters = analysis != null ? analysis.filters : null;
@@ -151,7 +153,7 @@ public class CinemaBotService {
                 || ("LOYALTY".equals(contextualIntent) && intentRouter.isExpiryFollowUpQuestion(userMessage));
 
         log.info("[CinemaBot] intent={}, keywords={}, filters={}", intent, keywords, filters);
-        rememberConversationContext(contextKey, intent);
+        rememberConversationContext(contextKey, analysis);
 
         if (shouldClarifyOverBroadMovieIntent(intent, userMessage, keywords, filters)) {
             return buildBusinessClarificationReply();
@@ -235,7 +237,7 @@ public class CinemaBotService {
 
     private QueryAnalysis resolveQueryAnalysis(String userMessage, String contextualIntent) {
         if (contextualIntent != null) {
-            return contextualAnalysis(contextualIntent);
+            return intentRouter.route(userMessage, contextualAnalysis(contextualIntent));
         }
 
         QueryAnalysis deterministicAnalysis = intentRouter.route(userMessage, fallbackAnalysis());
@@ -284,11 +286,109 @@ public class CinemaBotService {
         return context;
     }
 
-    private void rememberConversationContext(String contextKey, String intent) {
-        if (contextKey == null || intent == null || !isContextAwareIntent(intent)) {
+    private void rememberConversationContext(String contextKey, QueryAnalysis analysis) {
+        if (contextKey == null || analysis == null || analysis.intent == null || !isContextAwareIntent(analysis.intent)) {
             return;
         }
-        conversationContexts.put(contextKey, new BotConversationContext(intent, LocalDateTime.now()));
+        conversationContexts.put(contextKey, new BotConversationContext(
+                analysis.intent.toUpperCase(Locale.ROOT),
+                analysis.keywords,
+                analysis.filters,
+                LocalDateTime.now()
+        ));
+    }
+
+    private QueryAnalysis mergeContextualAnalysis(QueryAnalysis analysis, BotConversationContext previousContext, String contextualIntent) {
+        if (analysis == null || previousContext == null || contextualIntent == null) {
+            return analysis;
+        }
+        if (analysis.intent == null || !analysis.intent.equalsIgnoreCase(previousContext.lastIntent)) {
+            return analysis;
+        }
+
+        QueryAnalysis merged = copyAnalysis(analysis);
+        merged.filters = mergeFilters(previousContext.lastFilters, merged.filters);
+        if ((merged.keywords == null || merged.keywords.isEmpty()) && previousContext.lastKeywords != null) {
+            merged.keywords = new ArrayList<>(previousContext.lastKeywords);
+        }
+        return merged;
+    }
+
+    private QueryAnalysis copyAnalysis(QueryAnalysis source) {
+        QueryAnalysis copy = new QueryAnalysis();
+        copy.intent = source != null && source.intent != null ? source.intent : "GENERAL";
+        copy.keywords = source != null && source.keywords != null ? new ArrayList<>(source.keywords) : new ArrayList<>();
+        copy.filters = source != null && source.filters != null ? new ArrayList<>(source.filters) : new ArrayList<>();
+        return copy;
+    }
+
+    private QueryAnalysis enrichEntityFilters(QueryAnalysis analysis, String userMessage) {
+        if (analysis == null || analysis.intent == null) {
+            return analysis;
+        }
+        String intent = analysis.intent.toUpperCase(Locale.ROOT);
+        if (!"SHOWTIMES".equals(intent) && !"MOVIE_DETAIL".equals(intent)) {
+            return analysis;
+        }
+
+        Movie mentionedMovie = findMovieMentionedInMessage(
+                userMessage != null ? userMessage.toLowerCase(Locale.ROOT).trim() : "",
+                movieRepository.findAll()
+        );
+        if (mentionedMovie != null && mentionedMovie.getMovieId() != null) {
+            putFilter(analysis, "movie_id", String.valueOf(mentionedMovie.getMovieId()));
+        }
+        return analysis;
+    }
+
+    private void putFilter(QueryAnalysis analysis, String key, String value) {
+        if (analysis == null || key == null || key.isBlank() || value == null || value.isBlank()) {
+            return;
+        }
+        if (analysis.filters == null) {
+            analysis.filters = new ArrayList<>();
+        }
+        String prefix = key + ":";
+        analysis.filters.removeIf(filter -> filter != null && filter.startsWith(prefix));
+        analysis.filters.add(prefix + value);
+    }
+
+    private List<String> mergeFilters(List<String> previousFilters, List<String> currentFilters) {
+        Map<String, String> byKey = new LinkedHashMap<>();
+        addFiltersByKey(byKey, previousFilters);
+        if (hasAnyFilter(currentFilters, "price_min", "price_max")) {
+            byKey.remove("price_min");
+            byKey.remove("price_max");
+        }
+        addFiltersByKey(byKey, currentFilters);
+        return new ArrayList<>(byKey.values());
+    }
+
+    private boolean hasAnyFilter(List<String> filters, String... keys) {
+        if (filters == null || filters.isEmpty()) {
+            return false;
+        }
+        Set<String> keySet = Arrays.stream(keys).collect(Collectors.toSet());
+        return filters.stream()
+                .map(this::resolveFilterKey)
+                .anyMatch(keySet::contains);
+    }
+
+    private void addFiltersByKey(Map<String, String> target, List<String> filters) {
+        if (filters == null) {
+            return;
+        }
+        for (String filter : filters) {
+            if (filter == null || filter.isBlank()) {
+                continue;
+            }
+            target.put(resolveFilterKey(filter), filter);
+        }
+    }
+
+    private String resolveFilterKey(String filter) {
+        int separatorIndex = filter.indexOf(':');
+        return separatorIndex > 0 ? filter.substring(0, separatorIndex).trim() : filter.trim();
     }
 
     private boolean isContextAwareIntent(String intent) {
@@ -369,15 +469,35 @@ public class CinemaBotService {
     }
 
     public List<CinemaBotShowtimeSuggestionDTO> suggestShowtimes(String userMessage) {
-        if (!isShowtimeSuggestionRequest(userMessage)) {
+        return suggestShowtimes(userMessage, null);
+    }
+
+    public List<CinemaBotShowtimeSuggestionDTO> suggestShowtimes(String userMessage, String conversationId) {
+        String contextKey = resolveConversationKey(conversationId);
+        BotConversationContext previousContext = getValidConversationContext(contextKey);
+        String contextualIntent = previousContext != null
+                ? intentRouter.resolveContextualIntent(userMessage, previousContext.lastIntent)
+                : null;
+        boolean directShowtimeRequest = isShowtimeSuggestionRequest(userMessage);
+        if (!directShowtimeRequest && !"SHOWTIMES".equals(contextualIntent)) {
             return Collections.emptyList();
         }
-
         String cleanedMsg = userMessage != null ? userMessage.toLowerCase().trim() : "";
-        QueryAnalysis analysis = intentRouter.route(userMessage, fallbackAnalysis());
+        QueryAnalysis analysis = intentRouter.route(
+                userMessage,
+                contextualIntent != null ? contextualAnalysis(contextualIntent) : fallbackAnalysis()
+        );
+        analysis = mergeContextualAnalysis(analysis, previousContext, contextualIntent);
+        analysis = enrichEntityFilters(analysis, userMessage);
+        if (analysis == null || !"SHOWTIMES".equalsIgnoreCase(analysis.intent)) {
+            return Collections.emptyList();
+        }
         List<String> filters = analysis != null ? analysis.filters : Collections.emptyList();
         List<Movie> allMovies = movieRepository.findAll();
         Movie matchedMovie = findMovieMentionedInMessage(cleanedMsg, allMovies);
+        if (matchedMovie == null) {
+            matchedMovie = findMovieByContextFilter(filters, allMovies);
+        }
         ShowtimeDateRange dateRange = resolveShowtimeDateRange(filters, cleanedMsg);
 
         List<Showtime> candidates = matchedMovie != null
@@ -394,7 +514,7 @@ public class CinemaBotService {
 
         return filteredCandidates.stream()
                 .sorted((a, b) -> Double.compare(calculateShowtimeBusinessScore(b), calculateShowtimeBusinessScore(a)))
-                .limit(3)
+                .limit(1)
                 .map(this::toShowtimeSuggestion)
                 .collect(Collectors.toList());
     }
@@ -787,6 +907,9 @@ public class CinemaBotService {
         // Với lịch chiếu, chỉ match phim nếu tên phim thật sự xuất hiện trong câu hỏi.
         // Không dùng keyword LLM ở đây vì câu rộng như "Hôm nay có phim gì?" có thể bị LLM đoán nhầm tên phim.
         Movie matchedMovie = findMovieMentionedInMessage(cleanedMsg, allMovies);
+        if (matchedMovie == null) {
+            matchedMovie = findMovieByContextFilter(filters, allMovies);
+        }
 
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
         ShowtimeDateRange dateRange = resolveShowtimeDateRange(filters, cleanedMsg);
@@ -803,9 +926,9 @@ public class CinemaBotService {
             futureShowtimes = applyShowtimeFilters(futureShowtimes, filters);
 
             if (futureShowtimes.isEmpty() && dateRange.explicitDate) {
-                return String.format("[DIRECT_REPLY]D\u1ea1 ng\u00e0y %s ch\u01b0a c\u00f3 su\u1ea5t chi\u1ebfu n\u00e0o cho phim '%s'%s \u1ea1.",
+                return String.format("[DIRECT_REPLY]Dạ ngày %s chưa có suất chiếu nào cho phim '%s'%s ạ.",
                         dateRange.label, matchedMovie.getTitle(),
-                        hasActiveFilters(filters) ? " ph\u00f9 h\u1ee3p v\u1edbi \u0111i\u1ec1u ki\u1ec7n l\u1ecdc c\u1ee7a b\u1ea1n" : "");
+                        hasActiveFilters(filters) ? " phù hợp với điều kiện lọc của bạn" : "");
             }
 
             if (futureShowtimes.isEmpty()) {
@@ -830,8 +953,16 @@ public class CinemaBotService {
             sb.append(String.format("Danh sách lịch chiếu sắp tới của phim '%s' (khách hàng có thể mua vé trực tuyến ngay, hệ thống cho phép đặt trước giờ chiếu 10 phút):\n",
                     matchedMovie.getTitle()));
             }
-            for (ScoredItem<Showtime> scored : scoredShowtimes) {
-                Showtime s = scored.item;
+            if (scoredShowtimes.size() > 1) {
+                Showtime sample = scoredShowtimes.get(0).item;
+                sb.append(String.format("- Mẫu phù hợp nhất: Phòng chiếu: %s%s, Bắt đầu: %s, Giá: %,.0f VNĐ\n",
+                        sample.getRoom() != null ? sample.getRoom().getRoomName() : "N/A",
+                        sample.getRoom() != null && sample.getRoom().getRoomType() != null ? " (" + sample.getRoom().getRoomType() + ")" : "",
+                        sample.getStartTime().format(formatter),
+                        sample.getPrice() != null ? sample.getPrice() : 0.0));
+                sb.append(String.format("Mình tìm thấy %d suất phù hợp. Bạn muốn chọn khung giờ nào hoặc khoảng giá/phòng chiếu nào để mình lọc chính xác hơn?", scoredShowtimes.size()));
+            } else {
+                Showtime s = scoredShowtimes.get(0).item;
                 sb.append(String.format("- Phòng chiếu: %s%s, Bắt đầu: %s, Giá: %,.0f VNĐ\n",
                         s.getRoom() != null ? s.getRoom().getRoomName() : "N/A",
                         s.getRoom() != null && s.getRoom().getRoomType() != null ? " (" + s.getRoom().getRoomType() + ")" : "",
@@ -854,8 +985,8 @@ public class CinemaBotService {
                     return String.format("[DIRECT_REPLY]Dạ ngày %s rạp chưa có phim thể loại %s nào có suất chiếu phù hợp ạ. Bạn có muốn mình gợi ý phim thể loại khác hoặc xem toàn bộ lịch chiếu không?",
                             dateRange.label, genreFilter);
                 }
-                return String.format("[DIRECT_REPLY]D\u1ea1 ng\u00e0y %s r\u1ea1p ch\u01b0a c\u00f3 su\u1ea5t chi\u1ebfu n\u00e0o%s \u1ea1.",
-                        dateRange.label, hasActiveFilters(filters) ? " ph\u00f9 h\u1ee3p v\u1edbi \u0111i\u1ec1u ki\u1ec7n l\u1ecdc c\u1ee7a b\u1ea1n" : "");
+                return String.format("[DIRECT_REPLY]Dạ ngày %s rạp chưa có suất chiếu nào%s ạ.",
+                        dateRange.label, hasActiveFilters(filters) ? " phù hợp với điều kiện lọc của bạn" : "");
             }
 
             if (futureShowtimes.isEmpty()) {
@@ -975,6 +1106,15 @@ public class CinemaBotService {
             if (priceMax != null) {
                 return String.format("[DIRECT_REPLY]Dạ hiện tại rạp chưa có bắp nước hoặc combo nào dưới %,.0f VNĐ phù hợp với yêu cầu của bạn ạ. Bạn có muốn xem toàn bộ thực đơn không?",
                         priceMax);
+            }
+            Double priceMin = extractFilterDouble(filters, "price_min");
+            if (priceMin != null && categoryFilter != null) {
+                return String.format("[DIRECT_REPLY]Dạ hiện tại rạp chưa có %s nào trên %,.0f VNĐ phù hợp với yêu cầu của bạn ạ. Bạn có muốn xem toàn bộ thực đơn không?",
+                        formatSnackCategoryLabel(categoryFilter), priceMin);
+            }
+            if (priceMin != null) {
+                return String.format("[DIRECT_REPLY]Dạ hiện tại rạp chưa có bắp nước hoặc combo nào trên %,.0f VNĐ phù hợp với yêu cầu của bạn ạ. Bạn có muốn xem toàn bộ thực đơn không?",
+                        priceMin);
             }
             return "[DIRECT_REPLY]Dạ hiện tại rạp chưa có bắp nước hoặc combo nào phù hợp với yêu cầu của bạn ạ. Bạn có muốn xem toàn bộ thực đơn không?";
         }
@@ -1451,6 +1591,13 @@ public class CinemaBotService {
         if (priceMax != null) {
             filtered = filtered.stream()
                     .filter(s -> s.getPrice() <= priceMax)
+                    .collect(Collectors.toList());
+        }
+
+        Double priceMin = extractFilterDouble(filters, "price_min");
+        if (priceMin != null) {
+            filtered = filtered.stream()
+                    .filter(s -> s.getPrice() >= priceMin)
                     .collect(Collectors.toList());
         }
 
@@ -2019,6 +2166,17 @@ public class CinemaBotService {
     /**
      * Chuyển đổi và làm sạch dữ liệu JSON trích xuất từ Ollama.
      */
+    private Movie findMovieByContextFilter(List<String> filters, List<Movie> allMovies) {
+        Long movieId = extractFilterLong(filters, "movie_id");
+        if (movieId == null || allMovies == null || allMovies.isEmpty()) {
+            return null;
+        }
+        return allMovies.stream()
+                .filter(movie -> movie.getMovieId() != null && movie.getMovieId().equals(movieId))
+                .findFirst()
+                .orElse(null);
+    }
+
     private boolean hasExplicitShortMovieTitleCue(String normalizedMessage, String normalizedTitle) {
         return containsPhraseAsWords(normalizedMessage, "phim " + normalizedTitle)
                 || containsPhraseAsWords(normalizedMessage, "lich chieu " + normalizedTitle)
@@ -2094,6 +2252,16 @@ public class CinemaBotService {
     /**
      * Kiểm tra xem có filter nào đang hoạt động không.
      */
+    private Long extractFilterLong(List<String> filters, String key) {
+        String value = extractFilter(filters, key);
+        if (value == null) return null;
+        try {
+            return Long.parseLong(value.replaceAll("[^0-9]", ""));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
     private boolean hasActiveFilters(List<String> filters) {
         return filters != null && !filters.isEmpty() && filters.stream().anyMatch(f -> f != null && f.contains(":"));
     }
@@ -2215,10 +2383,14 @@ public class CinemaBotService {
 
     private static class BotConversationContext {
         final String lastIntent;
+        final List<String> lastKeywords;
+        final List<String> lastFilters;
         final LocalDateTime updatedAt;
 
-        BotConversationContext(String lastIntent, LocalDateTime updatedAt) {
+        BotConversationContext(String lastIntent, List<String> lastKeywords, List<String> lastFilters, LocalDateTime updatedAt) {
             this.lastIntent = lastIntent;
+            this.lastKeywords = lastKeywords != null ? new ArrayList<>(lastKeywords) : new ArrayList<>();
+            this.lastFilters = lastFilters != null ? new ArrayList<>(lastFilters) : new ArrayList<>();
             this.updatedAt = updatedAt;
         }
 

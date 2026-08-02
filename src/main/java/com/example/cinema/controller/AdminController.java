@@ -7,6 +7,7 @@ import com.example.cinema.domain.User;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -85,6 +86,19 @@ public class AdminController {
     public ResponseEntity<?> getRevenueByStaff() {
         // Sử dụng BookingService để đảm bảo tính nhất quán dữ liệu
         return ResponseEntity.ok(bookingService.getRevenueByStaff());
+    }
+
+    @GetMapping("/revenue/customers/top-month")
+    public ResponseEntity<?> getTopCustomerSpendingByMonth(
+            @RequestParam(required = false) Integer year,
+            @RequestParam(required = false) Integer month) {
+        LocalDate now = LocalDate.now();
+        int targetYear = year != null ? year : now.getYear();
+        int targetMonth = month != null ? month : now.getMonthValue();
+        if (targetMonth < 1 || targetMonth > 12) {
+            throw new IllegalArgumentException("Tháng thống kê không hợp lệ");
+        }
+        return ResponseEntity.ok(bookingService.getTopCustomerSpendingByMonth(targetYear, targetMonth));
     }
 
     @GetMapping("/revenue/time-slots")

@@ -1,5 +1,6 @@
 package com.example.cinema.controller;
 
+import com.example.cinema.dto.MovieReviewReportRequestDTO;
 import com.example.cinema.dto.MovieReviewRequestDTO;
 import com.example.cinema.service.MovieReviewService;
 import org.springframework.http.ResponseEntity;
@@ -68,6 +69,22 @@ public class MovieReviewController {
             }
             reviewService.deleteReview(movieId, reviewId, authentication.getName());
             return ResponseEntity.ok(Map.of("message", "Đã xóa đánh giá"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/{reviewId}/report")
+    public ResponseEntity<?> reportReview(
+            @PathVariable Long movieId,
+            @PathVariable Long reviewId,
+            @RequestBody(required = false) MovieReviewReportRequestDTO request,
+            Authentication authentication) {
+        try {
+            if (authentication == null) {
+                return ResponseEntity.status(401).body(Map.of("error", "Bạn cần đăng nhập để báo cáo bình luận"));
+            }
+            return ResponseEntity.ok(reviewService.reportReview(movieId, reviewId, authentication.getName(), request));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }

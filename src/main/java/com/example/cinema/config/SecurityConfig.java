@@ -92,6 +92,8 @@ public class SecurityConfig {
                                                 // Cho phép người dùng đã đăng nhập gửi review phim
                                                 .requestMatchers(HttpMethod.POST, "/api/movies/*/reviews")
                                                 .hasRole("CUSTOMER")
+                                                .requestMatchers(HttpMethod.POST, "/api/movies/*/reviews/*/report")
+                                                .hasRole("CUSTOMER")
                                                 .requestMatchers(HttpMethod.PUT, "/api/movies/*/reviews/*")
                                                 .hasRole("CUSTOMER")
                                                 .requestMatchers(HttpMethod.DELETE, "/api/movies/*/reviews/*")

@@ -222,6 +222,7 @@ public class CinemaRetrievalService {
 
         return qdrantService.search("MOVIE", queryEmbedding, DENSE_RESULT_LIMIT).stream()
                 .filter(match -> match.sourceId() != null && moviesById.containsKey(match.sourceId()))
+                .filter(match -> hasValidEmbedding(moviesById.get(match.sourceId()).getSearchEmbedding()))
                 .map(match -> new DenseCandidate<>(moviesById.get(match.sourceId()), match.score()))
                 .collect(Collectors.toList());
     }

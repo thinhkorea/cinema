@@ -18,7 +18,9 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -106,6 +108,38 @@ class CinemaRetrievalServiceTest {
         assertThat(status.totalPolicyDocuments()).isEqualTo(1);
         assertThat(status.embeddedPolicyDocuments()).isEqualTo(1);
         assertThat(status.qdrantPolicyDocumentPoints()).isEqualTo(1);
+    }
+
+    @Test
+    void denseSearchMoviesIgnoresStaleQdrantMatchesWhenMovieEmbeddingWasCleared() {
+        CinemaRetrievalService service = new CinemaRetrievalService(
+                embeddingService,
+                documentBuilder,
+                movieRepository,
+                snackRepository,
+                searchDocumentRepository,
+                qdrantService
+        );
+        Movie staleMovie = movie(1L, "Joker", "Tam ly", "Old cached vector");
+        staleMovie.setSearchEmbedding("stale-vector");
+        Movie freshMovie = movie(2L, "Mat Biec", "Lang man", "Thanh mai truc ma va Tra Long");
+        freshMovie.setSearchEmbedding("fresh-vector");
+
+        when(embeddingService.createEmbedding("thanh mai truc ma")).thenReturn(List.of(0.1, 0.2));
+        when(qdrantService.search(eq("MOVIE"), any(), anyInt()))
+                .thenReturn(List.of(
+                        new CinemaQdrantService.QdrantMatch(1L, "MOVIE:1", 0.99),
+                        new CinemaQdrantService.QdrantMatch(2L, "MOVIE:2", 0.80)
+                ));
+        when(embeddingService.readEmbedding("stale-vector")).thenReturn(List.of());
+        when(embeddingService.readEmbedding("fresh-vector")).thenReturn(List.of(0.3, 0.4));
+
+        List<CinemaRetrievalService.DenseCandidate<Movie>> results = service.denseSearchMoviesUsingExistingEmbeddings(
+                "thanh mai truc ma",
+                List.of(staleMovie, freshMovie)
+        );
+
+        assertThat(results).extracting(candidate -> candidate.item().getMovieId()).containsExactly(2L);
     }
 
     @Test

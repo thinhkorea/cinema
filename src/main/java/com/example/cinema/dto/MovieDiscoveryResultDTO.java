@@ -25,6 +25,7 @@ public class MovieDiscoveryResultDTO {
     private double score;
     private Double semanticScore;
     private Double rerankScore;
+    private Double rawRerankScore;
     private long processingTimeMs;
     private long semanticSearchTimeMs;
     private long rerankTimeMs;
