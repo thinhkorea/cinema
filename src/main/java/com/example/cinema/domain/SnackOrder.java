@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -46,16 +47,31 @@ public class SnackOrder {
     @Column(nullable = false)
     private Double totalAmount;
 
+    @Column(length = 60)
+    private String voucherCode;
+
+    private Double voucherDiscount = 0.0;
+
     @Column(length = 30)
     private String paymentMethod;
 
     @Column(length = 255)
     private String note;
 
+    private LocalDate pickupDate;
+
     @Column(length = 50)
     private String bookingTxnRef;
 
     private LocalDateTime paidAt;
+
+    private LocalDateTime fulfilledAt;
+
+    @Column(length = 100)
+    private String fulfilledBy;
+
+    @Column(nullable = false)
+    private boolean printed = false;
 
     @Column(nullable = false)
     private LocalDateTime createdAt;

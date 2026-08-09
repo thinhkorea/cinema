@@ -103,6 +103,12 @@ public class SecurityConfig {
                                                 .requestMatchers(HttpMethod.POST, "/api/vouchers/**")
                                                 .hasRole("CUSTOMER")
 
+                                                .requestMatchers(HttpMethod.GET, "/api/public/vouchers/active")
+                                                .permitAll()
+
+                                                .requestMatchers(HttpMethod.GET, "/api/snack-orders/lookup/*")
+                                                .hasAnyRole("ADMIN", "STAFF")
+
                                                 .requestMatchers("/api/snack-orders/**")
                                                 .hasRole("CUSTOMER")
 

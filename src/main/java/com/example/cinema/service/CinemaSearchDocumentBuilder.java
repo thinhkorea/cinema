@@ -5,12 +5,22 @@ import com.example.cinema.domain.Snack;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 @Component
 public class CinemaSearchDocumentBuilder {
+
+    private static final int MOVIE_CHUNK_MIN_DESCRIPTION_LENGTH = 180;
+    private static final int MOVIE_CHUNK_SENTENCES_PER_CHUNK = 3;
+    private static final int MOVIE_CHUNK_SENTENCE_OVERLAP = 1;
+    private static final int MOVIE_CHUNK_WORDS_PER_CHUNK = 90;
+    private static final int MOVIE_CHUNK_WORD_OVERLAP = 25;
+    private static final int MOVIE_CHUNK_MAX_CHUNKS = 8;
+    private static final Pattern SENTENCE_SPLIT_PATTERN = Pattern.compile("\\n+|(?<=[.!?])\\s+");
 
     public String buildMovieSearchDocument(Movie movie) {
         if (movie == null) return "";
@@ -27,6 +37,91 @@ public class CinemaSearchDocumentBuilder {
         parts.add("Độ tuổi: " + (movie.getAgeRating() != null ? movie.getAgeRating().name() : ""));
         parts.add("Trạng thái: " + buildMovieStatusSearchText(movie.getStatus()));
         return String.join("\n", parts);
+    }
+
+    public List<String> buildMovieChunkSearchDocuments(Movie movie) {
+        if (movie == null) return Collections.emptyList();
+        String description = safeText(movie.getDescription()).trim();
+        if (description.length() < MOVIE_CHUNK_MIN_DESCRIPTION_LENGTH) {
+            return Collections.emptyList();
+        }
+
+        List<String> chunks = new ArrayList<>();
+        List<String> chunkTexts = buildMovieChunkTexts(description);
+        for (int index = 0; index < chunkTexts.size() && chunks.size() < MOVIE_CHUNK_MAX_CHUNKS; index++) {
+            String chunkText = chunkTexts.get(index).trim();
+            if (chunkText.length() < 40) {
+                continue;
+            }
+            chunks.add(buildMovieChunkSearchDocument(movie, chunks.size() + 1, chunkText));
+        }
+        return chunks;
+    }
+
+    private String buildMovieChunkSearchDocument(Movie movie, int chunkNumber, String chunkText) {
+        List<String> parts = new ArrayList<>();
+        parts.add("Data type: movie plot segment.");
+        parts.add("Search purpose: match user-described movie scenes, setting, characters, conflict, sacrifice, and ending.");
+        parts.add("Movie title: " + safeText(movie.getTitle()));
+        parts.add("Genre: " + safeText(movie.getGenre()));
+        parts.add("Actors: " + safeText(movie.getActors()));
+        parts.add("Plot segment " + chunkNumber + ": " + chunkText);
+        return String.join("\n", parts);
+    }
+
+    private List<String> buildMovieChunkTexts(String description) {
+        List<String> sentences = splitMovieDescriptionSentences(description);
+        if (sentences.size() <= 1) {
+            return buildWordChunks(description);
+        }
+
+        List<String> chunks = new ArrayList<>();
+        int step = Math.max(1, MOVIE_CHUNK_SENTENCES_PER_CHUNK - MOVIE_CHUNK_SENTENCE_OVERLAP);
+        for (int start = 0; start < sentences.size() && chunks.size() < MOVIE_CHUNK_MAX_CHUNKS; start += step) {
+            int end = Math.min(sentences.size(), start + MOVIE_CHUNK_SENTENCES_PER_CHUNK);
+            chunks.add(String.join(" ", sentences.subList(start, end)).trim());
+            if (end >= sentences.size()) {
+                break;
+            }
+        }
+        return chunks;
+    }
+
+    private List<String> splitMovieDescriptionSentences(String description) {
+        String normalized = safeText(description)
+                .replace("\r\n", "\n")
+                .replace('\r', '\n')
+                .trim();
+        if (normalized.isBlank()) {
+            return Collections.emptyList();
+        }
+
+        List<String> sentences = new ArrayList<>();
+        for (String part : SENTENCE_SPLIT_PATTERN.split(normalized)) {
+            String sentence = part.trim();
+            if (!sentence.isBlank()) {
+                sentences.add(sentence);
+            }
+        }
+        return sentences;
+    }
+
+    private List<String> buildWordChunks(String description) {
+        String[] words = safeText(description).trim().split("\\s+");
+        if (words.length <= MOVIE_CHUNK_WORDS_PER_CHUNK) {
+            return Collections.singletonList(safeText(description).trim());
+        }
+
+        List<String> chunks = new ArrayList<>();
+        int step = Math.max(1, MOVIE_CHUNK_WORDS_PER_CHUNK - MOVIE_CHUNK_WORD_OVERLAP);
+        for (int start = 0; start < words.length && chunks.size() < MOVIE_CHUNK_MAX_CHUNKS; start += step) {
+            int end = Math.min(words.length, start + MOVIE_CHUNK_WORDS_PER_CHUNK);
+            chunks.add(String.join(" ", Arrays.copyOfRange(words, start, end)).trim());
+            if (end >= words.length) {
+                break;
+            }
+        }
+        return chunks;
     }
 
     public String buildSnackSearchDocument(Snack snack) {

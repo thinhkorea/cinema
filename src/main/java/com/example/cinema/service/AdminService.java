@@ -35,7 +35,7 @@ public class AdminService {
 
         // API danh sách booking (DTO)
         public List<BookingResponseDTO> getAllBookings() {
-                return bookingRepo.findAll()
+                return bookingRepo.findAllByOrderByCreatedAtDescBookingIdDesc()
                                 .stream()
                                 .map(b -> BookingResponseDTO.builder()
                                                                 .bookingId(b.getBookingId())

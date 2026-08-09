@@ -21,7 +21,6 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -38,7 +37,6 @@ public class ShowtimeController {
     private static final LocalTime OPENING_TIME = LocalTime.of(8, 30);
     private static final LocalTime LAST_SHOWTIME_START = LocalTime.of(23, 59);
     private static final int ROOM_TURNAROUND_MINUTES = 10;
-    private static final int MIN_START_TIME_GAP_MINUTES = 15;
     private static final int AUTO_SLOT_STEP_MINUTES = 15;
     private static final int MAX_SKIPPED_MESSAGES = 20;
     private static final int MAX_PREVIEW_CREATED_SHOWTIMES = 20;
@@ -120,16 +118,6 @@ public class ShowtimeController {
             return ResponseEntity.badRequest().body(Map.of("error", validationError));
         }
 
-        validationError = validateShowtimeStartTimeUniqueness(req, null);
-        if (validationError != null) {
-            return ResponseEntity.badRequest().body(Map.of("error", validationError));
-        }
-
-        validationError = validateShowtimeStartTimeGap(req, null);
-        if (validationError != null) {
-            return ResponseEntity.badRequest().body(Map.of("error", validationError));
-        }
-
         seatService.initializeSeatsForRoom(room);
         return ResponseEntity.ok(persistShowtime(movie, room, req));
     }
@@ -160,16 +148,6 @@ public class ShowtimeController {
         }
 
         validationError = validateRoomAvailability(req, id);
-        if (validationError != null) {
-            return ResponseEntity.badRequest().body(Map.of("error", validationError));
-        }
-
-        validationError = validateShowtimeStartTimeUniqueness(req, id);
-        if (validationError != null) {
-            return ResponseEntity.badRequest().body(Map.of("error", validationError));
-        }
-
-        validationError = validateShowtimeStartTimeGap(req, id);
         if (validationError != null) {
             return ResponseEntity.badRequest().body(Map.of("error", validationError));
         }
@@ -262,7 +240,6 @@ public class ShowtimeController {
                 persist);
 
         LocalDate showDate = req.getShowDate();
-        Set<LocalDateTime> acceptedStartTimesInBatch = new HashSet<>();
         List<ShowtimeRequestDTO> acceptedRequestsInBatch = new ArrayList<>();
 
         outer:
@@ -283,9 +260,6 @@ public class ShowtimeController {
 
             LocalDateTime startTime = LocalDateTime.of(showDate, slotTime);
             LocalDateTime endTime = startTime.plusMinutes(movie.getDuration());
-            if (acceptedStartTimesInBatch.contains(startTime)) {
-                continue;
-            }
 
             Room selectedRoom = null;
             ShowtimeRequestDTO selectedRequest = null;
@@ -301,18 +275,6 @@ public class ShowtimeController {
                         .build();
 
                 validationError = validateShowtimeTime(showtimeRequest);
-                if (validationError != null) {
-                    lastFailure = buildSkippedMessage(room.getRoomName(), startTime, validationError);
-                    break;
-                }
-
-                validationError = validateShowtimeStartTimeUniqueness(showtimeRequest, null);
-                if (validationError != null) {
-                    lastFailure = buildSkippedMessage(room.getRoomName(), startTime, validationError);
-                    break;
-                }
-
-                validationError = validateShowtimeStartTimeGap(showtimeRequest, null);
                 if (validationError != null) {
                     lastFailure = buildSkippedMessage(room.getRoomName(), startTime, validationError);
                     break;
@@ -344,7 +306,6 @@ public class ShowtimeController {
             }
 
             acceptedRequestsInBatch.add(selectedRequest);
-            acceptedStartTimesInBatch.add(startTime);
             result.setCreatedCount(result.getCreatedCount() + 1);
 
             if (persist) {
@@ -406,12 +367,23 @@ public class ShowtimeController {
         int preferredCount = candidates.size();
         int candidateLimit;
         if (hasLimit) {
-            int maxCandidateSlots = persist ? MAX_CANDIDATE_SLOTS : MAX_PREVIEW_CANDIDATE_SLOTS;
+            int sessionSlotCount = 0;
+            if (restrictToSelectedSessions) {
+                for (String session : orderedSessions) {
+                    sessionSlotCount += buildTimeSlotsForSession(session).size();
+                }
+            }
+            int maxCandidateSlots = persist
+                    ? Math.max(MAX_CANDIDATE_SLOTS, sessionSlotCount)
+                    : Math.max(MAX_PREVIEW_CANDIDATE_SLOTS, sessionSlotCount);
             int multiplier = persist ? 4 : 2;
             int extraSlots = persist ? 8 : 4;
             candidateLimit = Math.min(
                     maxCandidateSlots,
                     Math.max(Math.max(targetCreatedCount, preferredCount) * multiplier, preferredCount + extraSlots));
+            if (restrictToSelectedSessions) {
+                candidateLimit = Math.min(maxCandidateSlots, Math.max(candidateLimit, sessionSlotCount));
+            }
         } else {
             candidateLimit = resolveUnlimitedCandidateLimit(orderedSessions, preferredCount);
         }
@@ -820,45 +792,4 @@ public class ShowtimeController {
         return orderedSlots;
     }
 
-    private String validateShowtimeStartTimeUniqueness(ShowtimeRequestDTO req, Long excludeShowtimeId) {
-        if (req.getStartTime() == null) {
-            return null;
-        }
-
-        List<Showtime> conflicts = showtimeRepository.findSameStartTime(req.getStartTime(), excludeShowtimeId);
-        if (conflicts.isEmpty()) {
-            return null;
-        }
-
-        Showtime conflict = conflicts.get(0);
-        String movieTitle = conflict.getMovie() != null ? conflict.getMovie().getTitle() : "mot phim khac";
-        String roomName = conflict.getRoom() != null ? conflict.getRoom().getRoomName() : "phong khac";
-        return "Da co suat chieu cua " + movieTitle + " bat dau luc "
-                + conflict.getStartTime().format(SHOWTIME_FORMAT)
-                + " tai " + roomName
-                + ". Khong the de nhieu phong co cung mot gio bat dau suat chieu.";
-    }
-
-    private String validateShowtimeStartTimeGap(ShowtimeRequestDTO req, Long excludeShowtimeId) {
-        if (req.getStartTime() == null) {
-            return null;
-        }
-
-        LocalDateTime windowStart = req.getStartTime().minusMinutes(MIN_START_TIME_GAP_MINUTES - 1L);
-        LocalDateTime windowEnd = req.getStartTime().plusMinutes(MIN_START_TIME_GAP_MINUTES - 1L);
-        List<Showtime> conflicts = showtimeRepository.findNearbyStartTimes(windowStart, windowEnd, excludeShowtimeId);
-        if (conflicts.isEmpty()) {
-            return null;
-        }
-
-        Showtime conflict = conflicts.get(0);
-        long minuteGap = Math.abs(java.time.Duration.between(conflict.getStartTime(), req.getStartTime()).toMinutes());
-        String movieTitle = conflict.getMovie() != null ? conflict.getMovie().getTitle() : "mot phim khac";
-        String roomName = conflict.getRoom() != null ? conflict.getRoom().getRoomName() : "phong khac";
-        return "Gio bat dau phai cach it nhat " + MIN_START_TIME_GAP_MINUTES
-                + " phut so voi suat da co. Hien da co suat cua " + movieTitle
-                + " tai " + roomName
-                + " bat dau luc " + conflict.getStartTime().format(SHOWTIME_FORMAT)
-                + " (cach " + minuteGap + " phut).";
-    }
 }

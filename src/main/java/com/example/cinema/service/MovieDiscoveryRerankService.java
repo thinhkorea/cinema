@@ -1,6 +1,8 @@
 package com.example.cinema.service;
 
 import com.example.cinema.domain.Movie;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.HttpEntity;
@@ -27,6 +29,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class MovieDiscoveryRerankService {
+
+    private static final Logger log = LoggerFactory.getLogger(MovieDiscoveryRerankService.class);
 
     private static final int MAX_RERANK_DOCUMENT_LENGTH = 1200;
     private static final int MIN_DESCRIPTION_SNIPPET_BUDGET = 450;
@@ -64,8 +68,8 @@ public class MovieDiscoveryRerankService {
             @Value("${cinema.movie-discovery.rerank-enabled:true}") boolean enabled,
             @Value("${cinema.movie-discovery.rerank-url:http://localhost:8002/rerank-movies}") String rerankUrl,
             @Value("${cinema.movie-discovery.rerank-model:BAAI/bge-reranker-v2-m3}") String rerankModelName,
-            @Value("${cinema.movie-discovery.rerank-connect-timeout-seconds:10}") int connectTimeoutSeconds,
-            @Value("${cinema.movie-discovery.rerank-read-timeout-seconds:180}") int readTimeoutSeconds
+            @Value("${cinema.movie-discovery.rerank-connect-timeout-seconds:3}") int connectTimeoutSeconds,
+            @Value("${cinema.movie-discovery.rerank-read-timeout-seconds:5}") int readTimeoutSeconds
     ) {
         this.restTemplate = restTemplateBuilder
                 .setConnectTimeout(Duration.ofSeconds(connectTimeoutSeconds))
@@ -96,6 +100,13 @@ public class MovieDiscoveryRerankService {
             );
             return parseResponse(response);
         } catch (RestClientException ex) {
+            log.warn(
+                    "[MovieDiscovery] Rerank request failed: url={}, model={}, candidates={}, cause={}",
+                    rerankUrl,
+                    rerankModelName,
+                    candidates.size(),
+                    ex.getMessage()
+            );
             return RerankResponse.empty();
         }
     }

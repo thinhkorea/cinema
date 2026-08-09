@@ -21,7 +21,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -32,6 +34,8 @@ import java.util.UUID;
 public class SnackOrderService {
 
     private static final int STANDALONE_PENDING_TIMEOUT_MINUTES = 30;
+    private static final int STANDALONE_PICKUP_VALID_HOURS = 24;
+    private static final int STANDALONE_PICKUP_MAX_ADVANCE_DAYS = 6;
 
     private final SnackOrderRepository snackOrderRepository;
     private final SnackOrderItemRepository snackOrderItemRepository;
@@ -47,6 +51,7 @@ public class SnackOrderService {
         if (request == null || request.getItems() == null || request.getItems().isEmpty()) {
             throw new IllegalArgumentException("Vui long chon it nhat mot mon bap nuoc.");
         }
+        LocalDate pickupDate = resolveValidPickupDate(request.getPickupDate());
 
         SnackOrder order = SnackOrder.builder()
                 .orderCode(generateOrderCode())
@@ -55,6 +60,7 @@ public class SnackOrderService {
                 .status(SnackOrder.Status.PENDING)
                 .paymentMethod(null)
                 .note(request.getNote())
+                .pickupDate(pickupDate)
                 .totalAmount(0.0)
                 .build();
 
@@ -86,6 +92,7 @@ public class SnackOrderService {
         order.setOrderType(SnackOrder.OrderType.BOOKING_ATTACHED);
         order.setStatus(resolveBookingSnackStatus(bookings));
         order.setPaymentMethod(resolveBookingPaymentMethod(bookings));
+        order.setPickupDate(null);
         order.setNote(null);
         if (order.getStatus() == SnackOrder.Status.PAID && order.getPaidAt() == null) {
             order.setPaidAt(LocalDateTime.now());
@@ -122,6 +129,23 @@ public class SnackOrderService {
         }
 
         return toResponse(order, loadItems(order));
+    }
+
+    @Transactional
+    public void markPrintedByOrderCode(String orderCode) {
+        if (orderCode == null || orderCode.isBlank()) {
+            throw new IllegalArgumentException("Ma don bap nuoc khong hop le.");
+        }
+
+        SnackOrder order = snackOrderRepository.findByOrderCode(orderCode.trim())
+                .orElseThrow(() -> new IllegalArgumentException("Khong tim thay don bap nuoc."));
+
+        if (order.getStatus() != SnackOrder.Status.PAID) {
+            throw new IllegalStateException("Don bap nuoc chua thanh toan, khong the in phieu.");
+        }
+
+        order.setPrinted(true);
+        snackOrderRepository.save(order);
     }
 
     @Transactional
@@ -264,6 +288,20 @@ public class SnackOrderService {
                 && order.getCreatedAt().isBefore(LocalDateTime.now().minusMinutes(STANDALONE_PENDING_TIMEOUT_MINUTES));
     }
 
+    private LocalDate resolveValidPickupDate(LocalDate requestedPickupDate) {
+        LocalDate today = LocalDate.now();
+        LocalDate pickupDate = requestedPickupDate != null ? requestedPickupDate : today;
+        LocalDate latestPickupDate = today.plusDays(STANDALONE_PICKUP_MAX_ADVANCE_DAYS);
+
+        if (pickupDate.isBefore(today)) {
+            throw new IllegalArgumentException("Ngay nhan bap nuoc khong duoc truoc ngay hom nay.");
+        }
+        if (pickupDate.isAfter(latestPickupDate)) {
+            throw new IllegalArgumentException("Ngay nhan bap nuoc chi duoc chon trong 7 ngay toi.");
+        }
+        return pickupDate;
+    }
+
     private SnackOrder.Status resolveBookingSnackStatus(List<Booking> bookings) {
         boolean paid = bookings.stream().allMatch(booking -> booking.getStatus() == Booking.Status.PAID);
         return paid ? SnackOrder.Status.PAID : SnackOrder.Status.PENDING;
@@ -278,15 +316,36 @@ public class SnackOrderService {
     }
 
     private SnackOrderResponseDTO toResponse(SnackOrder order, List<SnackOrderItem> items) {
+        LocalDateTime pickupExpiresAt = resolvePickupExpiresAt(order);
+        boolean pickupAvailable = isPickupAvailable(order);
+        boolean pickupExpired = pickupExpiresAt != null && LocalDateTime.now().isAfter(pickupExpiresAt);
+        boolean fulfilled = order.getFulfilledAt() != null;
+        boolean canRedeem = order.getOrderType() == SnackOrder.OrderType.STANDALONE
+                && order.getStatus() == SnackOrder.Status.PAID
+                && pickupAvailable
+                && !pickupExpired
+                && !fulfilled;
+
         return SnackOrderResponseDTO.builder()
                 .snackOrderId(order.getSnackOrderId())
                 .orderCode(order.getOrderCode())
+                .orderType(order.getOrderType() != null ? order.getOrderType().name() : null)
                 .status(order.getStatus().name())
                 .totalAmount(order.getTotalAmount())
+                .voucherCode(order.getVoucherCode())
+                .voucherDiscount(order.getVoucherDiscount())
                 .paymentMethod(order.getPaymentMethod())
                 .note(order.getNote())
+                .pickupDate(order.getPickupDate())
                 .createdAt(order.getCreatedAt())
                 .paidAt(order.getPaidAt())
+                .fulfilledAt(order.getFulfilledAt())
+                .fulfilledBy(order.getFulfilledBy())
+                .fulfilled(fulfilled)
+                .printed(order.isPrinted())
+                .pickupExpiresAt(pickupExpiresAt)
+                .pickupExpired(pickupExpired)
+                .canRedeem(canRedeem)
                 .items(items.stream().map(item -> SnackOrderItemResponseDTO.builder()
                         .snackId(item.getSnack().getSnackId())
                         .snackName(item.getSnack().getSnackName())
@@ -296,6 +355,26 @@ public class SnackOrderService {
                         .subtotal(item.getSubtotal())
                         .build()).toList())
                 .build();
+    }
+
+    private LocalDateTime resolvePickupExpiresAt(SnackOrder order) {
+        if (order.getOrderType() != SnackOrder.OrderType.STANDALONE || order.getStatus() != SnackOrder.Status.PAID) {
+            return null;
+        }
+
+        if (order.getPickupDate() != null) {
+            return order.getPickupDate().atTime(LocalTime.of(23, 59, 59));
+        }
+
+        LocalDateTime paidTime = order.getPaidAt() != null ? order.getPaidAt() : order.getCreatedAt();
+        return paidTime == null ? null : paidTime.plusHours(STANDALONE_PICKUP_VALID_HOURS);
+    }
+
+    private boolean isPickupAvailable(SnackOrder order) {
+        if (order.getPickupDate() == null) {
+            return true;
+        }
+        return !LocalDate.now().isBefore(order.getPickupDate());
     }
 
     private BookingSnackDTO toBookingSnackDTO(SnackOrderItem item) {

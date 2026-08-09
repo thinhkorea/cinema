@@ -47,6 +47,15 @@ public class SnackOrderController {
         }
     }
 
+    @GetMapping("/lookup/{orderCode}")
+    public ResponseEntity<?> lookupOrderByCode(@PathVariable String orderCode) {
+        try {
+            return ResponseEntity.ok(snackOrderService.getOrderByCode(orderCode, null));
+        } catch (IllegalArgumentException ex) {
+            return ResponseEntity.badRequest().body(Map.of("error", ex.getMessage()));
+        }
+    }
+
     @GetMapping("/{orderCode}")
     public ResponseEntity<?> getOrderByCode(@PathVariable String orderCode, Principal principal) {
         try {

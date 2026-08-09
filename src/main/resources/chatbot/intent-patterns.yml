@@ -98,12 +98,21 @@ termGroups:
     - đang có phim gì
 
   movie-search:
+    - có phim nào
+    - phim nào
+    - gợi ý phim
+    - tư vấn phim
     - thể loại
     - loại phim
     - đang được chiếu
     - đang chiếu
 
   movie-light-mood:
+    - buồn
+    - cảm động
+    - man mác
+    - nhẹ cảm xúc
+    - không quá nặng nề
     - nhẹ nhàng
     - dễ xem
     - thư giãn
@@ -120,6 +129,10 @@ termGroups:
     - khong kinh di
     - khong phim ma
     - khong qua nang dau
+    - khong qua nang ne
+    - buon
+    - cam dong
+    - man mac
     - nhe cam xuc
 
   movie-family-mood:

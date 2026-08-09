@@ -409,6 +409,49 @@ class MovieDiscoveryServiceTest {
     }
 
     @Test
+    void discoverRanksShortExactTitleQueryAboveSemanticDistractors() {
+        service = new MovieDiscoveryService(
+                movieRepository,
+                retrievalService,
+                rerankService,
+                true,
+                "test-embedding",
+                5
+        );
+        Movie semanticDistractor = movie(
+                100L,
+                "Family Wish",
+                "Gia dinh, Chinh kich",
+                "Cau chuyen cam dong ve mot nguoi cha va cac mau thuan trong gia dinh.",
+                Movie.MovieStatus.NOW_SHOWING
+        );
+        Movie exactTitleMatch = movie(
+                101L,
+                "Short Name",
+                "Tam ly",
+                "Mot cau chuyen rieng ve nhan vat chinh va lua chon ca nhan.",
+                Movie.MovieStatus.NOW_SHOWING
+        );
+        List<Movie> movies = List.of(semanticDistractor, exactTitleMatch);
+
+        when(movieRepository.findAll()).thenReturn(movies);
+        when(retrievalService.denseSearchMoviesUsingExistingEmbeddings(anyString(), anyList()))
+                .thenReturn(List.of(
+                        new CinemaRetrievalService.DenseCandidate<>(semanticDistractor, 0.780),
+                        new CinemaRetrievalService.DenseCandidate<>(exactTitleMatch, 0.700)
+                ));
+        when(rerankService.rerank(anyString(), anyList()))
+                .thenReturn(MovieDiscoveryRerankService.RerankResponse.empty());
+
+        List<MovieDiscoveryResultDTO> results = service.discover("Short Name", 5, false);
+
+        assertThat(results).isNotEmpty();
+        assertThat(results.get(0).getMovieId()).isEqualTo(101L);
+        assertThat(results.get(0).getTitle()).contains("Short Name");
+        assertThat(results.get(0).getScore()).isGreaterThan(results.get(1).getScore());
+    }
+
+    @Test
     void discoverRanksSeedMovieScenariosCorrectlyWithLocalScoring() {
         List<Movie> movies = seedLikeMovies();
         when(movieRepository.findAll()).thenReturn(movies);

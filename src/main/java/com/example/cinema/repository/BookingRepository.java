@@ -15,6 +15,9 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
        @EntityGraph(attributePaths = { "customer.user", "soldByStaff.user", "showtime.movie", "showtime.room", "seat" })
        List<Booking> findAll();
 
+       @EntityGraph(attributePaths = { "customer.user", "soldByStaff.user", "showtime.movie", "showtime.room", "seat" })
+       List<Booking> findAllByOrderByCreatedAtDescBookingIdDesc();
+
        @EntityGraph(attributePaths = { "customer.user", "showtime.movie", "showtime.room", "seat" })
        List<Booking> findByCustomer_User_Email(String email);
 

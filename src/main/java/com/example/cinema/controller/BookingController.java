@@ -357,6 +357,7 @@ public class BookingController {
             response.put("endTime", showtime.getEndTime());
             response.put("total", String.format("%,.0f VND", totalAmount)); // ✅ Đổi thành tổng thực tế
             response.put("paymentMethod", first.getPaymentMethod());
+            response.put("printed", bookings.stream().allMatch(Booking::isPrinted));
             response.put("staff", staffName);
             response.put("salesNo", first.getBookingId());
             response.put("footer", "Please verify ticket information before handing to customer");

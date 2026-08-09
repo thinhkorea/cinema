@@ -1,6 +1,7 @@
 package com.example.cinema.controller;
 
 import com.example.cinema.dto.StaffSnackFulfillRequestDTO;
+import com.example.cinema.service.SnackOrderService;
 import com.example.cinema.service.SnackService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +20,7 @@ import java.util.Map;
 public class StaffSnackController {
 
     private final SnackService snackService;
+    private final SnackOrderService snackOrderService;
 
     @PostMapping("/fulfill/{txnRef}")
     public ResponseEntity<?> fulfillSnacks(
@@ -31,6 +33,29 @@ public class StaffSnackController {
             String additionalPaymentMethod = request == null ? null : request.getAdditionalPaymentMethod();
             Map<String, Object> result = snackService.fulfillSnacksByTxn(txnRef, actor, popcornSnackId, additionalPaymentMethod);
             return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/fulfill-order/{orderCode}")
+    public ResponseEntity<?> fulfillStandaloneSnackOrder(
+            @PathVariable String orderCode,
+            Authentication authentication) {
+        try {
+            String actor = authentication != null ? authentication.getName() : "staff";
+            Map<String, Object> result = snackService.fulfillStandaloneSnackOrder(orderCode, actor);
+            return ResponseEntity.ok(result);
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/mark-printed/{orderCode}")
+    public ResponseEntity<?> markSnackOrderPrinted(@PathVariable String orderCode) {
+        try {
+            snackOrderService.markPrintedByOrderCode(orderCode);
+            return ResponseEntity.ok(Map.of("printed", true));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }

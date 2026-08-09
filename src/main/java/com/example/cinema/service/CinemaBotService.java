@@ -39,18 +39,49 @@ public class CinemaBotService {
     private static final Logger log = LoggerFactory.getLogger(CinemaBotService.class);
 
     private static final String USER_ROLE = "user";
+    private static final String SYSTEM_ROLE = "system";
     private static final String FALLBACK_MESSAGE =
-            "Xin lỗi, hệ thống AI hiện chưa sẵn sàng. Vui lòng thử lại sau.";
+            "Mình chưa xử lý được yêu cầu này. Bạn có thể hỏi mình về phim, lịch chiếu, đặt vé, thanh toán, voucher, bắp nước hoặc tài khoản trong hệ thống rạp.";
+    private static final String UNSUPPORTED_SCOPE_MESSAGE =
+            "Mình chỉ hỗ trợ các nội dung liên quan đến hệ thống rạp chiếu phim như phim, lịch chiếu, đặt vé, thanh toán, voucher, bắp nước và tài khoản. Bạn có thể hỏi lại theo một trong các nội dung này nhé.";
 
     // ===== Trọng số Hybrid Scoring =====
+    private static final String INTENT_SYSTEM_PROMPT = """
+            Bạn là bộ phân tích ý định cho chatbot rạp chiếu phim Cinema And Joy.
+            Chỉ trả về một JSON object hợp lệ, không markdown, không giải thích.
+
+            Schema bắt buộc:
+            {
+              "intent": "GENERAL|MOVIES|MOVIE_DETAIL|SHOWTIMES|SNACKS|LOYALTY|VOUCHERS|BOOKING_INFO|SECURITY_REQUEST",
+              "confidence": 0.0,
+              "entities": {},
+              "missingFields": [],
+              "requiresLogin": false,
+              "allowedToQuery": true
+            }
+
+            Quy tắc:
+            - Chỉ phân tích ý định và thông tin người dùng đã nói, không tự tạo phim, suất chiếu, voucher, booking hoặc thanh toán.
+            - Đưa điều kiện tra cứu vào entities, ví dụ movie, genre, status, date, time, room_type, price_min, price_max, snack, category, voucher, booking_code.
+            - requiresLogin=true với dữ liệu cá nhân như vé của tôi, đơn của tôi, voucher của tôi, điểm của tôi.
+            - allowedToQuery=false nếu yêu cầu không an toàn hoặc thiếu thông tin bắt buộc để query chính xác.
+            """;
+    private static final String CHAT_SYSTEM_PROMPT = """
+            Bạn là chatbot hỗ trợ khách hàng của hệ thống rạp chiếu phim Cinema And Joy.
+            Trả lời bằng tiếng Việt rõ ràng, ngắn gọn, tự nhiên, theo góc nhìn người dùng cuối.
+            Chỉ dùng dữ liệu hệ thống được cung cấp trong tin nhắn. Không bịa phim, suất chiếu, voucher, vé, đơn hàng hoặc dữ liệu cá nhân.
+            Không dùng thuật ngữ lạ hoặc viết tắt không có trong hệ thống; dùng "đơn bắp nước" thay cho "snack order".
+            Nếu dữ liệu chưa đủ, nói rõ cần tra cứu thêm hoặc cần người dùng đăng nhập/cung cấp thông tin phù hợp.
+            """;
+
     private static final double SEMANTIC_WEIGHT = 0.55;
     private static final double KEYWORD_WEIGHT = 0.25;
     private static final double BUSINESS_WEIGHT = 0.20;
-    private static final Duration CHAT_CONTEXT_TTL = Duration.ofMinutes(10);
 
     private final RestTemplate restTemplate;
     private final String ollamaChatUrl;
     private final String modelName;
+    private final Duration chatContextTtl;
 
     private final MovieRepository movieRepository;
     private final ShowtimeRepository showtimeRepository;
@@ -68,6 +99,7 @@ public class CinemaBotService {
             RestTemplateBuilder restTemplateBuilder,
             @Value("${cinema.bot.ollama-url:http://localhost:11434/api/chat}") String ollamaChatUrl,
             @Value("${cinema.bot.model:cinema-bot}") String modelName,
+            @Value("${cinema.bot.context-ttl-minutes:30}") long contextTtlMinutes,
             MovieRepository movieRepository,
             ShowtimeRepository showtimeRepository,
             SnackRepository snackRepository,
@@ -85,6 +117,7 @@ public class CinemaBotService {
                 .build();
         this.ollamaChatUrl = ollamaChatUrl;
         this.modelName = modelName;
+        this.chatContextTtl = Duration.ofMinutes(Math.max(1, contextTtlMinutes));
         this.movieRepository = movieRepository;
         this.showtimeRepository = showtimeRepository;
         this.snackRepository = snackRepository;
@@ -131,10 +164,37 @@ public class CinemaBotService {
         if (intentRouter.isCapabilityQuestion(userMessage)) {
             return buildCapabilityReply();
         }
+        if (intentRouter.isOutOfScopeQuestion(userMessage)) {
+            return "Mình chỉ hỗ trợ các nội dung liên quan đến rạp chiếu phim như phim, lịch chiếu, đặt vé, thanh toán, voucher, bắp nước và tài khoản. Với câu hỏi ngoài phạm vi như thời tiết, bạn nên kiểm tra bằng ứng dụng thời tiết hoặc nguồn phù hợp nhé.";
+        }
+
+        String guardrailReply = resolveSafetyGuardrailReply(userMessage);
+        if (guardrailReply != null) {
+            return guardrailReply;
+        }
+
+        String snackPolicyReply = resolveSnackPickupPolicyReply(userMessage);
+        if (snackPolicyReply != null) {
+            return snackPolicyReply;
+        }
 
         String contextualIntent = previousContext != null
                 ? intentRouter.resolveContextualIntent(userMessage, previousContext.lastIntent)
                 : null;
+
+        CinemaBotIntentRouter.IntentDecision routerDecision = intentRouter.decide(
+                userMessage,
+                contextualIntent != null ? contextualAnalysis(contextualIntent) : fallbackAnalysis()
+        );
+        if (!routerDecision.allowedToQuery()) {
+            return routerDecision.directReply() != null
+                    ? routerDecision.directReply()
+                    : "Minh khong the thuc hien yeu cau nay qua chatbot. Cac thao tac thay doi du lieu, thanh toan hoac cap quyen phai di qua man hinh nghiep vu hop le.";
+        }
+        if (routerDecision.directReply() != null) {
+            return routerDecision.directReply();
+        }
+
         if (contextualIntent == null) {
             String clarificationMessage = intentRouter.resolveClarificationMessage(userMessage);
             if (clarificationMessage != null) {
@@ -146,69 +206,85 @@ public class CinemaBotService {
         QueryAnalysis analysis = resolveQueryAnalysis(userMessage, contextualIntent);
         analysis = mergeContextualAnalysis(analysis, previousContext, contextualIntent);
         analysis = enrichEntityFilters(analysis, userMessage);
-        String intent = analysis != null && analysis.intent != null ? analysis.intent.toUpperCase() : "GENERAL";
+
+        CinemaBotIntentRouter.IntentDecision finalDecision = intentRouter.decide(userMessage, analysis);
+        if (!finalDecision.allowedToQuery()) {
+            return finalDecision.directReply() != null
+                    ? finalDecision.directReply()
+                    : "Minh khong the thuc hien yeu cau nay qua chatbot.";
+        }
+        if (finalDecision.directReply() != null) {
+            return finalDecision.directReply();
+        }
+
+        CinemaBotIntent intent = finalDecision.intent();
+        analysis.intent = intent.name();
         List<String> keywords = analysis != null ? analysis.keywords : null;
         List<String> filters = analysis != null ? analysis.filters : null;
         boolean pointExpiryQuestion = intentRouter.isPointExpiryQuestion(userMessage)
                 || ("LOYALTY".equals(contextualIntent) && intentRouter.isExpiryFollowUpQuestion(userMessage));
 
-        log.info("[CinemaBot] intent={}, keywords={}, filters={}", intent, keywords, filters);
+        log.info("[CinemaBot] intent={}, confidence={}, entities={}, missingFields={}, keywords={}, filters={}",
+                intent, finalDecision.confidence(), finalDecision.entities(), finalDecision.missingFields(), keywords, filters);
         rememberConversationContext(contextKey, analysis);
 
         if (shouldClarifyOverBroadMovieIntent(intent, userMessage, keywords, filters)) {
             return buildBusinessClarificationReply();
         }
-        if ("GENERAL".equals(intent) && intentRouter.looksLikeBusinessQuestion(userMessage)) {
+        if (intent == CinemaBotIntent.GENERAL && intentRouter.looksLikeBusinessQuestion(userMessage)) {
             return buildBusinessClarificationReply();
+        }
+        if (intent == CinemaBotIntent.GENERAL) {
+            return UNSUPPORTED_SCOPE_MESSAGE;
         }
 
         String ragContext = null;
 
         // ===== GIAI ĐOẠN 2 + 3: Hybrid Retrieval + Business Logic & Ranking =====
         switch (intent) {
-            case "MOVIES":
-                String moviesResult = handleMoviesIntent(keywords, filters, userMessage);
+            case MOVIES:
+                String moviesResult = handleMoviesIntent(keywords, filters, userMessage, contextKey, analysis, previousContext);
                 if (moviesResult.startsWith("[DIRECT_REPLY]")) {
                     return moviesResult.substring("[DIRECT_REPLY]".length());
                 }
                 ragContext = moviesResult;
                 break;
-            case "MOVIE_DETAIL":
+            case MOVIE_DETAIL:
                 String movieDetailResult = handleMovieDetailIntent(keywords, cleanedMsg);
                 if (movieDetailResult.startsWith("[DIRECT_REPLY]")) {
                     return movieDetailResult.substring("[DIRECT_REPLY]".length());
                 }
                 ragContext = movieDetailResult;
                 break;
-            case "SHOWTIMES":
+            case SHOWTIMES:
                 String showtimesResult = handleShowtimesIntent(keywords, filters, cleanedMsg);
                 if (showtimesResult.startsWith("[DIRECT_REPLY]")) {
                     return showtimesResult.substring("[DIRECT_REPLY]".length());
                 }
                 ragContext = showtimesResult;
                 break;
-            case "SNACKS":
+            case SNACKS:
                 String snacksResult = handleSnacksIntent(keywords, filters, userMessage);
                 if (snacksResult.startsWith("[DIRECT_REPLY]")) {
                     return snacksResult.substring("[DIRECT_REPLY]".length());
                 }
                 ragContext = snacksResult;
                 break;
-            case "LOYALTY":
+            case LOYALTY:
                 String loyaltyResult = handleLoyaltyIntent(userMessage, pointExpiryQuestion);
                 if (loyaltyResult.startsWith("[DIRECT_REPLY]")) {
                     return loyaltyResult.substring("[DIRECT_REPLY]".length());
                 }
                 ragContext = loyaltyResult;
                 break;
-            case "VOUCHERS":
+            case VOUCHERS:
                 String voucherResult = handleVouchersIntent(filters);
                 if (voucherResult.startsWith("[DIRECT_REPLY]")) {
                     return voucherResult.substring("[DIRECT_REPLY]".length());
                 }
                 ragContext = voucherResult;
                 break;
-            case "BOOKING_INFO":
+            case BOOKING_INFO:
                 String bookingResult = handleBookingInfoIntent(userMessage);
                 if (bookingResult.startsWith("[DIRECT_REPLY]")) {
                     return bookingResult.substring("[DIRECT_REPLY]".length());
@@ -223,7 +299,7 @@ public class CinemaBotService {
         log.debug("[CinemaBot] ragContextPreview={}", ragContext != null ? ragContext.substring(0, Math.min(ragContext.length(), 500)) : null);
 
         // ===== GIAI ĐOẠN 4 + 5: Augmentation & Generation =====
-        String finalPrompt = buildAugmentedPrompt(ragContext, userMessage, intent);
+        String finalPrompt = buildAugmentedPrompt(ragContext, userMessage, intent.name());
         return callLlmForGeneration(finalPrompt);
     }
 
@@ -279,7 +355,7 @@ public class CinemaBotService {
     private BotConversationContext getValidConversationContext(String contextKey) {
         cleanupExpiredConversationContexts();
         BotConversationContext context = conversationContexts.get(contextKey);
-        if (context == null || context.isExpired()) {
+        if (context == null || context.isExpired(chatContextTtl)) {
             conversationContexts.remove(contextKey);
             return null;
         }
@@ -302,7 +378,7 @@ public class CinemaBotService {
         if (analysis == null || previousContext == null || contextualIntent == null) {
             return analysis;
         }
-        if (analysis.intent == null || !analysis.intent.equalsIgnoreCase(previousContext.lastIntent)) {
+        if (analysis.intent == null || !isContextMergeAllowed(previousContext.lastIntent, analysis.intent)) {
             return analysis;
         }
 
@@ -314,9 +390,28 @@ public class CinemaBotService {
         return merged;
     }
 
+    private boolean isContextMergeAllowed(String previousIntent, String currentIntent) {
+        CinemaBotIntent previous = CinemaBotIntent.from(previousIntent);
+        CinemaBotIntent current = CinemaBotIntent.from(currentIntent);
+        if (previous == current) {
+            return true;
+        }
+        return previous == CinemaBotIntent.MOVIES
+                && (current == CinemaBotIntent.SHOWTIMES || current == CinemaBotIntent.MOVIE_DETAIL);
+    }
+
     private QueryAnalysis copyAnalysis(QueryAnalysis source) {
         QueryAnalysis copy = new QueryAnalysis();
         copy.intent = source != null && source.intent != null ? source.intent : "GENERAL";
+        copy.confidence = source != null ? source.confidence : null;
+        copy.entities = source != null && source.entities != null
+                ? new LinkedHashMap<>(source.entities)
+                : new LinkedHashMap<>();
+        copy.missingFields = source != null && source.missingFields != null
+                ? new ArrayList<>(source.missingFields)
+                : new ArrayList<>();
+        copy.requiresLogin = source != null ? source.requiresLogin : null;
+        copy.allowedToQuery = source != null ? source.allowedToQuery : null;
         copy.keywords = source != null && source.keywords != null ? new ArrayList<>(source.keywords) : new ArrayList<>();
         copy.filters = source != null && source.filters != null ? new ArrayList<>(source.filters) : new ArrayList<>();
         return copy;
@@ -331,10 +426,14 @@ public class CinemaBotService {
             return analysis;
         }
 
+        List<Movie> allMovies = movieRepository.findAll();
         Movie mentionedMovie = findMovieMentionedInMessage(
                 userMessage != null ? userMessage.toLowerCase(Locale.ROOT).trim() : "",
-                movieRepository.findAll()
+                allMovies
         );
+        if (mentionedMovie == null) {
+            mentionedMovie = findMovieByKnownAlias(userMessage, allMovies);
+        }
         if (mentionedMovie != null && mentionedMovie.getMovieId() != null) {
             putFilter(analysis, "movie_id", String.valueOf(mentionedMovie.getMovieId()));
         }
@@ -392,12 +491,11 @@ public class CinemaBotService {
     }
 
     private boolean isContextAwareIntent(String intent) {
-        return Set.of("MOVIES", "MOVIE_DETAIL", "SHOWTIMES", "SNACKS", "LOYALTY", "VOUCHERS", "BOOKING_INFO")
-                .contains(intent.toUpperCase(Locale.ROOT));
+        return CinemaBotIntent.from(intent).isContextAware();
     }
 
-    private boolean shouldClarifyOverBroadMovieIntent(String intent, String userMessage, List<String> keywords, List<String> filters) {
-        if (!"MOVIES".equals(intent)) {
+    private boolean shouldClarifyOverBroadMovieIntent(CinemaBotIntent intent, String userMessage, List<String> keywords, List<String> filters) {
+        if (intent != CinemaBotIntent.MOVIES) {
             return false;
         }
         String normalized = intentRouter.normalize(userMessage);
@@ -430,8 +528,62 @@ public class CinemaBotService {
                 "Bạn có thể hỏi ví dụ: \"Hôm nay có phim gì?\", \"Có phim lãng mạn nào đang chiếu không?\" hoặc \"Tôi có bao nhiêu điểm?\".");
     }
 
+    private String resolveSafetyGuardrailReply(String userMessage) {
+        String normalized = intentRouter.normalize(userMessage);
+        if (normalized.isBlank()) {
+            return null;
+        }
+
+        boolean paymentBypass = containsAnyText(normalized,
+                "khong can thanh toan", "khong thanh toan", "chua thanh toan", "mien phi",
+                "bo qua thanh toan", "fake thanh toan", "gia mao thanh toan", "lam gia thanh toan");
+        boolean qrOrTicket = containsAnyText(normalized,
+                "qr", "ma qr", "ma ve", "ve hop le", "ma hop le", "booking hop le");
+        if (paymentBypass && qrOrTicket) {
+            return "Mình không thể tạo hoặc xác nhận mã vé/mã QR khi chưa có giao dịch thanh toán hợp lệ. Bạn cần hoàn tất thanh toán trong hệ thống, sau đó dùng mã được hệ thống phát sinh để nhân viên kiểm tra.";
+        }
+
+        boolean asksForPrivilegeChange = containsAnyText(normalized,
+                "doi trang thai", "sua trang thai", "cap nhat trang thai", "xac nhan da thanh toan",
+                "xac nhan da in", "xac nhan giao mon", "duyet don", "bo khoa");
+        if (asksForPrivilegeChange) {
+            return "Mình không thể tự ý thay đổi trạng thái vé, đơn bắp nước hoặc thanh toán. Các thao tác xác nhận phải được thực hiện bởi đúng màn hình nghiệp vụ và tài khoản có quyền phù hợp.";
+        }
+
+        boolean asksForSecret = containsAnyText(normalized,
+                "mat khau", "password", "jwt", "token", "secret", "api key", "database", "connection string",
+                "hash secret", "vnp hash", "vnpay secret");
+        if (asksForSecret) {
+            return "Mình không thể cung cấp mật khẩu, token, khóa bí mật hoặc thông tin cấu hình nội bộ của hệ thống.";
+        }
+
+        boolean otherCustomerData = containsAnyText(normalized, "nguoi khac", "khach khac", "tai khoan khac")
+                && containsAnyText(normalized, "ve", "booking", "don", "lich su", "thanh toan");
+        if (otherCustomerData) {
+            return "Mình không thể tra cứu vé, đơn hàng hoặc lịch sử thanh toán của tài khoản khác. Bạn chỉ có thể xem thông tin thuộc tài khoản đang đăng nhập.";
+        }
+
+        return null;
+    }
+
+    private String resolveSnackPickupPolicyReply(String userMessage) {
+        String normalized = intentRouter.normalize(userMessage);
+        if (!containsAnyText(normalized, "bap", "nuoc", "combo", "snack", "do an", "do uong")) {
+            return null;
+        }
+        boolean policyQuestion = containsAnyText(normalized,
+                "ngay nhan", "ngay lay", "nhan sau", "lay sau", "sau may ngay", "bao lau",
+                "qua han", "han nhan", "trong tuan", "het han", "doi ngay nhan")
+                || Pattern.compile("\\b\\d{1,2}\\s*(ngay|hom|tuan)\\b").matcher(normalized).find();
+        if (!policyQuestion) {
+            return null;
+        }
+
+        return "Với đơn bắp nước đặt online, khách cần chọn ngày nhận trong phạm vi tuần hiện tại. Đơn chỉ được giao tại quầy trong thời gian còn hiệu lực; nếu quá hạn nhận theo quy định của rạp thì đơn sẽ không còn hiển thị để xử lý như đơn hợp lệ. Nếu bắp nước đặt kèm vé xem phim, nhân viên sẽ kiểm tra chung theo mã vé/phiếu in của đơn đó.";
+    }
+
     private void cleanupExpiredConversationContexts() {
-        conversationContexts.entrySet().removeIf(entry -> entry.getValue().isExpired());
+        conversationContexts.entrySet().removeIf(entry -> entry.getValue().isExpired(chatContextTtl));
     }
 
     private String handleCurrentUserIdentityQuestion() {
@@ -552,38 +704,11 @@ public class CinemaBotService {
      * Phân tích câu hỏi người dùng qua LLM để trích xuất Intent, Keywords và Filters.
      */
     private QueryAnalysis analyzeQuery(String userMessage) {
-        String systemPrompt =
-            "Bạn là trợ lý phân tích câu hỏi người dùng cho hệ thống rạp chiếu phim. Nhiệm vụ của bạn là trích xuất thông tin dưới dạng JSON.\n" +
-            "Hãy xác định chính xác ý định (intent) của câu hỏi từ một trong các giá trị sau:\n" +
-            "- MOVIES: Hỏi danh sách phim đang chiếu, phim hay, phim hot tại rạp, tìm phim theo thể loại.\n" +
-            "- MOVIE_DETAIL: Hỏi chi tiết, nội dung, mô tả, diễn viên, đánh giá của một phim cụ thể (user đã nêu tên phim rõ ràng).\n" +
-            "- SHOWTIMES: Hỏi lịch chiếu, suất chiếu, giờ chiếu, phòng chiếu của phim.\n" +
-            "- SNACKS: Hỏi về thực đơn bắp nước, đồ ăn, đồ uống, combo của rạp.\n" +
-            "- LOYALTY: Hỏi điểm tích lũy thành viên, điểm thưởng, điểm cá nhân.\n" +
-            "- VOUCHERS: Hỏi mã giảm giá, voucher, khuyến mãi, ưu đãi.\n" +
-            "- BOOKING_INFO: Hỏi lịch sử đặt vé, vé đã mua, tra cứu booking cá nhân.\n" +
-            "- GENERAL: Chào hỏi, tạm biệt, cảm ơn, hoặc các câu hỏi nằm ngoài các chủ đề trên.\n" +
-            "\n" +
-            "Hãy trích xuất filters nếu người dùng có đề cập đến điều kiện lọc, theo định dạng \"key:value\":\n" +
-            "- price_max:<số tiền> (giới hạn giá tối đa)\n" +
-            "- price_min:<số tiền> (giới hạn giá tối thiểu)\n" +
-            "- genre:<thể loại> (thể loại phim: hành động, kinh dị, tình cảm, hoạt hình, ...)\n" +
-            "- room_type:<loại phòng> (2D, 3D, IMAX)\n" +
-            "- category:<loại snack> (COMBO, DRINK, SNACK)\n" +
-            "\n" +
-            "Trả về DUY NHẤT một chuỗi JSON chuẩn có định dạng sau (không viết lời giải thích nào khác):\n" +
-            "{\n" +
-            "  \"intent\": \"TÊN_INTENT\",\n" +
-            "  \"keywords\": [\"các cụm từ quan trọng như tên phim hoặc tên sản phẩm\"],\n" +
-            "  \"filters\": [\"key:value nếu có\"]\n" +
-            "}\n" +
-            "Lưu ý: Trả về chuỗi JSON thô trực tiếp, không sử dụng markdown code block.";
-
         try {
             OllamaChatRequestDTO request = new OllamaChatRequestDTO(
                     modelName,
                     List.of(
-                        new OllamaMessageDTO("system", systemPrompt),
+                        new OllamaMessageDTO(SYSTEM_ROLE, INTENT_SYSTEM_PROMPT),
                         new OllamaMessageDTO(USER_ROLE, userMessage)
                     ),
                     false
@@ -619,7 +744,14 @@ public class CinemaBotService {
     /**
      * [MOVIES] Dense + Sparse Retrieval, sau đó Hard Filter + Hybrid Scoring.
      */
-    private String handleMoviesIntent(List<String> keywords, List<String> filters, String userMessage) {
+    private String handleMoviesIntent(
+            List<String> keywords,
+            List<String> filters,
+            String userMessage,
+            String contextKey,
+            QueryAnalysis analysis,
+            BotConversationContext previousContext
+    ) {
         // Dense Retrieval: Lấy phim đang chiếu
         List<Movie> allMovies = movieRepository.findAll();
         List<CinemaRetrievalService.DenseCandidate<Movie>> denseCandidates = retrievalService.denseSearchMovies(userMessage, allMovies);
@@ -660,6 +792,14 @@ public class CinemaBotService {
         mergedMovies = applyMovieHardFilters(mergedMovies, filters);
         mergedMovies = applyMovieMoodFilter(mergedMovies, filters);
 
+        Movie directlyMentionedMovie = findMovieMentionedInMessage(userMessage, allMovies);
+        if (directlyMentionedMovie == null) {
+            directlyMentionedMovie = findMovieByKnownAlias(userMessage, allMovies);
+        }
+        if (directlyMentionedMovie != null && isSpecificMovieAvailabilityQuestion(userMessage)) {
+            return "[DIRECT_REPLY]" + buildMovieAvailabilityReply(directlyMentionedMovie);
+        }
+
         if (mergedMovies.isEmpty()) {
             return "[DIRECT_REPLY]Dạ hiện tại rạp chưa có phim nào phù hợp với yêu cầu của bạn ạ. Bạn có muốn mình hỗ trợ tìm kiếm theo tiêu chí khác không?";
         }
@@ -678,23 +818,28 @@ public class CinemaBotService {
 
         // Sắp xếp theo tổng điểm giảm dần
         scoredMovies.sort((a, b) -> Double.compare(b.totalScore(), a.totalScore()));
+        MovieResultPage moviePage = buildMovieResultPage(scoredMovies, userMessage, previousContext);
+        if (moviePage.items().isEmpty()) {
+            return "[DIRECT_REPLY]Dạ các phim phù hợp với tiêu chí trước đó mình đã liệt kê hết rồi. Bạn có thể đổi thể loại hoặc nói thêm sở thích khác để mình tìm tiếp nhé.";
+        }
+        rememberMovieResultContext(contextKey, analysis, previousContext, moviePage.items(), intentRouter.isMoreResultsFollowUp(userMessage));
 
         if (isLightMoodFilter(filters)) {
-            return "[DIRECT_REPLY]" + buildLightMoodMovieReply(scoredMovies);
+            return "[DIRECT_REPLY]" + buildLightMoodMovieReply(moviePage.items(), moviePage.moreResultsFollowUp());
         }
 
         if (isFamilyMoodFilter(filters)) {
-            return "[DIRECT_REPLY]" + buildFamilyMovieReply(scoredMovies);
+            return "[DIRECT_REPLY]" + buildFamilyMovieReply(moviePage.items(), moviePage.moreResultsFollowUp());
         }
 
         if (intentRouter.isMovieRecommendationQuestion(userMessage)) {
-            return "[DIRECT_REPLY]" + buildMovieRecommendationReply(scoredMovies);
+            return "[DIRECT_REPLY]" + buildMovieRecommendationReply(moviePage.items(), moviePage.moreResultsFollowUp());
         }
 
         // Format kết quả
-        StringBuilder sb = new StringBuilder("Danh sách phim tại rạp (đã xếp hạng theo mức độ phù hợp):\n");
-        for (int i = 0; i < scoredMovies.size(); i++) {
-            Movie m = scoredMovies.get(i).item;
+        StringBuilder sb = new StringBuilder("Một số phim phù hợp tại rạp (đã xếp hạng theo mức độ phù hợp):\n");
+        for (int i = 0; i < moviePage.items().size(); i++) {
+            Movie m = moviePage.items().get(i).item;
             Double avgRating = movieReviewRepository.findAverageRatingByMovieId(m.getMovieId());
             long reviewCount = movieReviewRepository.countByMovie_MovieId(m.getMovieId());
             sb.append(String.format("- %s (Thể loại: %s, Thời lượng: %d phút, Độ tuổi: %s, Trạng thái: %s, Đánh giá: %s/5 từ %d lượt)",
@@ -702,22 +847,80 @@ public class CinemaBotService {
                     formatMovieStatus(m.getStatus()),
                     avgRating != null ? String.format("%.1f", avgRating) : "Chưa có",
                     reviewCount));
-            if (i < scoredMovies.size() - 1) sb.append("\n");
+            if (i < moviePage.items().size() - 1) sb.append("\n");
+        }
+        if (moviePage.remainingCount() > 0) {
+            sb.append(String.format("\nCòn %d phim khác phù hợp. Bạn có thể hỏi \"xem thêm phim khác\" hoặc \"xem tất cả phim phù hợp\" nếu muốn mình liệt kê thêm.", moviePage.remainingCount()));
         }
         return "[DIRECT_REPLY]" + sb.toString();
     }
 
-    private String buildMovieRecommendationReply(List<ScoredItem<Movie>> scoredMovies) {
-        List<ScoredItem<Movie>> topMovies = scoredMovies.stream()
+    private MovieResultPage buildMovieResultPage(
+            List<ScoredItem<Movie>> scoredMovies,
+            String userMessage,
+            BotConversationContext previousContext
+    ) {
+        boolean showAll = shouldShowAllMovieResults(userMessage);
+        boolean moreResults = !showAll
+                && previousContext != null
+                && CinemaBotIntent.from(previousContext.lastIntent) == CinemaBotIntent.MOVIES
+                && intentRouter.isMoreResultsFollowUp(userMessage);
+        Set<Long> alreadyShownIds = moreResults
+                ? new HashSet<>(previousContext.lastShownMovieIds)
+                : Set.of();
+        List<ScoredItem<Movie>> candidates = scoredMovies.stream()
                 .filter(scored -> scored.item != null)
-                .limit(5)
+                .filter(scored -> scored.item.getMovieId() == null || !alreadyShownIds.contains(scored.item.getMovieId()))
                 .collect(Collectors.toList());
+        int limit = showAll ? candidates.size() : Math.min(5, candidates.size());
+        List<ScoredItem<Movie>> pageItems = candidates.stream()
+                .limit(limit)
+                .collect(Collectors.toList());
+        return new MovieResultPage(pageItems, Math.max(0, candidates.size() - pageItems.size()), moreResults);
+    }
 
+    private void rememberMovieResultContext(
+            String contextKey,
+            QueryAnalysis analysis,
+            BotConversationContext previousContext,
+            List<ScoredItem<Movie>> shownMovies,
+            boolean append
+    ) {
+        if (contextKey == null || analysis == null || shownMovies == null || shownMovies.isEmpty()) {
+            return;
+        }
+        List<Long> shownMovieIds = new ArrayList<>();
+        if (append && previousContext != null && CinemaBotIntent.from(previousContext.lastIntent) == CinemaBotIntent.MOVIES) {
+            shownMovieIds.addAll(previousContext.lastShownMovieIds);
+        }
+        for (ScoredItem<Movie> scored : shownMovies) {
+            if (scored.item != null && scored.item.getMovieId() != null && !shownMovieIds.contains(scored.item.getMovieId())) {
+                shownMovieIds.add(scored.item.getMovieId());
+            }
+        }
+        conversationContexts.put(contextKey, new BotConversationContext(
+                analysis.intent.toUpperCase(Locale.ROOT),
+                analysis.keywords,
+                analysis.filters,
+                shownMovieIds,
+                LocalDateTime.now()
+        ));
+    }
+
+    private boolean shouldShowAllMovieResults(String userMessage) {
+        String normalized = intentRouter.normalize(userMessage);
+        return containsAnyText(normalized,
+                "tat ca", "toan bo", "day du", "liet ke het", "xem het", "danh sach phim");
+    }
+
+    private String buildMovieRecommendationReply(List<ScoredItem<Movie>> topMovies, boolean moreResultsFollowUp) {
         if (topMovies.isEmpty()) {
             return "Dạ hiện tại mình chưa có đủ dữ liệu để gợi ý phim phù hợp. Bạn có thể cho mình biết bạn thích thể loại nào như tình cảm, hài, hành động hoặc kinh dị không?";
         }
 
-        StringBuilder reply = new StringBuilder("Nếu bạn muốn đặt vé nhưng chưa biết chọn phim, mình gợi ý vài lựa chọn dễ cân nhắc như sau:\n");
+        StringBuilder reply = new StringBuilder(moreResultsFollowUp
+                ? "Dạ, mình gợi ý thêm vài phim khác phù hợp như sau:\n"
+                : "Nếu bạn muốn đặt vé nhưng chưa biết chọn phim, mình gợi ý vài lựa chọn dễ cân nhắc như sau:\n");
         for (int i = 0; i < topMovies.size(); i++) {
             Movie movie = topMovies.get(i).item;
             Double avgRating = movieReviewRepository.findAverageRatingByMovieId(movie.getMovieId());
@@ -760,17 +963,14 @@ public class CinemaBotService {
         return "Đây là lựa chọn đang có trong lịch chiếu, bạn có thể xem thêm suất chiếu để chọn giờ phù hợp.";
     }
 
-    private String buildLightMoodMovieReply(List<ScoredItem<Movie>> scoredMovies) {
-        List<ScoredItem<Movie>> topMovies = scoredMovies.stream()
-                .filter(scored -> scored.item != null)
-                .limit(5)
-                .collect(Collectors.toList());
-
+    private String buildLightMoodMovieReply(List<ScoredItem<Movie>> topMovies, boolean moreResultsFollowUp) {
         if (topMovies.isEmpty()) {
             return "Dạ hiện tại rạp chưa có phim nhẹ nhàng/dễ xem nào phù hợp với yêu cầu của bạn ạ. Bạn có muốn mình gợi ý phim hài hoặc phim gia đình khác không?";
         }
 
-        StringBuilder reply = new StringBuilder("Dạ nếu bạn muốn xem phim nhẹ nhàng, mình gợi ý vài lựa chọn dễ xem hơn như:\n");
+        StringBuilder reply = new StringBuilder(moreResultsFollowUp
+                ? "Dạ, mình gợi ý thêm vài phim nhẹ nhàng khác như:\n"
+                : "Dạ nếu bạn muốn xem phim nhẹ nhàng, mình gợi ý vài lựa chọn dễ xem hơn như:\n");
         for (int i = 0; i < topMovies.size(); i++) {
             Movie movie = topMovies.get(i).item;
             reply.append(String.format("%d. %s - %s, %s. %s",
@@ -787,17 +987,14 @@ public class CinemaBotService {
         return reply.toString().trim();
     }
 
-    private String buildFamilyMovieReply(List<ScoredItem<Movie>> scoredMovies) {
-        List<ScoredItem<Movie>> topMovies = scoredMovies.stream()
-                .filter(scored -> scored.item != null)
-                .limit(5)
-                .collect(Collectors.toList());
-
+    private String buildFamilyMovieReply(List<ScoredItem<Movie>> topMovies, boolean moreResultsFollowUp) {
         if (topMovies.isEmpty()) {
             return "Dạ hiện tại mình chưa tìm thấy phim nào thật sự phù hợp để xem cùng gia đình/ba mẹ. Bạn có muốn mình gợi ý phim hài hoặc phim hoạt hình dễ xem không?";
         }
 
-        StringBuilder reply = new StringBuilder("Dạ nếu đi xem cùng ba mẹ hoặc gia đình, mình gợi ý vài phim dễ xem hơn như:\n");
+        StringBuilder reply = new StringBuilder(moreResultsFollowUp
+                ? "Dạ, mình gợi ý thêm vài phim khác phù hợp để xem cùng gia đình như:\n"
+                : "Dạ nếu đi xem cùng ba mẹ hoặc gia đình, mình gợi ý vài phim dễ xem hơn như:\n");
         for (int i = 0; i < topMovies.size(); i++) {
             Movie movie = topMovies.get(i).item;
             reply.append(String.format("%d. %s - %s, %s. %s",
@@ -830,6 +1027,8 @@ public class CinemaBotService {
 
     private boolean hasMovieFilter(List<String> filters) {
         return extractFilter(filters, "genre") != null
+                || extractFilter(filters, "excludeGenre") != null
+                || extractFilter(filters, "exclude_genre") != null
                 || extractFilter(filters, "status") != null
                 || extractFilter(filters, "mood") != null;
     }
@@ -1132,7 +1331,11 @@ public class CinemaBotService {
         }
         scoredSnacks.sort((a, b) -> Double.compare(b.totalScore(), a.totalScore()));
 
-        StringBuilder sb = new StringBuilder("Thực đơn bắp nước và combo (đã xếp hạng theo mức độ phù hợp):\n");
+        String categoryFilter = extractFilter(filters, "category");
+        Double priceMax = extractFilterDouble(filters, "price_max");
+        Double priceMin = extractFilterDouble(filters, "price_min");
+        StringBuilder sb = new StringBuilder(buildSnackResultTitle(categoryFilter, priceMin, priceMax));
+        sb.append("\n");
         for (int i = 0; i < scoredSnacks.size(); i++) {
             Snack s = scoredSnacks.get(i).item;
             sb.append(String.format("- %s [%s] (Mô tả: %s, Giá: %,.0f VNĐ%s)",
@@ -1144,6 +1347,19 @@ public class CinemaBotService {
             if (i < scoredSnacks.size() - 1) sb.append("\n");
         }
         return "[DIRECT_REPLY]" + sb.toString().trim();
+    }
+
+    private String buildSnackResultTitle(String categoryFilter, Double priceMin, Double priceMax) {
+        String target = categoryFilter == null || categoryFilter.isBlank()
+                ? "bắp nước và combo"
+                : formatSnackCategoryLabel(categoryFilter);
+        if (priceMin != null) {
+            return String.format("Các %s trên %,.0f VNĐ phù hợp với yêu cầu:", target, priceMin);
+        }
+        if (priceMax != null) {
+            return String.format("Các %s dưới %,.0f VNĐ phù hợp với yêu cầu:", target, priceMax);
+        }
+        return String.format("Thực đơn %s phù hợp với yêu cầu:", target);
     }
 
     private String formatSnackCategoryLabel(String category) {
@@ -1501,6 +1717,18 @@ public class CinemaBotService {
                     .collect(Collectors.toList());
         }
 
+        String excludeGenreFilter = firstNonBlank(
+                extractFilter(filters, "excludeGenre"),
+                extractFilter(filters, "exclude_genre")
+        );
+        if (excludeGenreFilter != null) {
+            String excludedGenreNoAccent = removeAccents(excludeGenreFilter.toLowerCase().trim());
+            filtered = filtered.stream()
+                    .filter(m -> m.getGenre() == null
+                            || !removeAccents(m.getGenre().toLowerCase()).contains(excludedGenreNoAccent))
+                    .collect(Collectors.toList());
+        }
+
         String statusFilter = extractFilter(filters, "status");
         if (statusFilter != null) {
             try {
@@ -1655,6 +1883,19 @@ public class CinemaBotService {
                     .filter(s -> s.getMovie() != null
                             && s.getMovie().getGenre() != null
                             && removeAccents(s.getMovie().getGenre().toLowerCase(Locale.ROOT)).contains(genreNoAccent))
+                    .collect(Collectors.toList());
+        }
+
+        String excludeGenreFilter = firstNonBlank(
+                extractFilter(filters, "excludeGenre"),
+                extractFilter(filters, "exclude_genre")
+        );
+        if (excludeGenreFilter != null) {
+            String excludedGenreNoAccent = removeAccents(excludeGenreFilter.toLowerCase(Locale.ROOT).trim());
+            filtered = filtered.stream()
+                    .filter(s -> s.getMovie() == null
+                            || s.getMovie().getGenre() == null
+                            || !removeAccents(s.getMovie().getGenre().toLowerCase(Locale.ROOT)).contains(excludedGenreNoAccent))
                     .collect(Collectors.toList());
         }
 
@@ -2052,7 +2293,10 @@ public class CinemaBotService {
         try {
             OllamaChatRequestDTO request = new OllamaChatRequestDTO(
                     modelName,
-                    List.of(new OllamaMessageDTO(USER_ROLE, finalPrompt)),
+                    List.of(
+                            new OllamaMessageDTO(SYSTEM_ROLE, CHAT_SYSTEM_PROMPT),
+                            new OllamaMessageDTO(USER_ROLE, finalPrompt)
+                    ),
                     false
             );
 
@@ -2069,7 +2313,7 @@ public class CinemaBotService {
                 return FALLBACK_MESSAGE;
             }
 
-            return response.content().trim();
+            return sanitizeBotReply(response.content().trim());
         } catch (ResourceAccessException ex) {
             return FALLBACK_MESSAGE;
         } catch (RestClientResponseException ex) {
@@ -2077,6 +2321,16 @@ public class CinemaBotService {
         } catch (RestClientException ex) {
             return FALLBACK_MESSAGE;
         }
+    }
+
+    private String sanitizeBotReply(String reply) {
+        if (reply == null || reply.isBlank()) {
+            return reply;
+        }
+        return reply
+                .replaceAll("(?i)\\bSNKER\\b", "đơn bắp nước")
+                .replaceAll("(?i)\\bSNK\\b", "đơn bắp nước")
+                .replaceAll("(?i)\\bsnack order\\b", "đơn bắp nước");
     }
 
     // =====================================================================
@@ -2087,6 +2341,11 @@ public class CinemaBotService {
      * Tìm phim khớp nhất với keyword hoặc câu hỏi gốc.
      */
     private Movie findBestMatchMovie(List<String> keywords, String cleanedMsg, List<Movie> allMovies) {
+        Movie aliasMatchedMovie = findMovieByKnownAlias(cleanedMsg, allMovies);
+        if (aliasMatchedMovie != null) {
+            return aliasMatchedMovie;
+        }
+
         Movie matchedMovie = null;
 
         // Bước 1: Tìm qua keyword
@@ -2166,6 +2425,77 @@ public class CinemaBotService {
     /**
      * Chuyển đổi và làm sạch dữ liệu JSON trích xuất từ Ollama.
      */
+    private Movie findMovieByKnownAlias(String message, List<Movie> allMovies) {
+        if (message == null || message.isBlank() || allMovies == null || allMovies.isEmpty()) {
+            return null;
+        }
+        String normalized = removeAccents(message.toLowerCase(Locale.ROOT));
+        List<String> titleFragments = knownMovieTitleFragmentsForAlias(normalized);
+        if (titleFragments.isEmpty()) {
+            return null;
+        }
+
+        for (String fragment : titleFragments) {
+            for (Movie movie : allMovies) {
+                if (movie.getTitle() == null || movie.getTitle().isBlank()) {
+                    continue;
+                }
+                String title = removeAccents(movie.getTitle().toLowerCase(Locale.ROOT));
+                if (title.contains(fragment)) {
+                    return movie;
+                }
+            }
+        }
+        return null;
+    }
+
+    private List<String> knownMovieTitleFragmentsForAlias(String normalizedMessage) {
+        if (normalizedMessage == null || normalizedMessage.isBlank()) {
+            return List.of();
+        }
+        if (containsAnyText(normalizedMessage, "gau truc", "panda", "kungfu panda", "kung fu panda")) {
+            return List.of("kung fu panda");
+        }
+        if (containsAnyText(normalizedMessage, "cam xuc", "manh ghep cam xuc", "inside out")) {
+            return List.of("inside out", "manh ghep cam xuc");
+        }
+        if (containsAnyText(normalizedMessage, "minion", "ke trom mat trang", "gru")) {
+            return List.of("ke trom mat trang", "despicable");
+        }
+        if (containsAnyText(normalizedMessage, "nguoi nhen", "spider man", "spiderman")) {
+            return List.of("spider-man", "spider man");
+        }
+        if (containsAnyText(normalizedMessage, "nguoi doi", "batman", "ky si bong dem")) {
+            return List.of("batman", "dark knight");
+        }
+        return List.of();
+    }
+
+    private boolean isSpecificMovieAvailabilityQuestion(String userMessage) {
+        String normalized = intentRouter.normalize(userMessage);
+        if (normalized.isBlank()) {
+            return false;
+        }
+        return !knownMovieTitleFragmentsForAlias(removeAccents(normalized)).isEmpty()
+                || containsAnyText(normalized,
+                "con chieu", "dang chieu", "co chieu", "hien co chieu", "rap co chieu",
+                "con ban ve", "co suat", "co lich", "co phim nay", "phim nay");
+    }
+
+    private String buildMovieAvailabilityReply(Movie movie) {
+        String statusLabel = formatMovieStatus(movie.getStatus());
+        if (movie.getStatus() == Movie.MovieStatus.NOW_SHOWING || movie.getStatus() == Movie.MovieStatus.SPECIAL_RELEASE) {
+            return String.format("Có ạ. Phim \"%s\" hiện đang ở trạng thái %s tại rạp. Bạn có thể hỏi tiếp \"lịch chiếu %s hôm nay\" để mình kiểm tra suất chiếu gần nhất.",
+                    movie.getTitle(), statusLabel, movie.getTitle());
+        }
+        if (movie.getStatus() == Movie.MovieStatus.COMING_SOON) {
+            return String.format("Phim \"%s\" hiện chưa chiếu, trạng thái đang là %s. Khi rạp mở suất chiếu, bạn có thể quay lại để xem lịch và đặt vé.",
+                    movie.getTitle(), statusLabel);
+        }
+        return String.format("Phim \"%s\" hiện không còn trong lịch chiếu khả dụng của rạp. Trạng thái hiện tại: %s.",
+                movie.getTitle(), statusLabel);
+    }
+
     private Movie findMovieByContextFilter(List<String> filters, List<Movie> allMovies) {
         Long movieId = extractFilterLong(filters, "movie_id");
         if (movieId == null || allMovies == null || allMovies.isEmpty()) {
@@ -2196,41 +2526,117 @@ public class CinemaBotService {
     }
 
     private QueryAnalysis parseAnalysis(String responseText) {
-        if (responseText == null) return null;
-        String cleanJson = responseText.trim();
-        
-        // Loại bỏ các khối code block markdown nếu có
-        if (cleanJson.startsWith("```json")) {
-            cleanJson = cleanJson.substring(7);
-        } else if (cleanJson.startsWith("```")) {
-            cleanJson = cleanJson.substring(3);
+        if (responseText == null) {
+            return fallbackAnalysis();
         }
-        if (cleanJson.endsWith("```")) {
-            cleanJson = cleanJson.substring(0, cleanJson.length() - 3);
+
+        String cleanJson = extractJsonObject(responseText);
+        if (cleanJson == null) {
+            return fallbackAnalysis();
         }
-        cleanJson = cleanJson.trim();
 
         try {
             ObjectMapper mapper = new ObjectMapper();
-            return mapper.readValue(cleanJson, QueryAnalysis.class);
+            return normalizeModelAnalysis(mapper.readValue(cleanJson, QueryAnalysis.class));
         } catch (Exception e) {
-            // Ghi nhận lỗi và fallback về GENERAL
-            System.err.println("[CinemaBot] Lỗi parse JSON từ LLM: " + e.getMessage());
-            QueryAnalysis fallback = new QueryAnalysis();
-            fallback.intent = "GENERAL";
-            return fallback;
+            log.warn("[CinemaBot] Cannot parse intent JSON from model: {}", e.getMessage());
+            return fallbackAnalysis();
         }
     }
 
-    /**
-     * Trích xuất giá trị filter theo key từ danh sách filters.
-     */
+    private String extractJsonObject(String responseText) {
+        String cleanText = responseText.trim();
+        if (cleanText.startsWith("```json")) {
+            cleanText = cleanText.substring(7);
+        } else if (cleanText.startsWith("```")) {
+            cleanText = cleanText.substring(3);
+        }
+        if (cleanText.endsWith("```")) {
+            cleanText = cleanText.substring(0, cleanText.length() - 3);
+        }
+        cleanText = cleanText.trim();
+
+        int start = cleanText.indexOf('{');
+        int end = cleanText.lastIndexOf('}');
+        if (start < 0 || end <= start) {
+            return null;
+        }
+        return cleanText.substring(start, end + 1);
+    }
+
+    private QueryAnalysis normalizeModelAnalysis(QueryAnalysis analysis) {
+        QueryAnalysis normalized = copyAnalysis(analysis);
+        normalized.intent = CinemaBotIntent.from(normalized.intent).name();
+        normalized.confidence = normalizeConfidence(normalized.confidence);
+        normalized.entities = normalizeEntityMap(normalized.entities);
+        normalized.missingFields = normalizeStringList(normalized.missingFields);
+        normalized.keywords = normalizeStringList(normalized.keywords);
+        normalized.filters = normalizeFilterList(normalized.filters);
+        return normalized;
+    }
+
+    private Double normalizeConfidence(Double confidence) {
+        if (confidence == null || confidence.isNaN() || confidence.isInfinite()) {
+            return null;
+        }
+        return Math.max(0.0, Math.min(1.0, confidence));
+    }
+
+    private Map<String, String> normalizeEntityMap(Map<String, String> entities) {
+        if (entities == null || entities.isEmpty()) {
+            return new LinkedHashMap<>();
+        }
+        Map<String, String> normalized = new LinkedHashMap<>();
+        entities.forEach((key, value) -> {
+            if (key != null && !key.isBlank() && value != null && !value.isBlank()) {
+                normalized.put(key.trim(), value.trim());
+            }
+        });
+        return normalized;
+    }
+
+    private List<String> normalizeStringList(List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return new ArrayList<>();
+        }
+        return values.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .map(String::trim)
+                .distinct()
+                .collect(Collectors.toCollection(ArrayList::new));
+    }
+
+    private List<String> normalizeFilterList(List<String> filters) {
+        if (filters == null || filters.isEmpty()) {
+            return new ArrayList<>();
+        }
+        Map<String, String> byKey = new LinkedHashMap<>();
+        for (String filter : normalizeStringList(filters)) {
+            String key = resolveFilterKey(filter);
+            if (!key.isBlank()) {
+                byKey.put(key, filter);
+            }
+        }
+        return new ArrayList<>(byKey.values());
+    }
     private String extractFilter(List<String> filters, String key) {
         if (filters == null || filters.isEmpty()) return null;
         String prefix = key + ":";
         for (String f : filters) {
             if (f != null && f.startsWith(prefix)) {
                 return f.substring(prefix.length()).trim();
+            }
+        }
+        return null;
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
             }
         }
         return null;
@@ -2370,11 +2776,26 @@ public class CinemaBotService {
 
     public static class QueryAnalysis {
         public String intent;
+        public Double confidence;
+        public Map<String, String> entities;
+        public List<String> missingFields;
+        public Boolean requiresLogin;
+        public Boolean allowedToQuery;
         public List<String> keywords;
         public List<String> filters;
 
         public String getIntent() { return intent; }
         public void setIntent(String intent) { this.intent = intent; }
+        public Double getConfidence() { return confidence; }
+        public void setConfidence(Double confidence) { this.confidence = confidence; }
+        public Map<String, String> getEntities() { return entities; }
+        public void setEntities(Map<String, String> entities) { this.entities = entities; }
+        public List<String> getMissingFields() { return missingFields; }
+        public void setMissingFields(List<String> missingFields) { this.missingFields = missingFields; }
+        public Boolean getRequiresLogin() { return requiresLogin; }
+        public void setRequiresLogin(Boolean requiresLogin) { this.requiresLogin = requiresLogin; }
+        public Boolean getAllowedToQuery() { return allowedToQuery; }
+        public void setAllowedToQuery(Boolean allowedToQuery) { this.allowedToQuery = allowedToQuery; }
         public List<String> getKeywords() { return keywords; }
         public void setKeywords(List<String> keywords) { this.keywords = keywords; }
         public List<String> getFilters() { return filters; }
@@ -2385,18 +2806,37 @@ public class CinemaBotService {
         final String lastIntent;
         final List<String> lastKeywords;
         final List<String> lastFilters;
+        final List<Long> lastShownMovieIds;
         final LocalDateTime updatedAt;
 
         BotConversationContext(String lastIntent, List<String> lastKeywords, List<String> lastFilters, LocalDateTime updatedAt) {
+            this(lastIntent, lastKeywords, lastFilters, List.of(), updatedAt);
+        }
+
+        BotConversationContext(
+                String lastIntent,
+                List<String> lastKeywords,
+                List<String> lastFilters,
+                List<Long> lastShownMovieIds,
+                LocalDateTime updatedAt
+        ) {
             this.lastIntent = lastIntent;
             this.lastKeywords = lastKeywords != null ? new ArrayList<>(lastKeywords) : new ArrayList<>();
             this.lastFilters = lastFilters != null ? new ArrayList<>(lastFilters) : new ArrayList<>();
+            this.lastShownMovieIds = lastShownMovieIds != null ? new ArrayList<>(lastShownMovieIds) : new ArrayList<>();
             this.updatedAt = updatedAt;
         }
 
-        boolean isExpired() {
-            return updatedAt == null || updatedAt.plus(CHAT_CONTEXT_TTL).isBefore(LocalDateTime.now());
+        boolean isExpired(Duration ttl) {
+            return updatedAt == null || updatedAt.plus(ttl).isBefore(LocalDateTime.now());
         }
+    }
+
+    private record MovieResultPage(
+            List<ScoredItem<Movie>> items,
+            int remainingCount,
+            boolean moreResultsFollowUp
+    ) {
     }
 
     /**

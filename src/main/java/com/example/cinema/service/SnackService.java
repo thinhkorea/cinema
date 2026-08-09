@@ -2,6 +2,7 @@ package com.example.cinema.service;
 
 import com.example.cinema.domain.Booking;
 import com.example.cinema.domain.Snack;
+import com.example.cinema.domain.SnackOrder;
 import com.example.cinema.domain.SnackOrderItem;
 import com.example.cinema.domain.SnackWarehouseMovement;
 import com.example.cinema.dto.AddSnacksRequestDTO;
@@ -12,6 +13,8 @@ import com.example.cinema.dto.SnackItemRequestDTO;
 import com.example.cinema.dto.SnackWarehouseDTO;
 import com.example.cinema.dto.UpdateSnackWarehouseStockRequestDTO;
 import com.example.cinema.repository.BookingRepository;
+import com.example.cinema.repository.SnackOrderItemRepository;
+import com.example.cinema.repository.SnackOrderRepository;
 import com.example.cinema.repository.SnackRepository;
 import com.example.cinema.repository.SnackWarehouseMovementRepository;
 import lombok.RequiredArgsConstructor;
@@ -37,6 +40,8 @@ public class SnackService {
 
     private final SnackRepository snackRepository;
     private final BookingRepository bookingRepository;
+    private final SnackOrderRepository snackOrderRepository;
+    private final SnackOrderItemRepository snackOrderItemRepository;
     private final SnackOrderService snackOrderService;
     private final SnackWarehouseMovementRepository snackWarehouseMovementRepository;
     private final InventoryService inventoryService;
@@ -367,6 +372,11 @@ public class SnackService {
             }
         }
 
+        boolean hasUnprintedTicket = bookings.stream().anyMatch(b -> !b.isPrinted());
+        if (hasUnprintedTicket) {
+            throw new IllegalStateException("Vui long in ve giay truoc khi xuat bap nuoc di kem.");
+        }
+
         List<SnackOrderItem> attachedOrderItems = snackOrderService.getBookingOrderItems(txnRef);
         if (attachedOrderItems.isEmpty()) {
             bookings.forEach(b -> b.setSnacksFulfilled(true));
@@ -468,6 +478,118 @@ public class SnackService {
                 "popcornQuantity", comboPopcornQty,
                 "additionalCharge", additionalCharge,
                 "message", "Da xuat bap nuoc thanh cong.");
+    }
+
+    @Transactional
+    public Map<String, Object> fulfillStandaloneSnackOrder(String orderCode, String actor) {
+        if (orderCode == null || orderCode.isBlank()) {
+            throw new IllegalArgumentException("Ma don bap nuoc khong hop le.");
+        }
+
+        SnackOrder order = snackOrderRepository.findByOrderCode(orderCode.trim())
+                .orElseThrow(() -> new IllegalArgumentException("Khong tim thay don bap nuoc."));
+
+        if (order.getOrderType() != SnackOrder.OrderType.STANDALONE) {
+            throw new IllegalStateException("Don bap nuoc nay di kem ve, vui long quet ma ve de xuat.");
+        }
+        if (order.getStatus() != SnackOrder.Status.PAID) {
+            throw new IllegalStateException("Don bap nuoc chua thanh toan, khong the giao mon.");
+        }
+        if (!order.isPrinted()) {
+            throw new IllegalStateException("Vui long in phieu bap nuoc truoc khi giao mon.");
+        }
+        if (order.getFulfilledAt() != null) {
+            throw new IllegalStateException("Don bap nuoc da duoc giao truoc do.");
+        }
+        if (order.getPickupDate() != null && LocalDate.now().isBefore(order.getPickupDate())) {
+            throw new IllegalStateException("Don bap nuoc chua toi ngay nhan khach da chon.");
+        }
+
+        LocalDateTime expiresAt = order.getPickupDate() != null
+                ? order.getPickupDate().atTime(23, 59, 59)
+                : Optional.ofNullable(order.getPaidAt()).orElse(order.getCreatedAt()).plusHours(24);
+        if (LocalDateTime.now().isAfter(expiresAt)) {
+            throw new IllegalStateException("Don bap nuoc da qua han nhan.");
+        }
+
+        List<SnackOrderItem> orderItems =
+                snackOrderItemRepository.findBySnackOrder_SnackOrderIdOrderBySnackOrderItemIdAsc(order.getSnackOrderId());
+        if (orderItems.isEmpty()) {
+            throw new IllegalStateException("Don bap nuoc khong co san pham de giao.");
+        }
+
+        Snack defaultPopcorn = null;
+        Map<Snack, Integer> expandedItems = new LinkedHashMap<>();
+        for (SnackOrderItem item : orderItems) {
+            if (item.getSnack() == null) {
+                continue;
+            }
+            int qty = item.getQuantity() == null ? 0 : item.getQuantity();
+            if (qty <= 0) {
+                continue;
+            }
+            Snack snack = item.getSnack();
+            if (snack.getCategory() == Snack.SnackCategory.COMBO) {
+                if (defaultPopcorn == null) {
+                    defaultPopcorn = getDefaultPopcornSnack();
+                }
+                Map<Snack, Integer> components = expandComboItems(snack, qty, defaultPopcorn);
+                for (Map.Entry<Snack, Integer> entry : components.entrySet()) {
+                    expandedItems.merge(entry.getKey(), entry.getValue(), Integer::sum);
+                }
+            } else {
+                expandedItems.merge(snack, qty, Integer::sum);
+            }
+        }
+
+        Map<String, Integer> summary = new LinkedHashMap<>();
+        String performer = actor != null && !actor.isBlank() ? actor : "staff";
+        for (Map.Entry<Snack, Integer> entry : expandedItems.entrySet()) {
+            Snack snack = entry.getKey();
+            int qty = entry.getValue();
+            if (qty <= 0) {
+                continue;
+            }
+
+            summary.merge(snack.getSnackName(), qty, Integer::sum);
+            if (isWarehouseTrackable(snack)) {
+                double before = snack.getWarehouseStock() == null ? 0.0 : snack.getWarehouseStock();
+                double after = before - qty;
+                if (after < 0) {
+                    throw new IllegalStateException("Ton kho thanh pham khong du cho " + snack.getSnackName());
+                }
+
+                snack.setWarehouseStock(after);
+                snack.setSearchEmbedding(null);
+                snackRepository.save(snack);
+
+                SnackWarehouseMovement movement = new SnackWarehouseMovement();
+                movement.setSnack(snack);
+                movement.setQuantityBefore(before);
+                movement.setQuantityChange(after - before);
+                movement.setQuantityAfter(after);
+                movement.setAction("SUBTRACT");
+                movement.setNote("Fulfill snackOrder=" + order.getOrderCode());
+                movement.setPerformedBy(performer);
+                snackWarehouseMovementRepository.save(movement);
+            } else {
+                inventoryService.consumeIngredientsForSnack(
+                        snack.getSnackId(),
+                        qty,
+                        performer,
+                        "snackOrder=" + order.getOrderCode());
+            }
+        }
+
+        order.setFulfilledAt(LocalDateTime.now());
+        order.setFulfilledBy(performer);
+        snackOrderRepository.save(order);
+
+        return Map.of(
+                "success", true,
+                "orderCode", order.getOrderCode(),
+                "items", summary,
+                "message", "Da giao bap nuoc thanh cong.");
     }
 
     private String normalizePaymentMethod(String paymentMethod) {

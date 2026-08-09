@@ -1,6 +1,5 @@
 package com.example.cinema.service;
 
-import com.example.cinema.domain.Booking;
 import com.example.cinema.domain.Movie;
 import com.example.cinema.domain.MovieReview;
 import com.example.cinema.domain.User;
@@ -8,7 +7,6 @@ import com.example.cinema.domain.UserViolationLog;
 import com.example.cinema.dto.MovieReviewReportRequestDTO;
 import com.example.cinema.dto.MovieReviewRequestDTO;
 import com.example.cinema.dto.MovieReviewResponseDTO;
-import com.example.cinema.repository.BookingRepository;
 import com.example.cinema.repository.MovieRepository;
 import com.example.cinema.repository.MovieReviewRepository;
 import com.example.cinema.repository.UserViolationLogRepository;
@@ -27,14 +25,12 @@ import java.util.Optional;
 @Service
 public class MovieReviewService {
 
-    private static final int REVIEW_WINDOW_DAYS = 7;
     private static final Charset WINDOWS_1252 = Charset.forName("Windows-1252");
     private static final String REPLACEMENT_CHARACTER = String.valueOf((char) 65533);
 
     private final MovieReviewRepository reviewRepo;
     private final MovieRepository movieRepo;
     private final UserRepository userRepo;
-    private final BookingRepository bookingRepo;
     private final ReviewModerationService reviewModerationService;
     private final UserViolationLogRepository violationLogRepo;
 
@@ -42,13 +38,11 @@ public class MovieReviewService {
             MovieReviewRepository reviewRepo,
             MovieRepository movieRepo,
             UserRepository userRepo,
-            BookingRepository bookingRepo,
             ReviewModerationService reviewModerationService,
             UserViolationLogRepository violationLogRepo) {
         this.reviewRepo = reviewRepo;
         this.movieRepo = movieRepo;
         this.userRepo = userRepo;
-        this.bookingRepo = bookingRepo;
         this.reviewModerationService = reviewModerationService;
         this.violationLogRepo = violationLogRepo;
     }
@@ -84,7 +78,6 @@ public class MovieReviewService {
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy phim"));
 
         User user = getCustomerUser(username);
-        validateReviewEligibility(movieId, user);
 
         Optional<MovieReview> existingReview = reviewRepo.findByMovie_MovieIdAndUser_UserId(movieId, user.getUserId());
         if (existingReview.isPresent()) {
@@ -123,7 +116,6 @@ public class MovieReviewService {
     @Transactional
     public MovieReviewResponseDTO updateReview(Long movieId, Long reviewId, String username, MovieReviewRequestDTO request) {
         User user = getCustomerUser(username);
-        validateReviewEligibility(movieId, user);
         MovieReview review = getOwnedReview(movieId, reviewId, user);
 
         ReviewModerationService.ModerationResult moderation = applyReviewContent(review, request);
@@ -194,41 +186,6 @@ public class MovieReviewService {
         }
 
         return user;
-    }
-
-    private void validateReviewEligibility(Long movieId, User user) {
-        String userEmail = user.getEmail();
-
-        boolean hasPaidBooking = bookingRepo.existsByCustomer_User_EmailAndShowtime_Movie_MovieIdAndStatus(
-                userEmail,
-                movieId,
-                Booking.Status.PAID);
-
-        if (!hasPaidBooking) {
-            boolean hasCancelled = bookingRepo.existsByCustomer_User_EmailAndShowtime_Movie_MovieIdAndStatus(
-                    userEmail,
-                    movieId,
-                    Booking.Status.CANCELLED);
-
-            if (hasCancelled) {
-                throw new IllegalArgumentException("Vé đã hủy không được đánh giá");
-            }
-
-            throw new IllegalArgumentException("Bạn cần mua và thanh toán vé xem phim này trước khi đánh giá");
-        }
-
-        LocalDateTime currentTime = LocalDateTime.now();
-        LocalDateTime reviewWindowStart = currentTime.minusDays(REVIEW_WINDOW_DAYS);
-        boolean hasEligibleBooking = bookingRepo.existsEligibleReviewBooking(
-                userEmail,
-                movieId,
-                Booking.Status.PAID,
-                currentTime,
-                reviewWindowStart);
-
-        if (!hasEligibleBooking) {
-            throw new IllegalArgumentException("Bạn chỉ có thể đánh giá sau khi suất chiếu đã kết thúc và trong vòng 7 ngày kể từ lúc suất chiếu kết thúc");
-        }
     }
 
     private MovieReview getOwnedReview(Long movieId, Long reviewId, User user) {

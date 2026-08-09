@@ -41,9 +41,17 @@ public class MovieDiscoveryService {
     private static final double RERANK_RANGE_CONFIDENCE_START = 0.015;
     private static final double RERANK_RANGE_CONFIDENCE_FULL = 0.12;
     private static final double LOW_CONFIDENCE_RERANK_MAX_SCORE = 0.25;
-    private static final double LOW_SCORE_RERANK_RANGE_CONFIDENCE_START = 0.0005;
-    private static final double LOW_SCORE_RERANK_RANGE_CONFIDENCE_FULL = 0.01;
+    private static final double TRUSTED_RERANK_SCORE_FULL = 0.55;
     private static final double RERANK_RELATIVE_RANGE_EPSILON = 0.000001;
+    private static final double SHORT_QUERY_DENSE_EVIDENCE_WEIGHT = 0.15;
+    private static final double LONG_QUERY_DENSE_EVIDENCE_WEIGHT = 0.60;
+    private static final int DENSE_EVIDENCE_LONG_QUERY_START_TOKENS = 12;
+    private static final int DENSE_EVIDENCE_LONG_QUERY_FULL_TOKENS = 28;
+    private static final double LOW_CONFIDENCE_RERANK_TIE_BREAK_MAX_SCORE = 0.02;
+    private static final double RERANK_TIE_BREAK_WEIGHT_WITH_DENSE = 0.02;
+    private static final double RERANK_TIE_BREAK_WEIGHT_WITHOUT_DENSE = 0.04;
+    private static final double RERANK_NEUTRAL_PERCENT = 50.0;
+    private static final double EXACT_TITLE_QUERY_SCORE = 95.0;
     private static final Pattern NON_WORD_PATTERN = Pattern.compile("[^a-z0-9]+");
     private static final Set<String> STOP_WORDS = Set.of(
             "toi", "minh", "em", "anh", "chi", "ban", "be", "nguoi", "ta", "co", "la", "thi", "ma", "va",
@@ -57,7 +65,7 @@ public class MovieDiscoveryService {
             "rieng", "ngoai", "ben", "cung", "xem", "nhau", "hon", "chi", "vai", "ca", "den",
             "gia", "dinh", "tinh", "danh", "mao", "giau", "nhung", "khac", "nhan",
             "chau", "chuyen", "cuoc", "song", "cau", "nghia", "thay", "dua",
-            "chup", "chung", "tam", "mai"
+            "chup", "chung", "tam", "mai", "hanh", "dat", "moi"
     );
     private static final Set<String> GENERIC_PHRASE_TOKENS = Set.of(
             "anh", "chi", "em", "ong", "ba", "cha", "me", "con", "nguoi", "gia", "dinh",
@@ -65,7 +73,7 @@ public class MovieDiscoveryService {
             "lon", "nho", "hoc", "di", "ve", "vao", "ra", "sau", "truoc", "nhung",
             "khac", "cung", "nhau", "do", "de", "bi", "co", "duoc", "nhan",
             "dau", "ten", "pham", "loan", "chau", "chuyen", "cuoc", "song", "cau", "nghia", "thay", "dua",
-            "chup", "chung", "tam", "mai"
+            "chup", "chung", "tam", "mai", "hanh", "dat", "moi"
     );
     private static final Set<String> PHRASE_FILLER_WORDS = Set.of(
             "toi", "minh", "em", "anh", "chi", "ban", "be", "nguoi", "ta", "co", "la", "thi", "va",
@@ -145,7 +153,7 @@ public class MovieDiscoveryService {
 
         scoredCandidates.sort(Comparator.comparingDouble(MovieCandidate::score).reversed());
         List<MovieCandidate> candidates = selectCandidatesForRerank(scoredCandidates, resolvedLimit);
-        candidates.sort(Comparator.comparingDouble(MovieCandidate::score).reversed());
+        candidates.sort(Comparator.comparingDouble(MovieDiscoveryService::rerankPriorityScore).reversed());
         long rerankStartedAt = System.nanoTime();
         List<MovieCandidate> rankedCandidates = rerankCandidates(query, candidates, resolvedLimit);
         long rerankTimeMs = elapsedMs(rerankStartedAt);
@@ -193,8 +201,9 @@ public class MovieDiscoveryService {
         LinkedHashSet<String> reasons = new LinkedHashSet<>();
         LinkedHashSet<String> signals = new LinkedHashSet<>();
 
-        if (isExactTitleQuery(normalizedQuery, title)) {
-            score += 45.0;
+        boolean exactTitleQuery = isExactTitleQuery(normalizedQuery, title);
+        if (exactTitleQuery) {
+            score += EXACT_TITLE_QUERY_SCORE;
             reasons.add("Khớp trực tiếp với tên phim");
             signals.add(title);
         }
@@ -334,7 +343,8 @@ public class MovieDiscoveryService {
             reasons.add("Có chi tiết gần với mô tả của bạn");
         }
 
-        return new MovieCandidate(movie, calibrateScore(score), denseScore, null, null, null, null, List.copyOf(reasons), List.copyOf(signals));
+        double denseEvidenceWeight = denseEvidenceWeight(queryTokens.size(), exactTitleQuery);
+        return new MovieCandidate(movie, calibrateScore(score), denseScore, denseEvidenceWeight, null, null, null, null, List.copyOf(reasons), List.copyOf(signals));
     }
 
     private List<MovieCandidate> selectCandidatesForRerank(List<MovieCandidate> scoredCandidates, int requestedLimit) {
@@ -364,6 +374,13 @@ public class MovieDiscoveryService {
         }
 
         return candidates;
+    }
+
+    private static double rerankPriorityScore(MovieCandidate candidate) {
+        double denseBoost = candidate.denseScore() > 0.0
+                ? candidate.denseScore() * 20.0 + 8.0
+                : 0.0;
+        return candidate.score() + denseBoost;
     }
 
     private List<MovieCandidate> rerankCandidates(String query, List<MovieCandidate> candidates, int requestedLimit) {
@@ -406,11 +423,11 @@ public class MovieDiscoveryService {
             return candidate;
         }
 
-        double effectiveRerankScore = normalizedRerankScores.getOrDefault(
+        double scoringRerankScore = normalizedRerankScores.getOrDefault(
                 candidate.movie().getMovieId(),
                 rerankScore.score()
         );
-        double combinedScore = combineRerankScore(candidate, effectiveRerankScore);
+        double combinedScore = combineRerankScore(candidate, scoringRerankScore);
         List<String> reasons = new ArrayList<>(candidate.reasons());
         if (rerankScore.reason() != null && !rerankScore.reason().isBlank()) {
             reasons.add(0, rerankScore.reason());
@@ -420,7 +437,8 @@ public class MovieDiscoveryService {
                 candidate.movie(),
                 combinedScore,
                 candidate.denseScore(),
-                effectiveRerankScore,
+                candidate.denseEvidenceWeight(),
+                rerankScore.score(),
                 rerankScore.score(),
                 rerankResponse.modelName(),
                 rerankScore.reason(),
@@ -456,6 +474,10 @@ public class MovieDiscoveryService {
                 .orElse(0.0);
         double range = maxScore - minScore;
 
+        if (maxScore <= LOW_CONFIDENCE_RERANK_TIE_BREAK_MAX_SCORE && range > 0.0) {
+            return rankOnlyTieBreakScores(scoredCandidates);
+        }
+
         if (range <= RERANK_RELATIVE_RANGE_EPSILON) {
             for (MovieCandidate candidate : scoredCandidates) {
                 double rawScore = rerankResponse.scores().get(candidate.movie().getMovieId()).score();
@@ -465,16 +487,6 @@ public class MovieDiscoveryService {
         }
 
         double confidence = rerankConfidence(maxScore, range);
-        if (maxScore < LOW_CONFIDENCE_RERANK_MAX_SCORE) {
-            confidence = Math.max(
-                    confidence,
-                    confidenceBetween(
-                            range,
-                            LOW_SCORE_RERANK_RANGE_CONFIDENCE_START,
-                            LOW_SCORE_RERANK_RANGE_CONFIDENCE_FULL
-                    )
-            );
-        }
         for (int index = 0; index < scoredCandidates.size(); index++) {
             MovieCandidate candidate = scoredCandidates.get(index);
             double rawScore = rerankResponse.scores().get(candidate.movie().getMovieId()).score();
@@ -494,22 +506,71 @@ public class MovieDiscoveryService {
         return normalizedScores;
     }
 
+    private Map<Long, Double> rankOnlyTieBreakScores(List<MovieCandidate> scoredCandidates) {
+        Map<Long, Double> normalizedScores = new HashMap<>();
+        for (int index = 0; index < scoredCandidates.size(); index++) {
+            MovieCandidate candidate = scoredCandidates.get(index);
+            double rankScore = scoredCandidates.size() == 1
+                    ? 1.0
+                    : 1.0 - (index / (double) (scoredCandidates.size() - 1));
+            normalizedScores.put(candidate.movie().getMovieId(), 0.5 + rankScore * 0.5);
+        }
+        return normalizedScores;
+    }
+
     private double combineRerankScore(MovieCandidate candidate, double rerankScore) {
         double rerankPercent = clamp01(rerankScore) * 100.0;
         double densePercent = candidate.denseScore() > 0.0 ? candidate.denseScore() * 100.0 : 0.0;
         double baselinePercent = candidate.score();
 
-        double combined = densePercent > 0.0
-                ? rerankPercent * 0.30 + densePercent * 0.10 + baselinePercent * 0.60
-                : rerankPercent * 0.30 + baselinePercent * 0.70;
+        double evidenceScore = densePercent > 0.0
+                ? densePercent * candidate.denseEvidenceWeight() + baselinePercent * (1.0 - candidate.denseEvidenceWeight())
+                : baselinePercent;
+        double rerankTrust = confidenceBetween(
+                clamp01(rerankScore),
+                LOW_CONFIDENCE_RERANK_MAX_SCORE,
+                TRUSTED_RERANK_SCORE_FULL
+        );
+        if (rerankTrust <= 0.0) {
+            return Math.max(0.0, Math.min(100.0, evidenceScore));
+        }
+
+        double rerankWeight = densePercent > 0.0
+                ? RERANK_TIE_BREAK_WEIGHT_WITH_DENSE
+                : RERANK_TIE_BREAK_WEIGHT_WITHOUT_DENSE;
+        double rerankAdjustment = (rerankPercent - RERANK_NEUTRAL_PERCENT) * rerankWeight * rerankTrust;
+        double combined = evidenceScore + rerankAdjustment;
         return Math.max(0.0, Math.min(100.0, combined));
     }
 
+    private double denseEvidenceWeight(int queryTokenCount, boolean exactTitleQuery) {
+        if (exactTitleQuery) {
+            return SHORT_QUERY_DENSE_EVIDENCE_WEIGHT;
+        }
+        double longQueryConfidence = confidenceBetween(
+                queryTokenCount,
+                DENSE_EVIDENCE_LONG_QUERY_START_TOKENS,
+                DENSE_EVIDENCE_LONG_QUERY_FULL_TOKENS
+        );
+        return SHORT_QUERY_DENSE_EVIDENCE_WEIGHT
+                + (LONG_QUERY_DENSE_EVIDENCE_WEIGHT - SHORT_QUERY_DENSE_EVIDENCE_WEIGHT) * longQueryConfidence;
+    }
+
     private double rerankConfidence(double maxScore, double range) {
-        return Math.max(
+        if (maxScore < LOW_CONFIDENCE_RERANK_MAX_SCORE) {
+            return 0.0;
+        }
+
+        double relativeConfidence = Math.max(
                 confidenceBetween(maxScore, RERANK_SCORE_CONFIDENCE_START, RERANK_SCORE_CONFIDENCE_FULL),
                 confidenceBetween(range, RERANK_RANGE_CONFIDENCE_START, RERANK_RANGE_CONFIDENCE_FULL)
         );
+        double absoluteConfidence = confidenceBetween(
+                maxScore,
+                LOW_CONFIDENCE_RERANK_MAX_SCORE,
+                TRUSTED_RERANK_SCORE_FULL
+        );
+        return relativeConfidence * absoluteConfidence;
     }
 
     private double confidenceBetween(double value, double start, double full) {
@@ -1254,6 +1315,7 @@ public class MovieDiscoveryService {
             Movie movie,
             double score,
             double denseScore,
+            double denseEvidenceWeight,
             Double rerankScore,
             Double rawRerankScore,
             String rerankModelName,

@@ -19,11 +19,13 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -32,7 +34,12 @@ public class CinemaRetrievalService {
 
     private static final Logger log = LoggerFactory.getLogger(CinemaRetrievalService.class);
 
-    private static final int DENSE_RESULT_LIMIT = 8;
+    private static final int DENSE_RESULT_LIMIT = 16;
+    private static final int MOVIE_CHUNK_MIN_QUERY_TOKENS = 12;
+    private static final int MOVIE_CHUNK_PREFILTER_LIMIT = 8;
+    private static final int MOVIE_CHUNK_DOCUMENT_LIMIT_PER_MOVIE = 2;
+    private static final int MOVIE_CHUNK_MIN_PREFILTER_SCORE = 2;
+    private static final double MOVIE_CHUNK_MIN_SCORE = 0.55;
 
     private final CinemaEmbeddingService embeddingService;
     private final CinemaSearchDocumentBuilder documentBuilder;
@@ -40,6 +47,7 @@ public class CinemaRetrievalService {
     private final SnackRepository snackRepository;
     private final SearchDocumentRepository searchDocumentRepository;
     private final CinemaQdrantService qdrantService;
+    private final Map<String, List<Double>> movieChunkEmbeddingCache = new ConcurrentHashMap<>();
 
     public CinemaRetrievalService(
             CinemaEmbeddingService embeddingService,
@@ -63,25 +71,24 @@ public class CinemaRetrievalService {
             return Collections.emptyList();
         }
 
+        Map<Long, DenseCandidate<Movie>> candidatesByMovieId = new LinkedHashMap<>();
         List<DenseCandidate<Movie>> qdrantResults = denseSearchMoviesWithQdrant(queryEmbedding, allMovies);
-        if (!qdrantResults.isEmpty()) {
-            return qdrantResults;
-        }
+        qdrantResults.forEach(candidate -> putBetterMovieCandidate(candidatesByMovieId, candidate.item(), candidate.score()));
 
-        List<DenseCandidate<Movie>> candidates = new ArrayList<>();
-        for (Movie movie : allMovies) {
-            List<Double> documentEmbedding = getOrCreateMovieEmbedding(movie);
-            double similarity = embeddingService.cosineSimilarity(queryEmbedding, documentEmbedding);
-            if (similarity > 0.0) {
-                candidates.add(new DenseCandidate<>(movie, embeddingService.normalizeCosineScore(similarity)));
+        if (qdrantResults.isEmpty()) {
+            for (Movie movie : allMovies) {
+                List<Double> documentEmbedding = getOrCreateMovieEmbedding(movie);
+                double similarity = embeddingService.cosineSimilarity(queryEmbedding, documentEmbedding);
+                if (similarity > 0.0) {
+                    putBetterMovieCandidate(candidatesByMovieId, movie, embeddingService.normalizeCosineScore(similarity));
+                }
             }
         }
 
-        candidates.sort((a, b) -> Double.compare(b.score(), a.score()));
-        List<DenseCandidate<Movie>> results = candidates.stream()
-                .limit(DENSE_RESULT_LIMIT)
-                .collect(Collectors.toList());
-        log.debug("[CinemaRetrieval] denseMovies candidates={}, returned={}", candidates.size(), results.size());
+        addMovieChunkCandidates(query, queryEmbedding, allMovies, candidatesByMovieId);
+
+        List<DenseCandidate<Movie>> results = rankMovieCandidates(candidatesByMovieId);
+        log.debug("[CinemaRetrieval] denseMovies candidates={}, returned={}", candidatesByMovieId.size(), results.size());
         return results;
     }
 
@@ -91,27 +98,26 @@ public class CinemaRetrievalService {
             return Collections.emptyList();
         }
 
+        Map<Long, DenseCandidate<Movie>> candidatesByMovieId = new LinkedHashMap<>();
         List<DenseCandidate<Movie>> qdrantResults = denseSearchMoviesWithQdrant(queryEmbedding, allMovies);
-        if (!qdrantResults.isEmpty()) {
-            return qdrantResults;
-        }
+        qdrantResults.forEach(candidate -> putBetterMovieCandidate(candidatesByMovieId, candidate.item(), candidate.score()));
 
-        List<DenseCandidate<Movie>> candidates = new ArrayList<>();
-        for (Movie movie : allMovies) {
-            List<Double> documentEmbedding = movie == null
-                    ? Collections.emptyList()
-                    : embeddingService.readEmbedding(movie.getSearchEmbedding());
-            double similarity = embeddingService.cosineSimilarity(queryEmbedding, documentEmbedding);
-            if (similarity > 0.0) {
-                candidates.add(new DenseCandidate<>(movie, embeddingService.normalizeCosineScore(similarity)));
+        if (qdrantResults.isEmpty()) {
+            for (Movie movie : allMovies) {
+                List<Double> documentEmbedding = movie == null
+                        ? Collections.emptyList()
+                        : embeddingService.readEmbedding(movie.getSearchEmbedding());
+                double similarity = embeddingService.cosineSimilarity(queryEmbedding, documentEmbedding);
+                if (similarity > 0.0) {
+                    putBetterMovieCandidate(candidatesByMovieId, movie, embeddingService.normalizeCosineScore(similarity));
+                }
             }
         }
 
-        candidates.sort((a, b) -> Double.compare(b.score(), a.score()));
-        List<DenseCandidate<Movie>> results = candidates.stream()
-                .limit(DENSE_RESULT_LIMIT)
-                .collect(Collectors.toList());
-        log.debug("[CinemaRetrieval] denseMoviesExisting candidates={}, returned={}", candidates.size(), results.size());
+        addMovieChunkCandidates(query, queryEmbedding, allMovies, candidatesByMovieId);
+
+        List<DenseCandidate<Movie>> results = rankMovieCandidates(candidatesByMovieId);
+        log.debug("[CinemaRetrieval] denseMoviesExisting candidates={}, returned={}", candidatesByMovieId.size(), results.size());
         return results;
     }
 
@@ -213,6 +219,131 @@ public class CinemaRetrievalService {
         return candidates.stream()
                 .limit(3)
                 .collect(Collectors.toList());
+    }
+
+    private void addMovieChunkCandidates(String query,
+                                         List<Double> queryEmbedding,
+                                         List<Movie> allMovies,
+                                         Map<Long, DenseCandidate<Movie>> candidatesByMovieId) {
+        List<String> queryTokens = tokenizeSearchText(query);
+        if (queryTokens.size() < MOVIE_CHUNK_MIN_QUERY_TOKENS || allMovies == null || allMovies.isEmpty()) {
+            return;
+        }
+
+        List<MovieChunkPrefilter> moviesForChunkSearch = allMovies.stream()
+                .filter(movie -> movie != null && movie.getMovieId() != null)
+                .map(movie -> new MovieChunkPrefilter(movie, calculateMovieChunkPrefilterScore(queryTokens, movie)))
+                .filter(prefilter -> prefilter.score() >= MOVIE_CHUNK_MIN_PREFILTER_SCORE)
+                .sorted((left, right) -> Integer.compare(right.score(), left.score()))
+                .limit(MOVIE_CHUNK_PREFILTER_LIMIT)
+                .collect(Collectors.toList());
+
+        int chunkDocumentsScored = 0;
+        for (MovieChunkPrefilter prefilter : moviesForChunkSearch) {
+            Movie movie = prefilter.movie();
+            List<String> chunkDocuments = selectBestMovieChunkDocuments(queryTokens, documentBuilder.buildMovieChunkSearchDocuments(movie));
+            double bestChunkScore = 0.0;
+            for (int index = 0; index < chunkDocuments.size(); index++) {
+                List<Double> chunkEmbedding = getOrCreateMovieChunkEmbedding(movie, index, chunkDocuments.get(index));
+                if (chunkEmbedding.isEmpty()) {
+                    continue;
+                }
+                chunkDocumentsScored++;
+                double similarity = embeddingService.cosineSimilarity(queryEmbedding, chunkEmbedding);
+                if (similarity > 0.0) {
+                    bestChunkScore = Math.max(bestChunkScore, embeddingService.normalizeCosineScore(similarity));
+                }
+            }
+            if (bestChunkScore >= MOVIE_CHUNK_MIN_SCORE) {
+                putBetterMovieCandidate(candidatesByMovieId, movie, bestChunkScore);
+            }
+        }
+        log.debug("[CinemaRetrieval] movieChunkDense queryTokens={}, movies={}, chunksScored={}, candidates={}",
+                queryTokens.size(), moviesForChunkSearch.size(), chunkDocumentsScored, candidatesByMovieId.size());
+    }
+
+    private List<String> selectBestMovieChunkDocuments(List<String> queryTokens, List<String> chunkDocuments) {
+        if (chunkDocuments == null || chunkDocuments.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        return chunkDocuments.stream()
+                .map(chunkDocument -> new MovieChunkDocumentPrefilter(
+                        chunkDocument,
+                        calculateTokenOverlapScore(queryTokens, chunkDocument)
+                ))
+                .filter(prefilter -> prefilter.score() > 0)
+                .sorted((left, right) -> Integer.compare(right.score(), left.score()))
+                .limit(MOVIE_CHUNK_DOCUMENT_LIMIT_PER_MOVIE)
+                .map(MovieChunkDocumentPrefilter::document)
+                .collect(Collectors.toList());
+    }
+
+    private List<Double> getOrCreateMovieChunkEmbedding(Movie movie, int chunkIndex, String chunkDocument) {
+        if (movie == null || movie.getMovieId() == null || chunkDocument == null || chunkDocument.isBlank()) {
+            return Collections.emptyList();
+        }
+
+        String cacheKey = movie.getMovieId() + ":" + chunkIndex + ":" + Integer.toHexString(chunkDocument.hashCode());
+        List<Double> cachedEmbedding = movieChunkEmbeddingCache.get(cacheKey);
+        if (cachedEmbedding != null) {
+            return cachedEmbedding;
+        }
+
+        List<Double> embedding = embeddingService.createEmbedding(chunkDocument);
+        if (embedding == null || embedding.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        List<Double> immutableEmbedding = List.copyOf(embedding);
+        movieChunkEmbeddingCache.put(cacheKey, immutableEmbedding);
+        return immutableEmbedding;
+    }
+
+    private int calculateMovieChunkPrefilterScore(List<String> queryTokens, Movie movie) {
+        return calculateTokenOverlapScore(queryTokens, String.join(" ",
+                safeSearchValue(movie.getTitle()),
+                safeSearchValue(movie.getGenre()),
+                safeSearchValue(movie.getDescription()),
+                safeSearchValue(movie.getActors())
+        ));
+    }
+
+    private int calculateTokenOverlapScore(List<String> queryTokens, String document) {
+        Set<String> movieTokens = new HashSet<>(tokenizeSearchText(document));
+        if (movieTokens.isEmpty()) {
+            return 0;
+        }
+
+        int score = 0;
+        for (String queryToken : new HashSet<>(queryTokens)) {
+            if (movieTokens.contains(queryToken)) {
+                score++;
+            }
+        }
+        return score;
+    }
+
+    private void putBetterMovieCandidate(Map<Long, DenseCandidate<Movie>> candidatesByMovieId, Movie movie, double score) {
+        if (movie == null || movie.getMovieId() == null || score <= 0.0) {
+            return;
+        }
+
+        DenseCandidate<Movie> existingCandidate = candidatesByMovieId.get(movie.getMovieId());
+        if (existingCandidate == null || score > existingCandidate.score()) {
+            candidatesByMovieId.put(movie.getMovieId(), new DenseCandidate<>(movie, score));
+        }
+    }
+
+    private List<DenseCandidate<Movie>> rankMovieCandidates(Map<Long, DenseCandidate<Movie>> candidatesByMovieId) {
+        return candidatesByMovieId.values().stream()
+                .sorted((left, right) -> Double.compare(right.score(), left.score()))
+                .limit(DENSE_RESULT_LIMIT)
+                .collect(Collectors.toList());
+    }
+
+    private String safeSearchValue(String value) {
+        return value == null ? "" : value;
     }
 
     private List<DenseCandidate<Movie>> denseSearchMoviesWithQdrant(List<Double> queryEmbedding, List<Movie> allMovies) {
@@ -682,6 +813,12 @@ public class CinemaRetrievalService {
     }
 
     public record DenseCandidate<T>(T item, double score) {
+    }
+
+    private record MovieChunkPrefilter(Movie movie, int score) {
+    }
+
+    private record MovieChunkDocumentPrefilter(String document, int score) {
     }
 
     private record Bm25Candidate<T>(T item, double score) {

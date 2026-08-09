@@ -63,7 +63,7 @@ public class BookingService {
 
     // ==================== ADMIN / USER ====================
         public List<BookingResponseDTO> findAllDTO() {
-        return bookingRepo.findAll().stream()
+        return bookingRepo.findAllByOrderByCreatedAtDescBookingIdDesc().stream()
             .map(b -> BookingResponseDTO.builder()
                 .bookingId(b.getBookingId())
                 .username((b.getCustomer() != null && b.getCustomer().getUser() != null)
