@@ -52,6 +52,7 @@ public interface SnackOrderRepository extends JpaRepository<SnackOrder, Long> {
 
     @Query("""
            SELECT c.customerId AS customerId,
+                  u.userId AS userId,
                   u.fullName AS customerName,
                   u.email AS email,
                   u.phone AS phone,
@@ -61,11 +62,12 @@ public interface SnackOrderRepository extends JpaRepository<SnackOrder, Long> {
            JOIN o.customer c
            JOIN c.user u
            WHERE o.status = com.example.cinema.domain.SnackOrder$Status.PAID
+             AND o.orderType = com.example.cinema.domain.SnackOrder$OrderType.STANDALONE
              AND (
                  (o.paidAt IS NOT NULL AND o.paidAt >= :from AND o.paidAt < :to)
                  OR (o.paidAt IS NULL AND o.createdAt >= :from AND o.createdAt < :to)
              )
-           GROUP BY c.customerId, u.fullName, u.email, u.phone
+           GROUP BY c.customerId, u.userId, u.fullName, u.email, u.phone
            ORDER BY totalSpent DESC
            """)
     List<Object[]> getCustomerSnackSpendingBetween(

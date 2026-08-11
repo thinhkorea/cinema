@@ -48,6 +48,14 @@ public class MovieController {
         return ResponseEntity.ok(movieDiscoveryService.discover(query, limit, includeEnded));
     }
 
+    @GetMapping("/discover/debug")
+    public ResponseEntity<MovieDiscoveryService.MovieDiscoveryTraceDTO> discoverMoviesDebug(
+            @RequestParam String query,
+            @RequestParam(defaultValue = "5") Integer limit,
+            @RequestParam(defaultValue = "false") boolean includeEnded) {
+        return ResponseEntity.ok(movieDiscoveryService.discoverWithTrace(query, limit, includeEnded));
+    }
+
     // Lấy phim theo ID
     @PostMapping("/admin/upload-poster")
     public ResponseEntity<?> uploadMoviePoster(@RequestParam("file") MultipartFile file) {

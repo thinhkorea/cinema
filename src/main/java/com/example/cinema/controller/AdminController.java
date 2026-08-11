@@ -77,7 +77,14 @@ public class AdminController {
 
     // Top phim theo doanh thu
     @GetMapping("/revenue/movies")
-    public ResponseEntity<?> getRevenueByMovie() {
+    public ResponseEntity<?> getRevenueByMovie(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer pageSize) {
+        if (page != null || pageSize != null) {
+            return ResponseEntity.ok(bookingService.getRevenueByMovie(
+                    page != null ? page : 1,
+                    pageSize != null ? pageSize : 10));
+        }
         return ResponseEntity.ok(bookingService.getRevenueByMovie());
     }
 
@@ -99,6 +106,22 @@ public class AdminController {
             throw new IllegalArgumentException("Tháng thống kê không hợp lệ");
         }
         return ResponseEntity.ok(bookingService.getTopCustomerSpendingByMonth(targetYear, targetMonth));
+    }
+
+    @GetMapping("/revenue/customers/monthly")
+    public ResponseEntity<?> getCustomerMonthlyTicketSpending(
+            @RequestParam(required = false) Integer year,
+            @RequestParam(required = false) Integer month,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int pageSize) {
+        LocalDate now = LocalDate.now();
+        int targetYear = year != null ? year : now.getYear();
+        int targetMonth = month != null ? month : now.getMonthValue();
+        if (targetMonth < 1 || targetMonth > 12) {
+            throw new IllegalArgumentException("Tháng thống kê không hợp lệ");
+        }
+        return ResponseEntity.ok(
+                bookingService.getCustomerTicketSpendingByMonth(targetYear, targetMonth, page, pageSize));
     }
 
     @GetMapping("/revenue/time-slots")

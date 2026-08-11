@@ -6,6 +6,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
+
 @Data
 @Builder
 @NoArgsConstructor
@@ -23,4 +25,6 @@ public class VoucherAvailableDTO {
     private Double discountAmount;
     private Double finalAmount;
     private Boolean newMemberOnly;
+    private LocalDateTime startAt;
+    private LocalDateTime endAt;
 }

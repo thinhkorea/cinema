@@ -27,6 +27,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 @Service
 public class VoucherService {
@@ -95,7 +97,7 @@ public class VoucherService {
     @Transactional
     public VoucherResponseDTO update(Long voucherId, VoucherRequestDTO request) {
         Voucher voucher = voucherRepo.findById(voucherId)
-                .orElseThrow(() -> new IllegalArgumentException("Voucher khÃ´ng tá»“n táº¡i"));
+                .orElseThrow(() -> new IllegalArgumentException("Voucher không tồn tại"));
         applyRequest(voucher, request, false);
         return toResponse(voucherRepo.save(voucher));
     }
@@ -103,7 +105,7 @@ public class VoucherService {
     @Transactional
     public void delete(Long voucherId) {
         if (!voucherRepo.existsById(voucherId)) {
-            throw new IllegalArgumentException("Voucher khÃ´ng tá»“n táº¡i");
+            throw new IllegalArgumentException("Voucher không tồn tại");
         }
         voucherRepo.deleteById(voucherId);
     }
@@ -111,15 +113,49 @@ public class VoucherService {
     @Transactional
     public VoucherResponseDTO toggleActive(Long voucherId, boolean active) {
         Voucher voucher = voucherRepo.findById(voucherId)
-                .orElseThrow(() -> new IllegalArgumentException("Voucher khÃ´ng tá»“n táº¡i"));
+                .orElseThrow(() -> new IllegalArgumentException("Voucher không tồn tại"));
         voucher.setActive(active);
         return toResponse(voucherRepo.save(voucher));
+    }
+
+    @Transactional
+    public Map<String, Object> assignToUser(Long voucherId, Long userId) {
+        Voucher voucher = voucherRepo.findById(voucherId)
+                .orElseThrow(() -> new IllegalArgumentException("Voucher khong ton tai"));
+        if (voucher.getActive() == null || !voucher.getActive()) {
+            throw new IllegalArgumentException("Voucher dang tam khoa");
+        }
+
+        User user = userRepo.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("Tai khoan khach hang khong ton tai"));
+        if (user.getRole() != User.Role.CUSTOMER) {
+            throw new IllegalArgumentException("Chi co the tang voucher cho tai khoan khach hang");
+        }
+
+        boolean alreadyAssigned = claimRepo.existsByVoucher_VoucherIdAndUser_UserId(
+                voucher.getVoucherId(),
+                user.getUserId());
+        if (!alreadyAssigned) {
+            VoucherClaim claim = new VoucherClaim();
+            claim.setVoucher(voucher);
+            claim.setUser(user);
+            claimRepo.save(claim);
+        }
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("voucherId", voucher.getVoucherId());
+        response.put("voucherCode", voucher.getCode());
+        response.put("voucherName", voucher.getName());
+        response.put("userId", user.getUserId());
+        response.put("customerName", user.getFullName());
+        response.put("alreadyAssigned", alreadyAssigned);
+        return response;
     }
 
     @Transactional(readOnly = true)
     public VoucherValidateResponseDTO validate(String code, String username, Double totalAmount) {
         Voucher voucher = voucherRepo.findByCodeIgnoreCase(normalizeCode(code))
-                .orElseThrow(() -> new IllegalArgumentException("Voucher khÃ´ng tá»“n táº¡i"));
+                .orElseThrow(() -> new IllegalArgumentException("Voucher không tồn tại"));
 
         User user = getUser(username);
         validateVoucher(voucher, user, totalAmount);
@@ -145,20 +181,14 @@ public class VoucherService {
     @Transactional(readOnly = true)
     public List<VoucherAvailableDTO> getAvailable(String username, Double totalAmount) {
         if (totalAmount == null || totalAmount <= 0) {
-            throw new IllegalArgumentException("Tá»•ng thanh toÃ¡n khÃ´ng há»£p lá»‡");
+            throw new IllegalArgumentException("Tổng thanh toán không hợp lệ");
         }
 
         User user = getUser(username);
-        List<Voucher> vouchers = voucherRepo.findAll();
         List<VoucherAvailableDTO> result = new ArrayList<>();
-        double highestAvailableSpendingThreshold = getHighestAvailableSpendingThreshold(vouchers, user, totalAmount);
 
-        for (Voucher voucher : vouchers) {
-            if (!isApplicable(voucher, user, totalAmount)) {
-                continue;
-            }
-            if (isClaimRequired(voucher)
-                    && voucher.getRequiredTotalSpent() < highestAvailableSpendingThreshold) {
+        for (Voucher voucher : voucherRepo.findAll()) {
+            if (!hasClaimed(voucher, user) || !isApplicable(voucher, user, totalAmount)) {
                 continue;
             }
 
@@ -176,6 +206,8 @@ public class VoucherService {
                     .discountAmount(discount)
                     .finalAmount(Math.max(0, totalAmount - discount))
                     .newMemberOnly(voucher.getNewMemberOnly())
+                    .startAt(voucher.getStartAt())
+                    .endAt(voucher.getEndAt())
                     .build());
         }
 
@@ -192,7 +224,7 @@ public class VoucherService {
             if (!isVisibleInCustomerList(voucher)) {
                 continue;
             }
-            if (Boolean.TRUE.equals(voucher.getNewMemberOnly()) && hasAnyPaidPurchase) {
+            if (Boolean.TRUE.equals(voucher.getNewMemberOnly()) && hasAnyPaidPurchase && !hasClaimed(voucher, user)) {
                 continue;
             }
 
@@ -205,14 +237,11 @@ public class VoucherService {
     @Transactional
     public VoucherStatusDTO claim(String code, String username) {
         Voucher voucher = voucherRepo.findByCodeIgnoreCase(normalizeCode(code))
-                .orElseThrow(() -> new IllegalArgumentException("Voucher khÃ´ng tá»“n táº¡i"));
+                .orElseThrow(() -> new IllegalArgumentException("Voucher không tồn tại"));
         User user = getUser(username);
 
         if (!isVisibleInCustomerList(voucher)) {
-            throw new IllegalArgumentException("Voucher khÃ´ng kháº£ dá»¥ng");
-        }
-        if (!isClaimRequired(voucher)) {
-            throw new IllegalArgumentException("Voucher nÃ y khÃ´ng cáº§n nháº­n thá»§ cÃ´ng");
+            throw new IllegalArgumentException("Voucher không khả dụng");
         }
 
         double currentSpent = getTotalSpent(user, voucher);
@@ -224,9 +253,6 @@ public class VoucherService {
         boolean alreadyClaimed = claimRepo.existsByVoucher_VoucherIdAndUser_UserId(
                 voucher.getVoucherId(),
                 user.getUserId());
-        if (!alreadyClaimed && voucher.getRequiredTotalSpent() < getHighestClaimableSpendingThreshold(user)) {
-            throw new IllegalArgumentException("Báº¡n Ä‘Ã£ Ä‘áº¡t má»‘c cao hÆ¡n, vui lÃ²ng nháº­n voucher á»Ÿ má»‘c cao nháº¥t");
-        }
 
         if (!alreadyClaimed) {
             VoucherClaim claim = new VoucherClaim();
@@ -241,11 +267,11 @@ public class VoucherService {
     @Transactional
     public VoucherValidateResponseDTO redeem(VoucherRedeemRequestDTO request, String username) {
         Voucher voucher = voucherRepo.findByCodeIgnoreCase(normalizeCode(request.getCode()))
-                .orElseThrow(() -> new IllegalArgumentException("Voucher khÃ´ng tá»“n táº¡i"));
+                .orElseThrow(() -> new IllegalArgumentException("Voucher không tồn tại"));
 
         User user = getUser(username);
         if (redemptionRepo.existsByVoucher_VoucherIdAndTxnRef(voucher.getVoucherId(), request.getTxnRef())) {
-            throw new IllegalArgumentException("Voucher Ä‘Ã£ Ä‘Æ°á»£c dÃ¹ng cho giao dá»‹ch nÃ y");
+            throw new IllegalArgumentException("Voucher đã được dùng cho giao dịch này");
         }
 
         validateVoucher(voucher, user, request.getTotalAmount());
@@ -326,54 +352,61 @@ public class VoucherService {
 
     private void validateVoucher(Voucher voucher, User user, Double totalAmount) {
         if (voucher.getActive() == null || !voucher.getActive()) {
-            throw new IllegalArgumentException("Voucher Ä‘ang táº¡m khÃ³a");
+            throw new IllegalArgumentException("Voucher đang tạm khóa");
         }
 
         LocalDateTime now = LocalDateTime.now();
         if (voucher.getStartAt() != null && now.isBefore(voucher.getStartAt())) {
-            throw new IllegalArgumentException("Voucher chÆ°a Ä‘áº¿n ngÃ y Ã¡p dá»¥ng");
+            throw new IllegalArgumentException("Voucher chưa đến ngày áp dụng");
         }
         if (voucher.getEndAt() != null && now.isAfter(voucher.getEndAt())) {
-            throw new IllegalArgumentException("Voucher Ä‘Ã£ háº¿t háº¡n");
+            throw new IllegalArgumentException("Voucher đã hết hạn");
         }
 
         int usedCount = voucher.getUsedCount() == null ? 0 : voucher.getUsedCount();
         if (voucher.getUsageLimit() != null && voucher.getUsageLimit() > 0 && usedCount >= voucher.getUsageLimit()) {
-            throw new IllegalArgumentException("Voucher Ä‘Ã£ háº¿t lÆ°á»£t sá»­ dá»¥ng");
+            throw new IllegalArgumentException("Voucher đã hết lượt sử dụng");
         }
 
         int perUserLimit = voucher.getPerUserLimit() == null ? 1 : voucher.getPerUserLimit();
         if (perUserLimit > 0) {
             int usedByUser = redemptionRepo.countByVoucher_VoucherIdAndUser_UserId(voucher.getVoucherId(), user.getUserId());
             if (usedByUser >= perUserLimit) {
-                throw new IllegalArgumentException("Voucher Ä‘Ã£ vÆ°á»£t quÃ¡ sá»‘ láº§n sá»­ dá»¥ng cho tÃ i khoáº£n nÃ y");
+                throw new IllegalArgumentException("Voucher đã vượt quá số lần sử dụng cho tài khoản này");
             }
         }
 
-        if (Boolean.TRUE.equals(voucher.getNewMemberOnly())) {
+        boolean assignedToUser = hasClaimed(voucher, user);
+        if (!assignedToUser) {
+            throw new IllegalArgumentException("Vui lòng lưu voucher vào ví trước khi sử dụng");
+        }
+
+        if (!assignedToUser && Boolean.TRUE.equals(voucher.getNewMemberOnly())) {
             if (hasAnyPaidPurchase(user)) {
-                throw new IllegalArgumentException("Voucher chá»‰ Ã¡p dá»¥ng cho láº§n mua Ä‘áº§u tiÃªn");
+                throw new IllegalArgumentException("Voucher chỉ áp dụng cho lần mua đầu tiên");
             }
         }
 
         if (totalAmount == null || totalAmount <= 0) {
-            throw new IllegalArgumentException("Tá»•ng thanh toÃ¡n khÃ´ng há»£p lá»‡");
+            throw new IllegalArgumentException("Tổng thanh toán không hợp lệ");
         }
 
         Double requiredTotalSpent = voucher.getRequiredTotalSpent();
         if (requiredTotalSpent != null && requiredTotalSpent > 0
+                && !assignedToUser
                 && getTotalSpent(user, voucher) < requiredTotalSpent) {
             throw new IllegalArgumentException(
-                    "KhÃ¡ch hÃ ng chÆ°a Ä‘áº¡t má»‘c chi tiÃªu trong " + formatSpendingWindow(voucher) + " Ä‘á»ƒ Ã¡p dá»¥ng voucher");
+                    "Khách hàng chưa đạt mốc chi tiêu trong " + formatSpendingWindow(voucher) + " để áp dụng voucher");
         }
 
         if (isClaimRequired(voucher)
+                && !assignedToUser
                 && voucher.getRequiredTotalSpent() < getHighestAvailableSpendingThreshold(voucherRepo.findAll(), user, totalAmount)) {
-            throw new IllegalArgumentException("KhÃ¡ch hÃ ng Ä‘Ã£ Ä‘áº¡t má»‘c voucher cao hÆ¡n");
+            throw new IllegalArgumentException("Khách hàng đã đạt mốc voucher cao hơn");
         }
 
         if (voucher.getMinOrder() != null && totalAmount < voucher.getMinOrder()) {
-            throw new IllegalArgumentException("ÄÆ¡n hÃ ng chÆ°a Ä‘áº¡t tá»‘i thiá»ƒu Ä‘á»ƒ Ã¡p dá»¥ng voucher");
+            throw new IllegalArgumentException("Đơn hàng chưa đạt tối thiểu để áp dụng voucher");
         }
     }
 
@@ -403,7 +436,8 @@ public class VoucherService {
             }
         }
 
-        if (Boolean.TRUE.equals(voucher.getNewMemberOnly())) {
+        boolean assignedToUser = hasClaimed(voucher, user);
+        if (!assignedToUser && Boolean.TRUE.equals(voucher.getNewMemberOnly())) {
             if (hasAnyPaidPurchase(user)) {
                 return false;
             }
@@ -415,6 +449,7 @@ public class VoucherService {
 
         Double requiredTotalSpent = voucher.getRequiredTotalSpent();
         if (requiredTotalSpent != null && requiredTotalSpent > 0
+                && !assignedToUser
                 && getTotalSpent(user, voucher) < requiredTotalSpent) {
             return false;
         }
@@ -445,7 +480,7 @@ public class VoucherService {
     private User getUser(String username) {
         User user = userRepo.findByEmailOrPhone(username, username);
         if (user == null) {
-            throw new IllegalArgumentException("KhÃ´ng tÃ¬m tháº¥y ngÆ°á»i dÃ¹ng");
+            throw new IllegalArgumentException("Không tìm thấy người dùng");
         }
         return user;
     }
@@ -483,7 +518,8 @@ public class VoucherService {
                 ? 0.0
                 : Math.max(0, voucher.getRequiredTotalSpent() - currentSpent);
         EligibilityStatus status = getCustomerEligibilityStatus(voucher, user, currentSpent);
-        boolean claimed = status.eligible();
+        boolean claimed = hasClaimed(voucher, user);
+        boolean eligible = status.eligible();
 
         return VoucherStatusDTO.builder()
                 .code(voucher.getCode())
@@ -496,11 +532,11 @@ public class VoucherService {
                 .requiredTotalSpent(voucher.getRequiredTotalSpent())
                 .spendingWindowDays(windowDays)
                 .currentTotalSpent(currentSpent)
-                .remainingAmount(remaining)
-                .eligible(status.eligible())
+                .remainingAmount(claimed ? 0.0 : remaining)
+                .eligible(eligible)
                 .claimed(claimed)
                 .claimable(false)
-                .reason(status.reason())
+                .reason(claimed ? "Voucher đã lưu trong ví của bạn" : status.reason())
                 .newMemberOnly(voucher.getNewMemberOnly())
                 .startAt(voucher.getStartAt())
                 .endAt(voucher.getEndAt())
@@ -597,9 +633,9 @@ public class VoucherService {
         int years = Math.max(1, Math.round(windowDays / 365.0f));
         int startYear = today.getYear() - years + 1;
         if (years == 1) {
-            return "nÄƒm " + today.getYear();
+            return "năm " + today.getYear();
         }
-        return "tá»« nÄƒm " + startYear + " Ä‘áº¿n nÄƒm " + today.getYear();
+        return "từ năm " + startYear + " đến năm " + today.getYear();
     }
 
     private boolean isVisibleInCustomerList(Voucher voucher) {
@@ -644,31 +680,32 @@ public class VoucherService {
     }
 
     private EligibilityStatus getCustomerEligibilityStatus(Voucher voucher, User user, double currentSpent) {
+        boolean manuallyAssigned = hasClaimed(voucher, user);
         LocalDateTime now = LocalDateTime.now();
         if (voucher.getStartAt() != null && now.isBefore(voucher.getStartAt())) {
-            return new EligibilityStatus(false, "ChÆ°a Ä‘áº¿n ngÃ y Ã¡p dá»¥ng");
+            return new EligibilityStatus(false, "Chưa đến ngày áp dụng");
         }
 
         int perUserLimit = voucher.getPerUserLimit() == null ? 1 : voucher.getPerUserLimit();
         if (perUserLimit > 0) {
             int usedByUser = redemptionRepo.countByVoucher_VoucherIdAndUser_UserId(voucher.getVoucherId(), user.getUserId());
             if (usedByUser >= perUserLimit) {
-                return new EligibilityStatus(false, "ÄÃ£ háº¿t lÆ°á»£t dÃ¹ng cho tÃ i khoáº£n nÃ y");
+                return new EligibilityStatus(false, "Đã hết lượt dùng cho tài khoản này");
             }
         }
 
-        if (Boolean.TRUE.equals(voucher.getNewMemberOnly())) {
+        if (!manuallyAssigned && Boolean.TRUE.equals(voucher.getNewMemberOnly())) {
             if (hasAnyPaidPurchase(user)) {
-                return new EligibilityStatus(false, "Chá»‰ Ã¡p dá»¥ng cho láº§n mua Ä‘áº§u tiÃªn");
+                return new EligibilityStatus(false, "Chỉ áp dụng cho lần mua đầu tiên");
             }
         }
 
         Double requiredTotalSpent = voucher.getRequiredTotalSpent();
-        if (requiredTotalSpent != null && requiredTotalSpent > 0 && currentSpent < requiredTotalSpent) {
-            return new EligibilityStatus(false, "Cáº§n Ä‘áº¡t má»‘c chi tiÃªu trong " + formatSpendingWindow(voucher));
+        if (requiredTotalSpent != null && requiredTotalSpent > 0 && !manuallyAssigned && currentSpent < requiredTotalSpent) {
+            return new EligibilityStatus(false, "Cần đạt mốc chi tiêu trong " + formatSpendingWindow(voucher));
         }
 
-        return new EligibilityStatus(true, "CÃ³ thá»ƒ dÃ¹ng khi Ä‘Æ¡n hÃ ng Ä‘áº¡t Ä‘iá»u kiá»‡n");
+        return new EligibilityStatus(true, "Có thể dùng khi đơn hàng đạt điều kiện");
     }
 
     private record EligibilityStatus(boolean eligible, String reason) {
@@ -683,20 +720,20 @@ public class VoucherService {
 
     private void applyRequest(Voucher voucher, VoucherRequestDTO request, boolean isCreate) {
         if (request.getCode() == null || request.getCode().trim().isEmpty()) {
-            throw new IllegalArgumentException("MÃ£ voucher khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng");
+            throw new IllegalArgumentException("Mã voucher không được để trống");
         }
         if (request.getName() == null || request.getName().trim().isEmpty()) {
-            throw new IllegalArgumentException("TÃªn voucher khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng");
+            throw new IllegalArgumentException("Tên voucher không được để trống");
         }
 
         String code = request.getCode().trim();
         if (isCreate) {
             if (voucherRepo.findByCodeIgnoreCase(code).isPresent()) {
-                throw new IllegalArgumentException("MÃ£ voucher Ä‘Ã£ tá»“n táº¡i");
+                throw new IllegalArgumentException("Mã voucher đã tồn tại");
             }
         } else if (!code.equalsIgnoreCase(voucher.getCode())) {
             if (voucherRepo.findByCodeIgnoreCase(code).isPresent()) {
-                throw new IllegalArgumentException("MÃ£ voucher Ä‘Ã£ tá»“n táº¡i");
+                throw new IllegalArgumentException("Mã voucher đã tồn tại");
             }
         }
 

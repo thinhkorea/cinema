@@ -52,6 +52,19 @@ public class AdminVoucherController {
         }
     }
 
+    @PostMapping("/{voucherId}/assign")
+    public ResponseEntity<?> assignToUser(@PathVariable Long voucherId, @RequestBody Map<String, Object> body) {
+        try {
+            Long userId = parseLong(body.get("userId"));
+            if (userId == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Thieu userId"));
+            }
+            return ResponseEntity.ok(voucherService.assignToUser(voucherId, userId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @DeleteMapping("/{voucherId}")
     public ResponseEntity<?> delete(@PathVariable Long voucherId) {
         try {
@@ -60,5 +73,15 @@ public class AdminVoucherController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
+    }
+
+    private Long parseLong(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            return Long.parseLong(text);
+        }
+        return null;
     }
 }

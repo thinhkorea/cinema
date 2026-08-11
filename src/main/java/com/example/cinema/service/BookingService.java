@@ -24,6 +24,8 @@ public class BookingService {
 
     private static final Logger log = LoggerFactory.getLogger(BookingService.class);
     private static final Pattern SEAT_PATTERN = Pattern.compile("^([A-Za-z]+)(\\d+)");
+    private static final int MAX_CUSTOMER_SPENDING_PAGE_SIZE = 100;
+    private static final int MAX_MOVIE_REVENUE_PAGE_SIZE = 100;
 
     private final BookingRepository bookingRepo;
     private final ShowtimeRepository showtimeRepo;
@@ -252,8 +254,7 @@ public class BookingService {
             Integer pointsUsed = bookings.get(0).getPointsUsed() != null ?
                 bookings.get(0).getPointsUsed() : 0;
 
-            Double discountFromPoints = pointsUsed * 1000.0;
-            Double actualPaymentAmount = totalAmount - discountFromPoints;
+            Double actualPaymentAmount = totalAmount;
 
             // Trừ điểm đã dùng qua PointService
             if (pointsUsed > 0) {
@@ -335,26 +336,48 @@ public class BookingService {
     public List<Map<String, Object>> getRevenueByMovie() {
         List<Object[]> results = bookingRepo.getRevenueByMovie();
         List<Map<String, Object>> movieRevenueList = new ArrayList<>();
-        Map<Object, Double> snackRevenueByMovie = toRevenueMap(snackOrderItemRepository.getAttachedSnackRevenueByMovie());
         for (Object[] row : results) {
             double ticketRevenue = toDouble(row[1]);
-            double snackRevenue = snackRevenueByMovie.getOrDefault(row[0], 0.0);
             movieRevenueList.add(Map.of(
                     "movieTitle", row[0],
-                    "revenue", ticketRevenue + snackRevenue,
+                    "revenue", ticketRevenue,
                     "ticketRevenue", ticketRevenue,
-                    "snackRevenue", snackRevenue));
-            snackRevenueByMovie.remove(row[0]);
-        }
-        for (Map.Entry<Object, Double> entry : snackRevenueByMovie.entrySet()) {
-            movieRevenueList.add(Map.of(
-                    "movieTitle", entry.getKey(),
-                    "revenue", entry.getValue(),
-                    "ticketRevenue", 0.0,
-                    "snackRevenue", entry.getValue()));
+                    "snackRevenue", 0.0));
         }
         movieRevenueList.sort((left, right) -> Double.compare(toDouble(right.get("revenue")), toDouble(left.get("revenue"))));
         return movieRevenueList;
+    }
+
+    public Map<String, Object> getRevenueByMovie(int page, int pageSize) {
+        int safePageSize = Math.min(MAX_MOVIE_REVENUE_PAGE_SIZE, Math.max(1, pageSize));
+        int safePage = Math.max(1, page);
+        List<Map<String, Object>> sortedRows = getRevenueByMovie();
+
+        int totalItems = sortedRows.size();
+        int totalPages = totalItems == 0 ? 0 : (int) Math.ceil((double) totalItems / safePageSize);
+        if (totalPages > 0 && safePage > totalPages) {
+            safePage = totalPages;
+        }
+
+        int fromIndex = totalItems == 0 ? 0 : (safePage - 1) * safePageSize;
+        int toIndex = Math.min(fromIndex + safePageSize, totalItems);
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (int index = fromIndex; index < toIndex; index++) {
+            Map<String, Object> row = new LinkedHashMap<>(sortedRows.get(index));
+            row.put("rank", index + 1);
+            items.add(row);
+        }
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("items", items);
+        response.put("page", safePage);
+        response.put("pageSize", safePageSize);
+        response.put("totalItems", totalItems);
+        response.put("totalPages", totalPages);
+        response.put("totalRevenue", sortedRows.stream().mapToDouble(row -> toDouble(row.get("revenue"))).sum());
+        response.put("totalTicketRevenue", sortedRows.stream().mapToDouble(row -> toDouble(row.get("ticketRevenue"))).sum());
+        response.put("totalSnackRevenue", sortedRows.stream().mapToDouble(row -> toDouble(row.get("snackRevenue"))).sum());
+        return response;
     }
 
     public List<Map<String, Object>> getRevenueByStaff() {
@@ -385,25 +408,51 @@ public class BookingService {
     public List<Map<String, Object>> getTopCustomerSpendingByMonth(int year, int month) {
         LocalDateTime from = LocalDate.of(year, month, 1).atStartOfDay();
         LocalDateTime to = from.plusMonths(1);
-        Map<Long, CustomerSpendingAccumulator> rows = new LinkedHashMap<>();
 
-        for (Object[] row : bookingRepo.getCustomerTicketSpendingBetween(from, to)) {
-            CustomerSpendingAccumulator accumulator = getCustomerSpendingRow(rows, row);
-            accumulator.ticketCount += toLong(row[4]);
-            accumulator.ticketRevenue += toDouble(row[5]);
-        }
-
-        for (Object[] row : snackOrderRepository.getCustomerSnackSpendingBetween(from, to)) {
-            CustomerSpendingAccumulator accumulator = getCustomerSpendingRow(rows, row);
-            accumulator.snackOrderCount += toLong(row[4]);
-            accumulator.snackRevenue += toDouble(row[5]);
-        }
-
-        return rows.values().stream()
+        return getCustomerSpendingRows(from, to, false).stream()
                 .sorted((left, right) -> Double.compare(right.getTotalSpent(), left.getTotalSpent()))
                 .limit(5)
                 .map(CustomerSpendingAccumulator::toMap)
                 .collect(Collectors.toList());
+    }
+
+    public Map<String, Object> getCustomerTicketSpendingByMonth(int year, int month, int page, int pageSize) {
+        LocalDateTime from = LocalDate.of(year, month, 1).atStartOfDay();
+        LocalDateTime to = from.plusMonths(1);
+        int safePageSize = Math.min(MAX_CUSTOMER_SPENDING_PAGE_SIZE, Math.max(1, pageSize));
+        int safePage = Math.max(1, page);
+
+        List<CustomerSpendingAccumulator> sortedRows = getCustomerSpendingRows(from, to, true).stream()
+                .filter(row -> row.ticketCount > 0 || row.ticketRevenue > 0)
+                .sorted(this::compareCustomerByTicketSpending)
+                .collect(Collectors.toList());
+
+        int totalItems = sortedRows.size();
+        int totalPages = totalItems == 0 ? 0 : (int) Math.ceil((double) totalItems / safePageSize);
+        if (totalPages > 0 && safePage > totalPages) {
+            safePage = totalPages;
+        }
+
+        int fromIndex = totalItems == 0 ? 0 : (safePage - 1) * safePageSize;
+        int toIndex = Math.min(fromIndex + safePageSize, totalItems);
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (int index = fromIndex; index < toIndex; index++) {
+            items.add(sortedRows.get(index).toMap(index + 1));
+        }
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("items", items);
+        response.put("page", safePage);
+        response.put("pageSize", safePageSize);
+        response.put("totalItems", totalItems);
+        response.put("totalPages", totalPages);
+        response.put("year", year);
+        response.put("month", month);
+        response.put("monthLabel", String.format("%02d/%d", month, year));
+        response.put("totalTicketCount", sortedRows.stream().mapToLong(row -> row.ticketCount).sum());
+        response.put("totalTicketRevenue", sortedRows.stream().mapToDouble(row -> row.ticketRevenue).sum());
+        response.put("totalSpent", sortedRows.stream().mapToDouble(CustomerSpendingAccumulator::getTotalSpent).sum());
+        return response;
     }
 
     public List<Map<String, Object>> getRevenueByTimeSlot(int year) {
@@ -487,12 +536,7 @@ public class BookingService {
             }
         }
 
-        return rows.values().stream()
-                .sorted(Comparator
-                        .comparingInt((ShiftRevenueAccumulator row) -> row.shift.order)
-                        .thenComparing(row -> row.staffName, String.CASE_INSENSITIVE_ORDER))
-                .map(ShiftRevenueAccumulator::toDto)
-                .collect(Collectors.toList());
+        return toSortedShiftRevenueDtos(rows.values());
     }
 
     @Transactional(readOnly = true)
@@ -551,12 +595,21 @@ public class BookingService {
             }
         }
 
-        return rows.values().stream()
+        return toSortedShiftRevenueDtos(rows.values());
+    }
+
+    private List<ShiftRevenueItemDTO> toSortedShiftRevenueDtos(Collection<ShiftRevenueAccumulator> rows) {
+        List<ShiftRevenueAccumulator> sortedRows = rows.stream()
                 .sorted(Comparator
                         .comparingInt((ShiftRevenueAccumulator row) -> row.shift.order)
                         .thenComparing(row -> row.staffName, String.CASE_INSENSITIVE_ORDER))
-                .map(ShiftRevenueAccumulator::toDto)
                 .collect(Collectors.toList());
+
+        List<ShiftRevenueItemDTO> result = new ArrayList<>(sortedRows.size());
+        for (ShiftRevenueAccumulator row : sortedRows) {
+            result.add(row.toDto());
+        }
+        return result;
     }
 
     private Map<Object, Double> toRevenueMap(List<Object[]> rows) {
@@ -577,6 +630,67 @@ public class BookingService {
 
     private long toLong(Object value) {
         return value instanceof Number number ? number.longValue() : 0L;
+    }
+
+    private List<CustomerSpendingAccumulator> getCustomerSpendingRows(
+            LocalDateTime from,
+            LocalDateTime to,
+            boolean onlyTicketCustomers) {
+        Map<Long, CustomerSpendingAccumulator> rows = new LinkedHashMap<>();
+
+        for (Object[] row : bookingRepo.getCustomerTicketSpendingBetween(from, to)) {
+            CustomerSpendingAccumulator accumulator = getCustomerSpendingRowWithUser(rows, row);
+            accumulator.ticketCount += toLong(row[5]);
+            accumulator.ticketRevenue += toDouble(row[6]);
+        }
+
+        for (Object[] row : snackOrderRepository.getCustomerSnackSpendingBetween(from, to)) {
+            Long customerId = toLong(row[0]);
+            CustomerSpendingAccumulator accumulator = onlyTicketCustomers
+                    ? rows.get(customerId)
+                    : getCustomerSpendingRowWithUser(rows, row);
+            if (accumulator == null) {
+                continue;
+            }
+            accumulator.snackOrderCount += toLong(row[5]);
+            accumulator.snackRevenue += toDouble(row[6]);
+        }
+
+        return new ArrayList<>(rows.values());
+    }
+
+    private CustomerSpendingAccumulator getCustomerSpendingRowWithUser(
+            Map<Long, CustomerSpendingAccumulator> rows,
+            Object[] row) {
+        Long rawCustomerId = row[0] instanceof Number number ? number.longValue() : null;
+        Long customerId = rawCustomerId != null ? rawCustomerId : 0L;
+        Long userId = row[1] instanceof Number number ? number.longValue() : null;
+        String fallbackName = rawCustomerId == null ? "Khách vãng lai" : "Khách hàng";
+        return rows.computeIfAbsent(customerId, id -> new CustomerSpendingAccumulator(
+                id,
+                userId,
+                String.valueOf(row[2] != null ? row[2] : fallbackName),
+                row[3] != null ? String.valueOf(row[3]) : "",
+                row[4] != null ? String.valueOf(row[4]) : ""));
+    }
+
+    private int compareCustomerByTicketSpending(CustomerSpendingAccumulator left, CustomerSpendingAccumulator right) {
+        int byTicketRevenue = Double.compare(right.ticketRevenue, left.ticketRevenue);
+        if (byTicketRevenue != 0) {
+            return byTicketRevenue;
+        }
+
+        int byTicketCount = Long.compare(right.ticketCount, left.ticketCount);
+        if (byTicketCount != 0) {
+            return byTicketCount;
+        }
+
+        int byTotalSpent = Double.compare(right.getTotalSpent(), left.getTotalSpent());
+        if (byTotalSpent != 0) {
+            return byTotalSpent;
+        }
+
+        return String.CASE_INSENSITIVE_ORDER.compare(left.customerName, right.customerName);
     }
 
     private CustomerSpendingAccumulator getCustomerSpendingRow(
@@ -695,6 +809,7 @@ public class BookingService {
 
     private static class CustomerSpendingAccumulator {
         private final Long customerId;
+        private final Long userId;
         private final String customerName;
         private final String email;
         private final String phone;
@@ -704,7 +819,12 @@ public class BookingService {
         private double snackRevenue;
 
         private CustomerSpendingAccumulator(Long customerId, String customerName, String email, String phone) {
+            this(customerId, null, customerName, email, phone);
+        }
+
+        private CustomerSpendingAccumulator(Long customerId, Long userId, String customerName, String email, String phone) {
             this.customerId = customerId;
+            this.userId = userId;
             this.customerName = customerName;
             this.email = email;
             this.phone = phone;
@@ -715,16 +835,25 @@ public class BookingService {
         }
 
         private Map<String, Object> toMap() {
-            return Map.of(
-                    "customerId", customerId,
-                    "customerName", customerName,
-                    "email", email,
-                    "phone", phone,
-                    "ticketCount", ticketCount,
-                    "snackOrderCount", snackOrderCount,
-                    "ticketRevenue", ticketRevenue,
-                    "snackRevenue", snackRevenue,
-                    "totalSpent", getTotalSpent());
+            return toMap(null);
+        }
+
+        private Map<String, Object> toMap(Integer rank) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            if (rank != null) {
+                row.put("rank", rank);
+            }
+            row.put("customerId", customerId);
+            row.put("userId", userId);
+            row.put("customerName", customerName);
+            row.put("email", email);
+            row.put("phone", phone);
+            row.put("ticketCount", ticketCount);
+            row.put("snackOrderCount", snackOrderCount);
+            row.put("ticketRevenue", ticketRevenue);
+            row.put("snackRevenue", snackRevenue);
+            row.put("totalSpent", getTotalSpent());
+            return row;
         }
     }
 

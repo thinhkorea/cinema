@@ -57,7 +57,7 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
        boolean existsByCustomer_User_UserIdAndStatus(Long userId, Booking.Status status);
 
        @Query("""
-                     SELECT COALESCE(SUM(b.total - COALESCE(b.pointsUsed, 0) * 1000), 0)
+                     SELECT COALESCE(SUM(COALESCE(b.total, 0)), 0)
                      FROM Booking b
                      WHERE b.customer.user.userId = :userId
                        AND b.status = com.example.cinema.domain.Booking$Status.PAID
@@ -65,7 +65,7 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
        Double sumPaidAmountByCustomerUserId(@Param("userId") Long userId);
 
        @Query("""
-                     SELECT COALESCE(SUM(b.total - COALESCE(b.pointsUsed, 0) * 1000), 0)
+                     SELECT COALESCE(SUM(COALESCE(b.total, 0)), 0)
                      FROM Booking b
                      WHERE b.customer.user.userId = :userId
                        AND b.status = com.example.cinema.domain.Booking$Status.PAID
@@ -117,7 +117,7 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
        // ===================== THỐNG KÊ =====================
        @Query("""
                       SELECT FUNCTION('DATE_FORMAT', b.createdAt, '%Y-%m') AS month,
-                             SUM(b.total - COALESCE(b.pointsUsed, 0) * 1000) AS totalRevenue
+                             SUM(COALESCE(b.total, 0)) AS totalRevenue
                       FROM Booking b
                       WHERE b.status = 'PAID'
                       GROUP BY FUNCTION('DATE_FORMAT', b.createdAt, '%Y-%m')
@@ -127,7 +127,7 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
        @Query("""
                       SELECT MONTH(b.showtime.startTime) AS month,
-                             SUM(b.total - COALESCE(b.pointsUsed, 0) * 1000) AS revenue
+                             SUM(COALESCE(b.total, 0)) AS revenue
                       FROM Booking b
                       WHERE b.status = 'PAID'
                         AND YEAR(b.showtime.startTime) = :year
@@ -138,7 +138,7 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
        @Query("""
                      SELECT m.title AS movieTitle,
-                            SUM(b.total - COALESCE(b.pointsUsed, 0) * 1000) AS revenue
+                            SUM(COALESCE(b.total, 0)) AS revenue
                      FROM Booking b
                      JOIN b.showtime.movie m
                      WHERE b.status = com.example.cinema.domain.Booking$Status.PAID
@@ -149,7 +149,7 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
        @Query("""
                      SELECT s.user.fullName AS staffName,
-                            SUM(b.total - COALESCE(b.pointsUsed, 0) * 1000) AS totalRevenue
+                            SUM(COALESCE(b.total, 0)) AS totalRevenue
                      FROM Booking b
                      JOIN b.soldByStaff s
                      WHERE b.status = com.example.cinema.domain.Booking$Status.PAID
@@ -160,18 +160,19 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
        @Query("""
                      SELECT c.customerId AS customerId,
+                            u.userId AS userId,
                             u.fullName AS customerName,
                             u.email AS email,
                             u.phone AS phone,
                             COUNT(b.bookingId) AS ticketCount,
-                            SUM(b.total - COALESCE(b.pointsUsed, 0) * 1000) AS totalSpent
+                            SUM(COALESCE(b.total, 0)) AS totalSpent
                      FROM Booking b
-                     JOIN b.customer c
-                     JOIN c.user u
+                     LEFT JOIN b.customer c
+                     LEFT JOIN c.user u
                      WHERE b.status = com.example.cinema.domain.Booking$Status.PAID
-                       AND b.createdAt >= :from
-                       AND b.createdAt < :to
-                     GROUP BY c.customerId, u.fullName, u.email, u.phone
+                       AND b.showtime.startTime >= :from
+                       AND b.showtime.startTime < :to
+                     GROUP BY c.customerId, u.userId, u.fullName, u.email, u.phone
                      ORDER BY totalSpent DESC
                      """)
        List<Object[]> getCustomerTicketSpendingBetween(
@@ -181,7 +182,7 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
        @Query("""
                      SELECT HOUR(b.showtime.startTime) AS showtimeHour,
                             MINUTE(b.showtime.startTime) AS showtimeMinute,
-                            SUM(b.total - COALESCE(b.pointsUsed, 0) * 1000) AS revenue
+                            SUM(COALESCE(b.total, 0)) AS revenue
                      FROM Booking b
                      WHERE b.status = com.example.cinema.domain.Booking$Status.PAID
                        AND YEAR(b.showtime.startTime) = :year
