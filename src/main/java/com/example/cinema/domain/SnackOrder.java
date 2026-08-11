@@ -50,6 +50,7 @@ public class SnackOrder {
     @Column(length = 60)
     private String voucherCode;
 
+    @Builder.Default
     private Double voucherDiscount = 0.0;
 
     @Column(length = 30)
@@ -71,6 +72,7 @@ public class SnackOrder {
     private String fulfilledBy;
 
     @Column(nullable = false)
+    @Builder.Default
     private boolean printed = false;
 
     @Column(nullable = false)

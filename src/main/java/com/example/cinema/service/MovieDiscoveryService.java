@@ -108,18 +108,43 @@ public class MovieDiscoveryService {
 
     @Transactional
     public List<MovieDiscoveryResultDTO> discover(String query, Integer limit, boolean includeEnded) {
+        return executeDiscovery(query, limit, includeEnded).results();
+    }
+
+    @Transactional
+    public MovieDiscoveryTraceDTO discoverWithTrace(String query, Integer limit, boolean includeEnded) {
+        DiscoveryRun run = executeDiscovery(query, limit, includeEnded);
+        return new MovieDiscoveryTraceDTO(
+                query,
+                run.normalizedQuery(),
+                run.resolvedLimit(),
+                includeEnded,
+                run.movieCount(),
+                run.scoredCandidateCount(),
+                run.rerankCandidateCount(),
+                run.timing().processingTimeMs(),
+                run.timing().semanticSearchTimeMs(),
+                run.timing().rerankTimeMs(),
+                run.results(),
+                run.rankedCandidates().stream()
+                        .map(this::toTraceCandidate)
+                        .collect(Collectors.toList())
+        );
+    }
+
+    private DiscoveryRun executeDiscovery(String query, Integer limit, boolean includeEnded) {
         long requestStartedAt = System.nanoTime();
         String normalizedQuery = normalize(query);
+        int resolvedLimit = clampLimit(limit);
         if (normalizedQuery.isBlank()) {
-            return Collections.emptyList();
+            return emptyDiscoveryRun(normalizedQuery, resolvedLimit);
         }
 
-        int resolvedLimit = clampLimit(limit);
         List<Movie> movies = movieRepository.findAll().stream()
                 .filter(movie -> includeEnded || movie.getStatus() != Movie.MovieStatus.ENDED)
                 .collect(Collectors.toList());
         if (movies.isEmpty()) {
-            return Collections.emptyList();
+            return emptyDiscoveryRun(normalizedQuery, resolvedLimit);
         }
 
         long semanticSearchTimeMs = 0L;
@@ -167,10 +192,33 @@ public class MovieDiscoveryService {
             log.warn("[MovieDiscovery] Slow discover request: totalMs={}, semanticMs={}, rerankMs={}, movies={}, candidates={}, limit={}",
                     processingTimeMs, semanticSearchTimeMs, rerankTimeMs, movies.size(), candidates.size(), resolvedLimit);
         }
-        return rankedCandidates.stream()
+        List<MovieDiscoveryResultDTO> results = rankedCandidates.stream()
                 .limit(resolvedLimit)
                 .map(candidate -> toResponse(candidate, timing))
                 .collect(Collectors.toList());
+        return new DiscoveryRun(
+                normalizedQuery,
+                resolvedLimit,
+                movies.size(),
+                scoredCandidates.size(),
+                candidates.size(),
+                timing,
+                rankedCandidates,
+                results
+        );
+    }
+
+    private DiscoveryRun emptyDiscoveryRun(String normalizedQuery, int resolvedLimit) {
+        return new DiscoveryRun(
+                normalizedQuery,
+                resolvedLimit,
+                0,
+                0,
+                0,
+                new DiscoveryTiming(0L, 0L, 0L),
+                Collections.emptyList(),
+                Collections.emptyList()
+        );
     }
 
     private MovieCandidate scoreMovie(Movie movie,
@@ -1230,6 +1278,23 @@ public class MovieDiscoveryService {
                 .build();
     }
 
+    private MovieDiscoveryCandidateTraceDTO toTraceCandidate(MovieCandidate candidate) {
+        Movie movie = candidate.movie();
+        return new MovieDiscoveryCandidateTraceDTO(
+                movie.getMovieId(),
+                movie.getTitle(),
+                movie.getStatus() != null ? movie.getStatus().name() : null,
+                Math.round(candidate.score() * 10.0) / 10.0,
+                candidate.denseScore() > 0.0 ? Math.round(candidate.denseScore() * 1000.0) / 1000.0 : null,
+                candidate.rerankScore() != null ? Math.round(candidate.rerankScore() * 1000.0) / 1000.0 : null,
+                candidate.rawRerankScore() != null ? Math.round(candidate.rawRerankScore() * 1000.0) / 1000.0 : null,
+                candidate.rerankModelName(),
+                candidate.rerankReason(),
+                candidate.reasons(),
+                candidate.signals()
+        );
+    }
+
     private String joinModelNames(String embeddingModel, String rerankModel) {
         if (rerankModel == null || rerankModel.isBlank()) {
             return embeddingModel;
@@ -1309,6 +1374,49 @@ public class MovieDiscoveryService {
     }
 
     private record DiscoveryTiming(long processingTimeMs, long semanticSearchTimeMs, long rerankTimeMs) {
+    }
+
+    public record MovieDiscoveryTraceDTO(
+            String query,
+            String normalizedQuery,
+            int limit,
+            boolean includeEnded,
+            int movieCount,
+            int scoredCandidateCount,
+            int rerankCandidateCount,
+            long processingTimeMs,
+            long semanticSearchTimeMs,
+            long rerankTimeMs,
+            List<MovieDiscoveryResultDTO> results,
+            List<MovieDiscoveryCandidateTraceDTO> candidates
+    ) {
+    }
+
+    public record MovieDiscoveryCandidateTraceDTO(
+            Long movieId,
+            String title,
+            String status,
+            double score,
+            Double semanticScore,
+            Double rerankScore,
+            Double rawRerankScore,
+            String rerankModelName,
+            String rerankReason,
+            List<String> reasons,
+            List<String> signals
+    ) {
+    }
+
+    private record DiscoveryRun(
+            String normalizedQuery,
+            int resolvedLimit,
+            int movieCount,
+            int scoredCandidateCount,
+            int rerankCandidateCount,
+            DiscoveryTiming timing,
+            List<MovieCandidate> rankedCandidates,
+            List<MovieDiscoveryResultDTO> results
+    ) {
     }
 
     private record MovieCandidate(
