@@ -93,15 +93,20 @@ public class CinemaRetrievalService {
     }
 
     public List<DenseCandidate<Movie>> denseSearchMoviesUsingExistingEmbeddings(String query, List<Movie> allMovies) {
+        return traceDenseSearchMoviesUsingExistingEmbeddings(query, allMovies).finalCandidates();
+    }
+
+    public DenseSearchTrace<Movie> traceDenseSearchMoviesUsingExistingEmbeddings(String query, List<Movie> allMovies) {
         List<Double> queryEmbedding = embeddingService.createEmbedding(query);
         if (queryEmbedding.isEmpty() || allMovies == null || allMovies.isEmpty()) {
-            return Collections.emptyList();
+            return DenseSearchTrace.empty();
         }
 
         Map<Long, DenseCandidate<Movie>> candidatesByMovieId = new LinkedHashMap<>();
         List<DenseCandidate<Movie>> qdrantResults = denseSearchMoviesWithQdrant(queryEmbedding, allMovies);
         qdrantResults.forEach(candidate -> putBetterMovieCandidate(candidatesByMovieId, candidate.item(), candidate.score()));
 
+        List<DenseCandidate<Movie>> fallbackResults = new ArrayList<>();
         if (qdrantResults.isEmpty()) {
             for (Movie movie : allMovies) {
                 List<Double> documentEmbedding = movie == null
@@ -109,16 +114,24 @@ public class CinemaRetrievalService {
                         : embeddingService.readEmbedding(movie.getSearchEmbedding());
                 double similarity = embeddingService.cosineSimilarity(queryEmbedding, documentEmbedding);
                 if (similarity > 0.0) {
-                    putBetterMovieCandidate(candidatesByMovieId, movie, embeddingService.normalizeCosineScore(similarity));
+                    double score = embeddingService.normalizeCosineScore(similarity);
+                    fallbackResults.add(new DenseCandidate<>(movie, score));
+                    putBetterMovieCandidate(candidatesByMovieId, movie, score);
                 }
             }
         }
+        fallbackResults.sort((left, right) -> Double.compare(right.score(), left.score()));
 
-        addMovieChunkCandidates(query, queryEmbedding, allMovies, candidatesByMovieId);
+        List<DenseCandidate<Movie>> chunkResults = addMovieChunkCandidates(query, queryEmbedding, allMovies, candidatesByMovieId);
 
         List<DenseCandidate<Movie>> results = rankMovieCandidates(candidatesByMovieId);
         log.debug("[CinemaRetrieval] denseMoviesExisting candidates={}, returned={}", candidatesByMovieId.size(), results.size());
-        return results;
+        return new DenseSearchTrace<>(
+                qdrantResults,
+                fallbackResults.stream().limit(DENSE_RESULT_LIMIT).collect(Collectors.toList()),
+                chunkResults,
+                results
+        );
     }
 
     public List<DenseCandidate<Snack>> denseSearchSnacks(String query, List<Snack> allSnacks) {
@@ -150,6 +163,12 @@ public class CinemaRetrievalService {
     }
 
     public List<Movie> sparseSearchMovies(List<String> keywords, List<Movie> allMovies) {
+        return sparseSearchMovieCandidates(keywords, allMovies).stream()
+                .map(SparseCandidate::item)
+                .collect(Collectors.toList());
+    }
+
+    public List<SparseCandidate<Movie>> sparseSearchMovieCandidates(List<String> keywords, List<Movie> allMovies) {
         if (keywords == null || keywords.isEmpty() || allMovies == null || allMovies.isEmpty()) {
             return Collections.emptyList();
         }
@@ -158,7 +177,7 @@ public class CinemaRetrievalService {
                 .map(documentBuilder::buildMovieSearchDocument)
                 .collect(Collectors.toList());
 
-        List<Movie> results = rankByBm25(allMovies, documents, keywords, 0.60);
+        List<SparseCandidate<Movie>> results = rankByBm25Candidates(allMovies, documents, keywords, 0.60);
         log.debug("[CinemaRetrieval] sparseMovies keywords={}, returned={}", keywords, results.size());
         return results;
     }
@@ -221,13 +240,13 @@ public class CinemaRetrievalService {
                 .collect(Collectors.toList());
     }
 
-    private void addMovieChunkCandidates(String query,
-                                         List<Double> queryEmbedding,
-                                         List<Movie> allMovies,
-                                         Map<Long, DenseCandidate<Movie>> candidatesByMovieId) {
+    private List<DenseCandidate<Movie>> addMovieChunkCandidates(String query,
+                                                                List<Double> queryEmbedding,
+                                                                List<Movie> allMovies,
+                                                                Map<Long, DenseCandidate<Movie>> candidatesByMovieId) {
         List<String> queryTokens = tokenizeSearchText(query);
         if (queryTokens.size() < MOVIE_CHUNK_MIN_QUERY_TOKENS || allMovies == null || allMovies.isEmpty()) {
-            return;
+            return Collections.emptyList();
         }
 
         List<MovieChunkPrefilter> moviesForChunkSearch = allMovies.stream()
@@ -239,6 +258,7 @@ public class CinemaRetrievalService {
                 .collect(Collectors.toList());
 
         int chunkDocumentsScored = 0;
+        List<DenseCandidate<Movie>> chunkCandidates = new ArrayList<>();
         for (MovieChunkPrefilter prefilter : moviesForChunkSearch) {
             Movie movie = prefilter.movie();
             List<String> chunkDocuments = selectBestMovieChunkDocuments(queryTokens, documentBuilder.buildMovieChunkSearchDocuments(movie));
@@ -255,11 +275,16 @@ public class CinemaRetrievalService {
                 }
             }
             if (bestChunkScore >= MOVIE_CHUNK_MIN_SCORE) {
+                chunkCandidates.add(new DenseCandidate<>(movie, bestChunkScore));
                 putBetterMovieCandidate(candidatesByMovieId, movie, bestChunkScore);
             }
         }
+        chunkCandidates.sort((left, right) -> Double.compare(right.score(), left.score()));
         log.debug("[CinemaRetrieval] movieChunkDense queryTokens={}, movies={}, chunksScored={}, candidates={}",
                 queryTokens.size(), moviesForChunkSearch.size(), chunkDocumentsScored, candidatesByMovieId.size());
+        return chunkCandidates.stream()
+                .limit(DENSE_RESULT_LIMIT)
+                .collect(Collectors.toList());
     }
 
     private List<String> selectBestMovieChunkDocuments(List<String> queryTokens, List<String> chunkDocuments) {
@@ -354,7 +379,7 @@ public class CinemaRetrievalService {
         return qdrantService.search("MOVIE", queryEmbedding, DENSE_RESULT_LIMIT).stream()
                 .filter(match -> match.sourceId() != null && moviesById.containsKey(match.sourceId()))
                 .filter(match -> hasValidEmbedding(moviesById.get(match.sourceId()).getSearchEmbedding()))
-                .map(match -> new DenseCandidate<>(moviesById.get(match.sourceId()), match.score()))
+                .map(match -> new DenseCandidate<>(moviesById.get(match.sourceId()), embeddingService.normalizeCosineScore(match.score())))
                 .collect(Collectors.toList());
     }
 
@@ -615,7 +640,13 @@ public class CinemaRetrievalService {
         );
     }
 
-     private <T> List<T> rankByBm25(List<T> items, List<String> rawDocuments, List<String> keywords, double fuzzyThreshold) {
+    private <T> List<T> rankByBm25(List<T> items, List<String> rawDocuments, List<String> keywords, double fuzzyThreshold) {
+        return rankByBm25Candidates(items, rawDocuments, keywords, fuzzyThreshold).stream()
+                .map(SparseCandidate::item)
+                .collect(Collectors.toList());
+    }
+
+    private <T> List<SparseCandidate<T>> rankByBm25Candidates(List<T> items, List<String> rawDocuments, List<String> keywords, double fuzzyThreshold) {
         List<String> queryTokens = normalizeQueryTokens(keywords);
         if (queryTokens.isEmpty()) return Collections.emptyList();
 
@@ -628,7 +659,7 @@ public class CinemaRetrievalService {
                 .average()
                 .orElse(0.0);
 
-        List<Bm25Candidate<T>> candidates = new ArrayList<>();
+        List<SparseCandidate<T>> candidates = new ArrayList<>();
         for (int i = 0; i < items.size(); i++) {
             List<String> documentTokens = tokenizedDocuments.get(i);
             if (documentTokens.isEmpty()) continue;
@@ -649,14 +680,12 @@ public class CinemaRetrievalService {
             );
             double totalScore = bm25Score + fallbackScore;
             if (totalScore > 0.0) {
-                candidates.add(new Bm25Candidate<>(items.get(i), totalScore));
+                candidates.add(new SparseCandidate<>(items.get(i), totalScore));
             }
         }
 
         candidates.sort((a, b) -> Double.compare(b.score(), a.score()));
-        return candidates.stream()
-                .map(Bm25Candidate::item)
-                .collect(Collectors.toList());
+        return candidates;
     }
 
     private List<String> normalizeQueryTokens(List<String> keywords) {
@@ -815,12 +844,36 @@ public class CinemaRetrievalService {
     public record DenseCandidate<T>(T item, double score) {
     }
 
+    public record SparseCandidate<T>(T item, double score) {
+    }
+
+    public record DenseSearchTrace<T>(
+            List<DenseCandidate<T>> qdrantCandidates,
+            List<DenseCandidate<T>> fallbackCandidates,
+            List<DenseCandidate<T>> chunkCandidates,
+            List<DenseCandidate<T>> finalCandidates
+    ) {
+        public DenseSearchTrace {
+            qdrantCandidates = qdrantCandidates == null ? Collections.emptyList() : List.copyOf(qdrantCandidates);
+            fallbackCandidates = fallbackCandidates == null ? Collections.emptyList() : List.copyOf(fallbackCandidates);
+            chunkCandidates = chunkCandidates == null ? Collections.emptyList() : List.copyOf(chunkCandidates);
+            finalCandidates = finalCandidates == null ? Collections.emptyList() : List.copyOf(finalCandidates);
+        }
+
+        public static <T> DenseSearchTrace<T> empty() {
+            return new DenseSearchTrace<>(
+                    Collections.emptyList(),
+                    Collections.emptyList(),
+                    Collections.emptyList(),
+                    Collections.emptyList()
+            );
+        }
+    }
+
     private record MovieChunkPrefilter(Movie movie, int score) {
     }
 
     private record MovieChunkDocumentPrefilter(String document, int score) {
     }
 
-    private record Bm25Candidate<T>(T item, double score) {
-    }
 }

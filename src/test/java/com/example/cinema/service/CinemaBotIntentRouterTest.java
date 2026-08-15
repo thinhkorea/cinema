@@ -37,6 +37,79 @@ class CinemaBotIntentRouterTest {
     }
 
     @Test
+    void routesTheaterHasMoviesQuestionToNowShowingMovies() {
+        CinemaBotService.QueryAnalysis result = router.route(
+                "Rap co phim gi khong?",
+                analysis("GENERAL")
+        );
+
+        assertThat(result.intent).isEqualTo("MOVIES");
+        assertThat(result.filters).contains("status:NOW_SHOWING");
+    }
+
+    @Test
+    void routesCurrentTheaterMovieCatalogQuestionToNowShowingMovies() {
+        CinemaBotService.QueryAnalysis result = router.route(
+                "Hien tai rap dang co nhung phim nao?",
+                analysis("GENERAL")
+        );
+
+        assertThat(result.intent).isEqualTo("MOVIES");
+        assertThat(result.filters).contains("status:NOW_SHOWING");
+    }
+
+    @Test
+    void routesDatedTheaterMovieCatalogQuestionToShowtimes() {
+        CinemaBotService.QueryAnalysis result = router.route(
+                "Ngay mai rap co phim gi khong?",
+                analysis("GENERAL")
+        );
+
+        assertThat(result.intent).isEqualTo("SHOWTIMES");
+        assertThat(result.filters).contains("date:" + router.normalize("ngay mai"));
+    }
+
+    @Test
+    void keepsExplicitComingSoonStatusForGenericAvailabilityQuestion() {
+        CinemaBotService.QueryAnalysis result = router.route(
+                "Co phim nao sap chieu khong?",
+                analysis("GENERAL")
+        );
+
+        assertThat(result.intent).isEqualTo("MOVIES");
+        assertThat(result.filters)
+                .contains("status:COMING_SOON")
+                .doesNotContain("status:NOW_SHOWING");
+    }
+
+    @Test
+    void keepsGenericGenreQuestionWithoutDefaultNowShowingStatus() {
+        CinemaBotService.QueryAnalysis result = router.route(
+                "Co phim tinh cam nao hay khong?",
+                analysis("GENERAL")
+        );
+
+        assertThat(result.intent).isEqualTo("MOVIES");
+        assertThat(result.filters)
+                .anyMatch(filter -> filter != null && filter.startsWith("genre:"));
+        assertThat(result.filters)
+                .doesNotContain("status:NOW_SHOWING");
+    }
+
+    @Test
+    void combinesTheaterGenreCatalogQuestionWithNowShowingStatus() {
+        CinemaBotService.QueryAnalysis result = router.route(
+                "Rap co phim tinh cam nao dang chieu khong?",
+                analysis("GENERAL")
+        );
+
+        assertThat(result.intent).isEqualTo("MOVIES");
+        assertThat(result.filters)
+                .contains("status:NOW_SHOWING")
+                .anyMatch(filter -> filter != null && filter.startsWith("genre:"));
+    }
+
+    @Test
     void routesTonightShowingQuestionToShowtimesWithDateFilter() {
         CinemaBotService.QueryAnalysis result = router.route(
                 "Tối nay chiếu gì?",
@@ -45,6 +118,81 @@ class CinemaBotIntentRouterTest {
 
         assertThat(result.intent).isEqualTo("SHOWTIMES");
         assertThat(result.filters).contains("date:" + router.normalize("hôm nay"));
+    }
+
+    @Test
+    void routesEveningTimeSlotQuestionToShowtimesWithTimePeriodFilter() {
+        CinemaBotService.QueryAnalysis result = router.route(
+                "Khung gio toi co phim nao khong?",
+                analysis("GENERAL")
+        );
+
+        assertThat(result.intent).isEqualTo("SHOWTIMES");
+        assertThat(result.filters).contains("time_period:EVENING");
+    }
+
+    @Test
+    void routesOtherTimeSlotQuestionsToShowtimesWithTimePeriodFilters() {
+        CinemaBotService.QueryAnalysis morning = router.route("Khung gio sang", analysis("GENERAL"));
+        CinemaBotService.QueryAnalysis noon = router.route("Suat trua co phim gi?", analysis("GENERAL"));
+        CinemaBotService.QueryAnalysis afternoon = router.route("Khung gio chieu co phim nao khong?", analysis("GENERAL"));
+
+        assertThat(morning.intent).isEqualTo("SHOWTIMES");
+        assertThat(noon.intent).isEqualTo("SHOWTIMES");
+        assertThat(afternoon.intent).isEqualTo("SHOWTIMES");
+        assertThat(morning.filters).contains("time_period:MORNING");
+        assertThat(noon.filters).contains("time_period:NOON");
+        assertThat(afternoon.filters).contains("time_period:AFTERNOON");
+    }
+
+    @Test
+    void genericShowtimeQuestionDoesNotBecomeAfternoonTimePeriod() {
+        CinemaBotService.QueryAnalysis result = router.route(
+                "Hom nay co suat chieu nao khong?",
+                analysis("GENERAL")
+        );
+
+        assertThat(result.intent).isEqualTo("SHOWTIMES");
+        assertThat(result.filters).doesNotContain("time_period:AFTERNOON");
+    }
+
+    @Test
+    void keepsShowtimeContextForStandaloneEveningTimeSlot() {
+        CinemaBotService.QueryAnalysis previousShowtimeContext = analysis("SHOWTIMES");
+        previousShowtimeContext.filters.add("date:" + router.normalize("hom nay"));
+        previousShowtimeContext.missingFields = new ArrayList<>();
+        previousShowtimeContext.missingFields.add("movie");
+        previousShowtimeContext.missingFields.add("genre");
+        previousShowtimeContext.allowedToQuery = false;
+
+        CinemaBotIntentRouter.IntentDecision decision = router.decide(
+                "Khung gio toi",
+                previousShowtimeContext
+        );
+
+        assertThat(decision.intent()).isEqualTo(CinemaBotIntent.SHOWTIMES);
+        assertThat(decision.allowedToQuery()).isTrue();
+        assertThat(decision.missingFields()).isEmpty();
+        assertThat(decision.entities()).containsEntry("time_period", "EVENING");
+    }
+
+    @Test
+    void missingFieldsReplyUsesVietnameseAccentsAndLabels() {
+        CinemaBotService.QueryAnalysis llmAnalysis = analysis("MOVIES");
+        llmAnalysis.missingFields = new ArrayList<>();
+        llmAnalysis.missingFields.add("movie");
+        llmAnalysis.missingFields.add("genre");
+        llmAnalysis.allowedToQuery = false;
+
+        CinemaBotIntentRouter.IntentDecision decision = router.decide("Cho toi xem", llmAnalysis);
+
+        assertThat(decision.allowedToQuery()).isFalse();
+        assertThat(decision.directReply())
+                .contains("Mình cần bạn bổ sung")
+                .contains("phim")
+                .contains("thể loại")
+                .doesNotContain("movie")
+                .doesNotContain("genre");
     }
 
     @Test
@@ -92,14 +240,14 @@ class CinemaBotIntentRouterTest {
     }
 
     @Test
-    void routesAnimalHintMovieAvailabilityToMoviesWithAliasKeyword() {
+    void routesAnimalHintMovieAvailabilityToMoviesWithoutAliasKeyword() {
         CinemaBotService.QueryAnalysis result = router.route(
                 "Toi khong nho ten phim, hinh nhu co con gau truc, con chieu khong?",
                 analysis("GENERAL")
         );
 
         assertThat(result.intent).isEqualTo("MOVIES");
-        assertThat(result.keywords).contains("Kung Fu Panda");
+        assertThat(result.keywords).doesNotContain("Kung Fu Panda");
         assertThat(result.filters).contains("status:NOW_SHOWING");
     }
 
@@ -145,7 +293,7 @@ class CinemaBotIntentRouterTest {
         assertThat(decision.allowedToQuery()).isFalse();
         assertThat(decision.intent()).isEqualTo(CinemaBotIntent.BOOKING_INFO);
         assertThat(decision.missingFields()).contains("movie", "seat");
-        assertThat(decision.directReply()).contains("chua du thong tin");
+        assertThat(decision.directReply()).contains("chưa đủ thông tin");
     }
 
     @Test
@@ -194,6 +342,13 @@ class CinemaBotIntentRouterTest {
 
         assertThat(result.intent).isEqualTo("SHOWTIMES");
         assertThat(result.filters).contains("date:" + router.normalize("ngay mai"));
+    }
+
+    @Test
+    void doesNotCarryShowtimeContextForStandaloneMovieQuestion() {
+        String intent = router.resolveContextualIntent("Ngay mai co phim gi?", "SHOWTIMES");
+
+        assertThat(intent).isNull();
     }
 
     @Test

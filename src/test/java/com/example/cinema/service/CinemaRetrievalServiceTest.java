@@ -133,6 +133,7 @@ class CinemaRetrievalServiceTest {
                 ));
         when(embeddingService.readEmbedding("stale-vector")).thenReturn(List.of());
         when(embeddingService.readEmbedding("fresh-vector")).thenReturn(List.of(0.3, 0.4));
+        when(embeddingService.normalizeCosineScore(0.80)).thenReturn(0.90);
 
         List<CinemaRetrievalService.DenseCandidate<Movie>> results = service.denseSearchMoviesUsingExistingEmbeddings(
                 "thanh mai truc ma",

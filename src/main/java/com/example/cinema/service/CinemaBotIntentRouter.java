@@ -78,12 +78,22 @@ public class CinemaBotIntentRouter {
             return result;
         }
 
+        if (isShowtimeTimePeriodQuestion(normalized)) {
+            result.intent = "SHOWTIMES";
+            addDateFilterIfNeeded(result, normalized);
+            addTimePeriodFilterIfNeeded(result, normalized);
+            addMovieGenreFilterIfNeeded(result, normalized);
+            addMovieMoodFilterIfNeeded(result, normalized);
+            addPriceFilterIfNeeded(result, normalized, "price_max");
+            markAsQueryable(result);
+            return result;
+        }
+
         if (isMovieRecommendationQuestion(normalized)) {
             result.intent = "MOVIES";
             if (!hasFilter(result, "status")) {
                 result.filters.add("status:NOW_SHOWING");
             }
-            addMovieAliasKeywordIfNeeded(result, normalized);
             addMovieMoodFilterIfNeeded(result, normalized);
             return result;
         }
@@ -91,21 +101,21 @@ public class CinemaBotIntentRouter {
         if (isExplicitShowtimeQuestion(normalized) || isImplicitShowtimeQuestion(normalized)) {
             result.intent = "SHOWTIMES";
             addDateFilterIfNeeded(result, normalized);
-            addMovieAliasKeywordIfNeeded(result, normalized);
+            addTimePeriodFilterIfNeeded(result, normalized);
             addMovieGenreFilterIfNeeded(result, normalized);
             addMovieMoodFilterIfNeeded(result, normalized);
             addPriceFilterIfNeeded(result, normalized, "price_max");
+            markAsQueryable(result);
             return result;
         }
 
         boolean movieAvailabilityQuestion = isMovieAvailabilityQuestion(normalized);
         if (movieAvailabilityQuestion || isMovieListQuestion(normalized) || isMovieSearchQuestion(normalized)) {
             result.intent = "MOVIES";
+            addMovieStatusFilterIfNeeded(result, normalized);
             if (movieAvailabilityQuestion && !hasFilter(result, "status")) {
                 result.filters.add("status:NOW_SHOWING");
             }
-            addMovieStatusFilterIfNeeded(result, normalized);
-            addMovieAliasKeywordIfNeeded(result, normalized);
             addMovieGenreFilterIfNeeded(result, normalized);
             addMovieMoodFilterIfNeeded(result, normalized);
             return result;
@@ -137,6 +147,7 @@ public class CinemaBotIntentRouter {
         String normalized = normalize(userMessage);
         return lexicon.containsAnyGroup(normalized, "showtime-suggestion")
                 || isExplicitShowtimeQuestion(normalized)
+                || isShowtimeTimePeriodQuestion(normalized)
                 || isImplicitShowtimeQuestion(normalized);
     }
 
@@ -223,6 +234,12 @@ public class CinemaBotIntentRouter {
         }
         String normalized = normalize(userMessage);
         String normalizedPreviousIntent = previousIntent.toUpperCase(Locale.ROOT);
+        if ("SHOWTIMES".equals(normalizedPreviousIntent) && isShowtimeTimePeriodQuestion(normalized)) {
+            return "SHOWTIMES";
+        }
+        if (isStandaloneBusinessQuestion(normalized)) {
+            return null;
+        }
         if ("MOVIES".equals(normalizedPreviousIntent) && isContextualShowtimeFollowUp(normalized)) {
             return "SHOWTIMES";
         }
@@ -240,6 +257,41 @@ public class CinemaBotIntentRouter {
             }
         }
         return null;
+    }
+
+    private boolean isStandaloneBusinessQuestion(String normalizedMessage) {
+        if (normalizedMessage == null || normalizedMessage.isBlank()) {
+            return false;
+        }
+        if (hasExplicitContextReferenceCue(normalizedMessage)) {
+            return false;
+        }
+        boolean movieAvailabilityQuestion = isMovieAvailabilityQuestion(normalizedMessage);
+        return isBookingQuestion(normalizedMessage)
+                || isMovieRecommendationQuestion(normalizedMessage)
+                || isShowtimeTimePeriodQuestion(normalizedMessage)
+                || isExplicitShowtimeQuestion(normalizedMessage)
+                || isImplicitShowtimeQuestion(normalizedMessage)
+                || movieAvailabilityQuestion
+                || isMovieListQuestion(normalizedMessage)
+                || isMovieSearchQuestion(normalizedMessage)
+                || isSnackQuestion(normalizedMessage)
+                || isLoyaltyQuestion(normalizedMessage)
+                || isVoucherQuestion(normalizedMessage);
+    }
+
+    private boolean hasExplicitContextReferenceCue(String normalizedMessage) {
+        return clarificationService.hasReferenceTerm(normalizedMessage)
+                || containsAny(normalizedMessage,
+                "o tren", "vua roi", "luc nay", "ban vua noi", "ket qua tren",
+                "cai dau", "cai dau tien", "muc dau", "phim dau", "mon dau",
+                "cai thu hai", "muc thu hai", "phim thu hai", "mon thu hai",
+                "chi tiet", "noi ro hon", "giai thich them", "thi sao", "vay con",
+                "xem them", "them nua", "con nua khong", "con gi khac",
+                "khac di", "goi y khac", "doi cai khac",
+                "cai khac", "loai khac", "phim khac", "mon khac", "suat khac",
+                "suat nao khac", "lich khac", "co suat khong", "co lich khong",
+                "con cai nao", "con mon nao", "con loai nao", "san pham khac");
     }
 
     private boolean isCarryableContextIntent(String previousIntent) {
@@ -306,9 +358,14 @@ public class CinemaBotIntentRouter {
         if (normalizedMessage == null || normalizedMessage.isBlank()) {
             return false;
         }
-        boolean hasMovieTerm = lexicon.contains(normalizedMessage, "phim");
-        boolean hasShowTerm = lexicon.containsAnyGroup(normalizedMessage, "implicit-showtime");
-        return hasMovieTerm && hasShowTerm && hasDateTerm(normalizedMessage);
+        if (isShowtimeTimePeriodQuestion(normalizedMessage)) {
+            return true;
+        }
+        return hasMovieSubject(normalizedMessage)
+                && hasDateTerm(normalizedMessage)
+                && (lexicon.containsAnyGroup(normalizedMessage, "implicit-showtime")
+                || hasMovieCatalogQuestionShape(normalizedMessage)
+                || containsAny(normalizedMessage, "chiếu", "suất", "lịch"));
     }
 
     boolean isExplicitShowtimeQuestion(String normalizedMessage) {
@@ -316,6 +373,33 @@ public class CinemaBotIntentRouter {
             return false;
         }
         return lexicon.containsAnyGroup(normalizedMessage, "explicit-showtime");
+    }
+
+    private boolean isShowtimeTimePeriodQuestion(String normalizedMessage) {
+        if (!hasShowtimeTimePeriodCue(normalizedMessage)) {
+            return false;
+        }
+        if (isShortTimePeriodOnly(normalizedMessage)) {
+            return true;
+        }
+        return containsAny(normalizedMessage,
+                "khung gio", "buoi", "ca toi", "ca sang", "ca trua", "ca chieu", "suat toi",
+                "phim nao", "phim gi", "co phim", "lich", "suat", "gio chieu",
+                "chieu gi", "co chieu", "chieu phim");
+    }
+
+    private boolean isShortTimePeriodOnly(String normalizedMessage) {
+        if (normalizedMessage == null || normalizedMessage.isBlank()) {
+            return false;
+        }
+        return normalizedMessage.trim().split("\\s+").length <= 5
+                && containsAny(normalizedMessage,
+                "khung gio", "buoi", "ca toi", "ca sang", "ca trua", "ca chieu",
+                "suat toi", "suat sang", "suat trua");
+    }
+
+    private boolean hasShowtimeTimePeriodCue(String normalizedMessage) {
+        return resolveTimePeriodFilterValue(normalizedMessage) != null;
     }
 
     boolean isMovieListQuestion(String normalizedMessage) {
@@ -341,12 +425,80 @@ public class CinemaBotIntentRouter {
         if (normalizedMessage == null || normalizedMessage.isBlank()) {
             return false;
         }
-        boolean hasMovieSubject = lexicon.contains(normalizedMessage, "phim")
-                || hasKnownMovieAlias(normalizedMessage);
-        return hasMovieSubject
-                && containsAny(normalizedMessage,
-                "con chieu", "dang chieu", "co chieu", "hien co chieu", "rap co chieu",
-                "con ban ve", "co suat", "co lich", "co phim nay");
+        if (!hasMovieSubject(normalizedMessage)) {
+            return false;
+        }
+        if (hasMovieReferenceCue(normalizedMessage) && hasMovieAvailabilityCue(normalizedMessage)) {
+            return true;
+        }
+        if (hasMovieDescriptionCue(normalizedMessage) && hasMovieAvailabilityCue(normalizedMessage)) {
+            return true;
+        }
+        if (!hasMovieQuestionCue(normalizedMessage) && !isMovieListQuestion(normalizedMessage)) {
+            return false;
+        }
+        if (hasMovieStatusCue(normalizedMessage)) {
+            return true;
+        }
+        if (hasTheaterScopeCue(normalizedMessage) && hasMovieAvailabilityCue(normalizedMessage)) {
+            return true;
+        }
+        return hasMovieAvailabilityCue(normalizedMessage) && !hasMoviePreferenceFilterCue(normalizedMessage);
+    }
+
+    private boolean hasMovieSubject(String normalizedMessage) {
+        return hasWord(normalizedMessage, "phim");
+    }
+
+    private boolean hasMovieCatalogQuestionShape(String normalizedMessage) {
+        return hasMovieQuestionCue(normalizedMessage)
+                && (hasMovieAvailabilityCue(normalizedMessage)
+                || hasTheaterScopeCue(normalizedMessage)
+                || hasMovieStatusCue(normalizedMessage)
+                || isMovieListQuestion(normalizedMessage));
+    }
+
+    private boolean hasMovieQuestionCue(String normalizedMessage) {
+        return hasWord(normalizedMessage, "gì")
+                || hasWord(normalizedMessage, "nào")
+                || containsAny(normalizedMessage,
+                "những phim", "các phim", "danh sách phim", "liệt kê phim",
+                "phim gì", "phim nào");
+    }
+
+    private boolean hasMovieAvailabilityCue(String normalizedMessage) {
+        return hasWord(normalizedMessage, "có")
+                || hasWord(normalizedMessage, "còn")
+                || containsAny(normalizedMessage,
+                "hiện có", "đang có", "còn bán", "còn chiếu", "có chiếu",
+                "có suất", "có lịch", "đang bán vé");
+    }
+
+    private boolean hasMovieStatusCue(String normalizedMessage) {
+        return lexicon.containsAnyGroup(normalizedMessage, "now-showing")
+                || lexicon.containsAnyGroup(normalizedMessage, "coming-soon")
+                || containsAny(normalizedMessage, "còn chiếu", "có chiếu", "sắp chiếu", "đang chiếu");
+    }
+
+    private boolean hasTheaterScopeCue(String normalizedMessage) {
+        return hasWord(normalizedMessage, "rạp")
+                || containsAny(normalizedMessage, "hiện tại", "hiện có", "đang có", "còn bán vé");
+    }
+
+    private boolean hasMoviePreferenceFilterCue(String normalizedMessage) {
+        return lexicon.resolveMovieGenre(normalizedMessage) != null
+                || lexicon.containsAnyGroup(normalizedMessage, "movie-light-mood")
+                || lexicon.containsAnyGroup(normalizedMessage, "movie-family-mood");
+    }
+
+    private boolean hasMovieDescriptionCue(String normalizedMessage) {
+        return containsAny(normalizedMessage,
+                "khong nho ten phim", "khong nho phim", "nho ten phim", "ten phim",
+                "hinh nhu", "phim co", "nhan vat", "noi ve");
+    }
+
+    private boolean hasMovieReferenceCue(String normalizedMessage) {
+        return containsAny(normalizedMessage, "phim này", "phim đó", "phim ấy");
     }
 
     private boolean isSnackQuestion(String normalizedMessage) {
@@ -367,8 +519,7 @@ public class CinemaBotIntentRouter {
         if (!bookingAction) {
             return false;
         }
-        boolean hasSpecificMovieCue = hasKnownMovieAlias(normalizedMessage)
-                || containsAny(normalizedMessage, "phim nay", "phim do")
+        boolean hasSpecificMovieCue = containsAny(normalizedMessage, "phim nay", "phim do")
                 || Pattern.compile("['\"].+['\"]").matcher(normalizedMessage).find();
         boolean hasShowtimeCue = hasDateTerm(normalizedMessage)
                 || containsAny(normalizedMessage, "suat", "lich chieu", "gio chieu", "toi nay", "chieu nay");
@@ -377,8 +528,7 @@ public class CinemaBotIntentRouter {
 
     private List<String> missingBookingFields(String normalizedMessage) {
         List<String> missingFields = new ArrayList<>();
-        boolean hasSpecificMovieCue = hasKnownMovieAlias(normalizedMessage)
-                || containsAny(normalizedMessage, "phim nay", "phim do")
+        boolean hasSpecificMovieCue = containsAny(normalizedMessage, "phim nay", "phim do")
                 || Pattern.compile("['\"].+['\"]").matcher(normalizedMessage).find();
         boolean hasShowtimeCue = hasDateTerm(normalizedMessage)
                 || containsAny(normalizedMessage, "suat", "lich chieu", "gio chieu", "toi nay", "chieu nay");
@@ -431,21 +581,21 @@ public class CinemaBotIntentRouter {
 
     private String buildSecurityRefusalReply(String normalizedMessage) {
         if (containsAny(normalizedMessage, "voucher")) {
-            return "Minh khong the tiet lo ma voucher noi bo hoac ap dung voucher khi tai khoan/don hang khong du dieu kien. Voucher chi duoc kiem tra va ap dung theo luat hop le cua he thong.";
+            return "Mình không thể tiết lộ mã voucher nội bộ hoặc áp dụng voucher khi tài khoản/đơn hàng không đủ điều kiện. Voucher chỉ được kiểm tra và áp dụng theo luật hợp lệ của hệ thống.";
         }
         if (containsAny(normalizedMessage, "api", "endpoint", "token", "secret", "password", "database", "connection string")) {
-            return "Minh khong the cung cap endpoint noi bo, token, mat khau, khoa bi mat hoac thong tin cau hinh he thong.";
+            return "Mình không thể cung cấp endpoint nội bộ, token, mật khẩu, khóa bí mật hoặc thông tin cấu hình hệ thống.";
         }
         if (containsAny(normalizedMessage, "xoa")) {
-            return "Minh khong the xoa lich su ve, don hang hoac du lieu thanh toan qua chatbot. Cac thao tac thay doi du lieu phai duoc thuc hien trong man hinh nghiep vu co quyen phu hop.";
+            return "Mình không thể xóa lịch sử vé, đơn hàng hoặc dữ liệu thanh toán qua chatbot. Các thao tác thay đổi dữ liệu phải được thực hiện trong màn hình nghiệp vụ có quyền phù hợp.";
         }
-        return "Minh khong the tao ve, ma QR, in ve, gia lap thanh toan hoac bo qua quy trinh thanh toan. Ve va don hang chi hop le khi duoc he thong xac nhan thanh toan va xu ly dung luong nghiep vu.";
+        return "Mình không thể tạo vé, mã QR, in vé, giả lập thanh toán hoặc bỏ qua quy trình thanh toán. Vé và đơn hàng chỉ hợp lệ khi được hệ thống xác nhận thanh toán và xử lý đúng luồng nghiệp vụ.";
     }
 
     private String buildBookingClarificationReply() {
         return String.join("\n",
-                "Minh chua du thong tin de ho tro dat ve.",
-                "Ban vui long cho minh biet ro phim, ngay/gio chieu va so ghe muon dat. Sau khi co du thong tin, he thong moi co the chuyen sang luong chon ghe va thanh toan.");
+                "Mình chưa đủ thông tin để hỗ trợ đặt vé.",
+                "Bạn vui lòng cho mình biết rõ phim, ngày/giờ chiếu và số ghế muốn đặt. Sau khi có đủ thông tin, hệ thống mới có thể chuyển sang luồng chọn ghế và thanh toán.");
     }
 
     private boolean requiresLogin(CinemaBotIntent intent) {
@@ -472,9 +622,31 @@ public class CinemaBotIntentRouter {
 
     private String buildMissingFieldsReply(List<String> missingFields) {
         if (missingFields == null || missingFields.isEmpty()) {
-            return "Minh can them thong tin truoc khi co the tra cuu du lieu cho ban.";
+            return "Mình cần thêm thông tin trước khi có thể tra cứu dữ liệu cho bạn.";
         }
-        return "Minh can ban bo sung cac thong tin sau: " + String.join(", ", missingFields) + ".";
+        return "Mình cần bạn bổ sung các thông tin sau: " + formatMissingFieldLabels(missingFields) + ".";
+    }
+
+    private String formatMissingFieldLabels(List<String> missingFields) {
+        return missingFields.stream()
+                .map(this::formatMissingFieldLabel)
+                .distinct()
+                .collect(java.util.stream.Collectors.joining(", "));
+    }
+
+    private String formatMissingFieldLabel(String missingField) {
+        if (missingField == null || missingField.isBlank()) {
+            return "thông tin cần thiết";
+        }
+        return switch (missingField.trim()) {
+            case "movie" -> "phim";
+            case "genre" -> "thể loại";
+            case "showtime", "time", "date" -> "ngày/giờ chiếu";
+            case "seat" -> "ghế";
+            case "ticket_count" -> "số vé";
+            case "booking_code" -> "mã booking";
+            default -> missingField.trim();
+        };
     }
 
     private Map<String, String> extractEntities(
@@ -625,7 +797,7 @@ public class CinemaBotIntentRouter {
 
         Set<String> filterKeys = Set.of(
                 "status", "genre", "excludeGenre", "exclude_genre", "mood", "date", "time", "price_min", "price_max",
-                "room_type", "category", "movie_id"
+                "room_type", "category", "movie_id", "time_period"
         );
         for (Map.Entry<String, String> entry : analysis.entities.entrySet()) {
             if (filterKeys.contains(entry.getKey()) && !hasFilter(analysis, entry.getKey())) {
@@ -696,6 +868,16 @@ public class CinemaBotIntentRouter {
         }
     }
 
+    private void addTimePeriodFilterIfNeeded(CinemaBotService.QueryAnalysis analysis, String normalizedMessage) {
+        if (hasFilter(analysis, "time_period")) {
+            return;
+        }
+        String timePeriod = resolveTimePeriodFilterValue(normalizedMessage);
+        if (timePeriod != null) {
+            analysis.filters.add("time_period:" + timePeriod);
+        }
+    }
+
     private void addSnackCategoryFilterIfNeeded(CinemaBotService.QueryAnalysis analysis, String normalizedMessage) {
         if (hasFilter(analysis, "category")) {
             return;
@@ -724,14 +906,13 @@ public class CinemaBotIntentRouter {
             }
             case SHOWTIMES -> {
                 addDateFilterIfNeeded(analysis, normalizedMessage);
-                addMovieAliasKeywordIfNeeded(analysis, normalizedMessage);
+                addTimePeriodFilterIfNeeded(analysis, normalizedMessage);
                 addMovieGenreFilterIfNeeded(analysis, normalizedMessage);
                 addMovieMoodFilterIfNeeded(analysis, normalizedMessage);
                 addPriceFilterIfNeeded(analysis, normalizedMessage, "price_max");
             }
             case MOVIES -> {
                 addMovieStatusFilterIfNeeded(analysis, normalizedMessage);
-                addMovieAliasKeywordIfNeeded(analysis, normalizedMessage);
                 addMovieGenreFilterIfNeeded(analysis, normalizedMessage);
                 addMovieMoodFilterIfNeeded(analysis, normalizedMessage);
             }
@@ -813,6 +994,16 @@ public class CinemaBotIntentRouter {
                 || containsAny(normalizedMessage, "duoi", "tren", "nho hon", "lon hon", "toi da", "toi thieu");
     }
 
+    private boolean hasWord(String normalizedMessage, String word) {
+        if (normalizedMessage == null || normalizedMessage.isBlank()) {
+            return false;
+        }
+        String normalizedWord = Pattern.quote(normalize(word));
+        return Pattern.compile("(^|[^a-z0-9])" + normalizedWord + "([^a-z0-9]|$)")
+                .matcher(normalizedMessage)
+                .find();
+    }
+
     private boolean containsAny(String normalizedMessage, String... phrases) {
         for (String phrase : phrases) {
             if (lexicon.contains(normalizedMessage, phrase)) {
@@ -820,49 +1011,6 @@ public class CinemaBotIntentRouter {
             }
         }
         return false;
-    }
-
-    private void addMovieAliasKeywordIfNeeded(CinemaBotService.QueryAnalysis analysis, String normalizedMessage) {
-        if (analysis == null || normalizedMessage == null || normalizedMessage.isBlank()) {
-            return;
-        }
-        String aliasKeyword = resolveKnownMovieAliasKeyword(normalizedMessage);
-        if (aliasKeyword == null) {
-            return;
-        }
-        if (analysis.keywords == null) {
-            analysis.keywords = new ArrayList<>();
-        }
-        boolean alreadyPresent = analysis.keywords.stream()
-                .filter(keyword -> keyword != null)
-                .map(this::normalize)
-                .anyMatch(keyword -> keyword.equals(normalize(aliasKeyword)));
-        if (!alreadyPresent) {
-            analysis.keywords.add(aliasKeyword);
-        }
-    }
-
-    private boolean hasKnownMovieAlias(String normalizedMessage) {
-        return resolveKnownMovieAliasKeyword(normalizedMessage) != null;
-    }
-
-    private String resolveKnownMovieAliasKeyword(String normalizedMessage) {
-        if (containsAny(normalizedMessage, "gau truc", "panda", "kungfu panda", "kung fu panda")) {
-            return "Kung Fu Panda";
-        }
-        if (containsAny(normalizedMessage, "cam xuc", "manh ghep cam xuc", "inside out")) {
-            return "Inside Out";
-        }
-        if (containsAny(normalizedMessage, "minion", "ke trom mat trang", "gru")) {
-            return "Ke Trom Mat Trang";
-        }
-        if (containsAny(normalizedMessage, "nguoi nhen", "spider man", "spiderman")) {
-            return "Spider-Man";
-        }
-        if (containsAny(normalizedMessage, "nguoi doi", "batman", "ky si bong dem")) {
-            return "Batman";
-        }
-        return null;
     }
 
     private String resolveDateFilterValue(String normalizedMessage) {
@@ -878,6 +1026,29 @@ public class CinemaBotIntentRouter {
         return null;
     }
 
+    private String resolveTimePeriodFilterValue(String normalizedMessage) {
+        if (normalizedMessage == null || normalizedMessage.isBlank()) {
+            return null;
+        }
+        if (containsAny(normalizedMessage,
+                "toi nay", "toi mai", "buoi toi", "khung gio toi", "suat toi", "ca toi")) {
+            return "EVENING";
+        }
+        if (containsAny(normalizedMessage,
+                "sang nay", "sang mai", "buoi sang", "khung gio sang", "suat sang", "ca sang")) {
+            return "MORNING";
+        }
+        if (containsAny(normalizedMessage,
+                "trua nay", "trua mai", "buoi trua", "khung gio trua", "suat trua", "ca trua")) {
+            return "NOON";
+        }
+        if (containsAny(normalizedMessage,
+                "chieu nay", "chieu mai", "buoi chieu", "khung gio chieu", "ca chieu")) {
+            return "AFTERNOON";
+        }
+        return null;
+    }
+
     private boolean hasFilter(CinemaBotService.QueryAnalysis analysis, String key) {
         if (analysis.filters == null) {
             analysis.filters = new ArrayList<>();
@@ -885,6 +1056,14 @@ public class CinemaBotIntentRouter {
         }
         String prefix = key + ":";
         return analysis.filters.stream().anyMatch(filter -> filter != null && filter.startsWith(prefix));
+    }
+
+    private void markAsQueryable(CinemaBotService.QueryAnalysis analysis) {
+        if (analysis == null) {
+            return;
+        }
+        analysis.missingFields = new ArrayList<>();
+        analysis.allowedToQuery = true;
     }
 
     public record IntentDecision(

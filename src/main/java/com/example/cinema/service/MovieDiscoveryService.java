@@ -456,11 +456,36 @@ public class MovieDiscoveryService {
                 .map(candidate -> applyRerankScore(candidate, rerankResponse, normalizedRerankScores))
                 .sorted(Comparator.comparingDouble(MovieCandidate::score).reversed())
                 .collect(Collectors.toCollection(ArrayList::new));
+        if (rerankResponse.prioritizeTopScore()) {
+            promoteTopRerankCandidate(rerankedWindow);
+        }
 
         if (windowSize < candidates.size()) {
             rerankedWindow.addAll(candidates.subList(windowSize, candidates.size()));
         }
         return rerankedWindow;
+    }
+
+    private void promoteTopRerankCandidate(List<MovieCandidate> candidates) {
+        if (candidates == null || candidates.size() < 2) {
+            return;
+        }
+
+        int bestIndex = -1;
+        double bestScore = Double.NEGATIVE_INFINITY;
+        for (int index = 0; index < candidates.size(); index++) {
+            MovieCandidate candidate = candidates.get(index);
+            if (candidate.rerankScore() == null) {
+                continue;
+            }
+            if (candidate.rerankScore() > bestScore) {
+                bestScore = candidate.rerankScore();
+                bestIndex = index;
+            }
+        }
+        if (bestIndex > 0) {
+            candidates.add(0, candidates.remove(bestIndex));
+        }
     }
 
     private MovieCandidate applyRerankScore(MovieCandidate candidate,

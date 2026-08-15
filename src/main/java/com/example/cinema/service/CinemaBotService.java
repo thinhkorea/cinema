@@ -25,6 +25,7 @@ import org.springframework.web.client.RestTemplate;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.*;
@@ -164,6 +165,10 @@ public class CinemaBotService {
         if (intentRouter.isCapabilityQuestion(userMessage)) {
             return buildCapabilityReply();
         }
+        String currentTimeReply = resolveCurrentTimeReply(userMessage);
+        if (currentTimeReply != null) {
+            return currentTimeReply;
+        }
         if (intentRouter.isOutOfScopeQuestion(userMessage)) {
             return "Mình chỉ hỗ trợ các nội dung liên quan đến rạp chiếu phim như phim, lịch chiếu, đặt vé, thanh toán, voucher, bắp nước và tài khoản. Với câu hỏi ngoài phạm vi như thời tiết, bạn nên kiểm tra bằng ứng dụng thời tiết hoặc nguồn phù hợp nhé.";
         }
@@ -189,7 +194,7 @@ public class CinemaBotService {
         if (!routerDecision.allowedToQuery()) {
             return routerDecision.directReply() != null
                     ? routerDecision.directReply()
-                    : "Minh khong the thuc hien yeu cau nay qua chatbot. Cac thao tac thay doi du lieu, thanh toan hoac cap quyen phai di qua man hinh nghiep vu hop le.";
+                    : "Mình không thể thực hiện yêu cầu này qua chatbot. Các thao tác thay đổi dữ liệu, thanh toán hoặc cấp quyền phải đi qua màn hình nghiệp vụ hợp lệ.";
         }
         if (routerDecision.directReply() != null) {
             return routerDecision.directReply();
@@ -199,6 +204,10 @@ public class CinemaBotService {
             String clarificationMessage = intentRouter.resolveClarificationMessage(userMessage);
             if (clarificationMessage != null) {
                 return clarificationMessage;
+            }
+            QueryAnalysis standaloneAnalysis = intentRouter.route(userMessage, fallbackAnalysis());
+            if (!isDeterministicAnalysis(standaloneAnalysis) && intentRouter.looksLikeBusinessQuestion(userMessage)) {
+                return buildBusinessClarificationReply();
             }
         }
 
@@ -211,7 +220,7 @@ public class CinemaBotService {
         if (!finalDecision.allowedToQuery()) {
             return finalDecision.directReply() != null
                     ? finalDecision.directReply()
-                    : "Minh khong the thuc hien yeu cau nay qua chatbot.";
+                    : "Mình không thể thực hiện yêu cầu này qua chatbot.";
         }
         if (finalDecision.directReply() != null) {
             return finalDecision.directReply();
@@ -343,13 +352,17 @@ public class CinemaBotService {
 
     private String resolveConversationKey(String conversationId) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String normalizedConversationId = conversationId != null ? conversationId.trim() : "";
         if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
-            return "user:" + auth.getName();
+            if (!normalizedConversationId.isBlank()) {
+                return "user:" + auth.getName() + ":session:" + normalizedConversationId;
+            }
+            return "user:" + auth.getName() + ":ephemeral:" + UUID.randomUUID();
         }
-        if (conversationId != null && !conversationId.isBlank()) {
-            return "session:" + conversationId.trim();
+        if (!normalizedConversationId.isBlank()) {
+            return "session:" + normalizedConversationId;
         }
-        return "session:default";
+        return "session:ephemeral:" + UUID.randomUUID();
     }
 
     private BotConversationContext getValidConversationContext(String contextKey) {
@@ -432,7 +445,7 @@ public class CinemaBotService {
                 allMovies
         );
         if (mentionedMovie == null) {
-            mentionedMovie = findMovieByKnownAlias(userMessage, allMovies);
+            mentionedMovie = findMovieByTitleMention(userMessage, allMovies);
         }
         if (mentionedMovie != null && mentionedMovie.getMovieId() != null) {
             putFilter(analysis, "movie_id", String.valueOf(mentionedMovie.getMovieId()));
@@ -458,6 +471,12 @@ public class CinemaBotService {
         if (hasAnyFilter(currentFilters, "price_min", "price_max")) {
             byKey.remove("price_min");
             byKey.remove("price_max");
+        }
+        if (hasAnyFilter(currentFilters, "genre", "excludeGenre", "exclude_genre", "mood")) {
+            byKey.remove("genre");
+            byKey.remove("excludeGenre");
+            byKey.remove("exclude_genre");
+            byKey.remove("mood");
         }
         addFiltersByKey(byKey, currentFilters);
         return new ArrayList<>(byKey.values());
@@ -582,6 +601,31 @@ public class CinemaBotService {
         return "Với đơn bắp nước đặt online, khách cần chọn ngày nhận trong phạm vi tuần hiện tại. Đơn chỉ được giao tại quầy trong thời gian còn hiệu lực; nếu quá hạn nhận theo quy định của rạp thì đơn sẽ không còn hiển thị để xử lý như đơn hợp lệ. Nếu bắp nước đặt kèm vé xem phim, nhân viên sẽ kiểm tra chung theo mã vé/phiếu in của đơn đó.";
     }
 
+    private String resolveCurrentTimeReply(String userMessage) {
+        String normalized = intentRouter.normalize(userMessage);
+        if (normalized.isBlank()) {
+            return null;
+        }
+        boolean cinemaTimeQuestion = containsAnyText(normalized,
+                "phim", "chieu", "suat", "lich", "phong", "dat ve", "mua ve");
+        if (cinemaTimeQuestion) {
+            return null;
+        }
+        boolean asksCurrentTime = containsAnyText(normalized,
+                "bay gio la may gio", "bay gio may gio", "may gio roi",
+                "hien tai may gio", "gio hien tai", "gio bay gio", "dang la may gio");
+        boolean asksCurrentDate = containsAnyText(normalized,
+                "hom nay la ngay may", "hom nay ngay may", "ngay hien tai", "hom nay la thu may");
+        if (!asksCurrentTime && !asksCurrentDate) {
+            return null;
+        }
+
+        LocalDateTime now = LocalDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+        String time = now.format(DateTimeFormatter.ofPattern("HH:mm"));
+        String date = now.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+        return String.format("Bây giờ là %s ngày %s theo giờ Việt Nam.", time, date);
+    }
+
     private void cleanupExpiredConversationContexts() {
         conversationContexts.entrySet().removeIf(entry -> entry.getValue().isExpired(chatContextTtl));
     }
@@ -647,10 +691,18 @@ public class CinemaBotService {
         List<String> filters = analysis != null ? analysis.filters : Collections.emptyList();
         List<Movie> allMovies = movieRepository.findAll();
         Movie matchedMovie = findMovieMentionedInMessage(cleanedMsg, allMovies);
+        String requestedMovieTitle = extractRequestedShowtimeMovieTitle(cleanedMsg, filters);
+        if (matchedMovie == null && requestedMovieTitle != null) {
+            matchedMovie = findMovieByTitleCandidate(requestedMovieTitle, allMovies);
+        }
         if (matchedMovie == null) {
             matchedMovie = findMovieByContextFilter(filters, allMovies);
         }
         ShowtimeDateRange dateRange = resolveShowtimeDateRange(filters, cleanedMsg);
+
+        if (matchedMovie == null && requestedMovieTitle != null) {
+            return Collections.emptyList();
+        }
 
         List<Showtime> candidates = matchedMovie != null
                 ? showtimeRepository.findByMovie_MovieIdOrderByStartTimeAsc(matchedMovie.getMovieId())
@@ -664,11 +716,14 @@ public class CinemaBotService {
 
         filteredCandidates = applyShowtimeFilters(filteredCandidates, filters);
 
-        return filteredCandidates.stream()
+        Optional<Showtime> bestCandidate = filteredCandidates.stream()
                 .sorted((a, b) -> Double.compare(calculateShowtimeBusinessScore(b), calculateShowtimeBusinessScore(a)))
                 .limit(1)
-                .map(this::toShowtimeSuggestion)
-                .collect(Collectors.toList());
+                .findFirst();
+        if (bestCandidate.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return List.of(toShowtimeSuggestion(bestCandidate.get()));
     }
 
     private boolean isShowtimeSuggestionRequest(String userMessage) {
@@ -754,6 +809,14 @@ public class CinemaBotService {
     ) {
         // Dense Retrieval: Lấy phim đang chiếu
         List<Movie> allMovies = movieRepository.findAll();
+        Movie directlyMentionedMovie = findMovieMentionedInMessage(userMessage, allMovies);
+        if (directlyMentionedMovie == null) {
+            directlyMentionedMovie = findMovieByTitleMention(userMessage, allMovies);
+        }
+        if (directlyMentionedMovie == null && isVagueMovieReferenceQuestion(userMessage)) {
+            return "[DIRECT_REPLY]" + buildUnclearMovieReferenceReply();
+        }
+
         List<CinemaRetrievalService.DenseCandidate<Movie>> denseCandidates = retrievalService.denseSearchMovies(userMessage, allMovies);
         List<Movie> denseResults = denseCandidates.stream()
                 .map(CinemaRetrievalService.DenseCandidate::item)
@@ -792,10 +855,6 @@ public class CinemaBotService {
         mergedMovies = applyMovieHardFilters(mergedMovies, filters);
         mergedMovies = applyMovieMoodFilter(mergedMovies, filters);
 
-        Movie directlyMentionedMovie = findMovieMentionedInMessage(userMessage, allMovies);
-        if (directlyMentionedMovie == null) {
-            directlyMentionedMovie = findMovieByKnownAlias(userMessage, allMovies);
-        }
         if (directlyMentionedMovie != null && isSpecificMovieAvailabilityQuestion(userMessage)) {
             return "[DIRECT_REPLY]" + buildMovieAvailabilityReply(directlyMentionedMovie);
         }
@@ -1106,6 +1165,10 @@ public class CinemaBotService {
         // Với lịch chiếu, chỉ match phim nếu tên phim thật sự xuất hiện trong câu hỏi.
         // Không dùng keyword LLM ở đây vì câu rộng như "Hôm nay có phim gì?" có thể bị LLM đoán nhầm tên phim.
         Movie matchedMovie = findMovieMentionedInMessage(cleanedMsg, allMovies);
+        String requestedMovieTitle = extractRequestedShowtimeMovieTitle(cleanedMsg, filters);
+        if (matchedMovie == null && requestedMovieTitle != null) {
+            matchedMovie = findMovieByTitleCandidate(requestedMovieTitle, allMovies);
+        }
         if (matchedMovie == null) {
             matchedMovie = findMovieByContextFilter(filters, allMovies);
         }
@@ -1170,6 +1233,9 @@ public class CinemaBotService {
             }
             return "[DIRECT_REPLY]" + sb.toString().trim();
         } else {
+            if (requestedMovieTitle != null) {
+                return "[DIRECT_REPLY]" + buildUnknownMovieShowtimeReply(requestedMovieTitle);
+            }
             // Không tìm được phim cụ thể → hiển thị tất cả suất chiếu sắp tới
             List<Showtime> todayShowtimes = showtimeRepository.findAllWithActiveRoom();
             List<Showtime> futureShowtimes = todayShowtimes.stream()
@@ -1911,7 +1977,28 @@ public class CinemaBotService {
             }
         }
 
+        String timePeriodFilter = extractFilter(filters, "time_period");
+        if (timePeriodFilter != null) {
+            filtered = filtered.stream()
+                    .filter(s -> isShowtimeInTimePeriod(s, timePeriodFilter))
+                    .collect(Collectors.toList());
+        }
+
         return filtered;
+    }
+
+    private boolean isShowtimeInTimePeriod(Showtime showtime, String timePeriod) {
+        if (showtime == null || showtime.getStartTime() == null || timePeriod == null) {
+            return false;
+        }
+        int hour = showtime.getStartTime().getHour();
+        return switch (timePeriod.toUpperCase(Locale.ROOT)) {
+            case "MORNING" -> hour >= 6 && hour < 12;
+            case "NOON" -> hour >= 12 && hour < 14;
+            case "AFTERNOON" -> hour >= 14 && hour < 18;
+            case "EVENING" -> hour >= 18 && hour < 24;
+            default -> true;
+        };
     }
 
     private boolean isShowtimeInRequestedWindow(Showtime showtime, ShowtimeDateRange dateRange) {
@@ -2341,9 +2428,9 @@ public class CinemaBotService {
      * Tìm phim khớp nhất với keyword hoặc câu hỏi gốc.
      */
     private Movie findBestMatchMovie(List<String> keywords, String cleanedMsg, List<Movie> allMovies) {
-        Movie aliasMatchedMovie = findMovieByKnownAlias(cleanedMsg, allMovies);
-        if (aliasMatchedMovie != null) {
-            return aliasMatchedMovie;
+        Movie titleMentionedMovie = findMovieByTitleMention(cleanedMsg, allMovies);
+        if (titleMentionedMovie != null) {
+            return titleMentionedMovie;
         }
 
         Movie matchedMovie = null;
@@ -2392,6 +2479,188 @@ public class CinemaBotService {
         return matchedMovie;
     }
 
+    private String extractRequestedShowtimeMovieTitle(String cleanedMsg, List<String> filters) {
+        String normalized = normalizeForLooseTitleMatch(cleanedMsg);
+        if (normalized.isBlank()) {
+            return null;
+        }
+
+        List<Pattern> titlePatterns = List.of(
+                Pattern.compile("\\b(?:lich chieu|suat chieu|gio chieu)\\s+(.+)$"),
+                Pattern.compile("\\b(?:co|con)\\s+(?:lich|suat)\\s+(?:chieu\\s+)?(.+?)(?:\\s+khong)?$"),
+                Pattern.compile("^(.+?)\\s+(?:lich chieu|co chieu|dang chieu|con chieu|chieu luc|may gio chieu)\\b.*"),
+                Pattern.compile("^(.+?)\\s+(?:hom nay|ngay mai|toi nay|chieu nay|sang nay|trua nay)\\s+(?:co chieu|chieu khong|chieu luc|may gio).*"),
+                Pattern.compile("^(.+?)\\s+chieu\\s+(?:hom nay|ngay mai|toi nay|chieu nay|sang nay|trua nay|luc|may gio).*")
+        );
+
+        for (Pattern pattern : titlePatterns) {
+            Matcher matcher = pattern.matcher(normalized);
+            if (matcher.find()) {
+                String candidate = cleanShowtimeTitleCandidate(matcher.group(1), filters);
+                if (candidate != null) {
+                    return candidate;
+                }
+            }
+        }
+        return null;
+    }
+
+    private String cleanShowtimeTitleCandidate(String rawCandidate, List<String> filters) {
+        String candidate = normalizeForLooseTitleMatch(rawCandidate);
+        if (candidate.isBlank()) {
+            return null;
+        }
+
+        String[] removablePhrases = {
+                "cuoi tuan nay", "hom nay", "toi nay", "sang nay", "trua nay", "chieu nay",
+                "hom qua", "toi qua", "ngay mai", "toi mai", "cuoi tuan", "sap toi",
+                "lich chieu", "suat chieu", "gio chieu", "phong chieu", "chieu luc",
+                "may gio chieu", "luc may gio", "khi nao chieu", "co chieu", "dang chieu",
+                "con chieu", "cho toi", "cho minh", "giup toi", "giup minh", "toi muon",
+                "minh muon"
+        };
+        for (String phrase : removablePhrases) {
+            candidate = replacePhrase(candidate, phrase, " ");
+        }
+
+        String[] removableWords = {
+                "rap", "phim", "co", "con", "khong", "nao", "gi", "nhung", "cac",
+                "danh", "sach", "lich", "suat", "gio", "chieu", "luc", "may", "cho",
+                "toi", "minh", "ban", "giup", "xem", "muon", "can", "biet", "hien",
+                "tai", "dang", "sap", "thi", "sao", "khung", "buoi", "ca", "sang", "trua"
+        };
+        for (String word : removableWords) {
+            candidate = replaceWord(candidate, word, " ");
+        }
+
+        candidate = collapseSpaces(candidate);
+        return isGenericShowtimeTitleCandidate(candidate, filters) ? null : candidate;
+    }
+
+    private boolean isGenericShowtimeTitleCandidate(String candidate, List<String> filters) {
+        if (candidate == null || candidate.isBlank() || candidate.length() < 3) {
+            return true;
+        }
+        String genreFilter = extractFilter(filters, "genre");
+        if (genreFilter != null) {
+            String normalizedGenre = normalizeForLooseTitleMatch(genreFilter);
+            if (candidate.equals(normalizedGenre) || candidate.contains(normalizedGenre)) {
+                return true;
+            }
+        }
+        return Set.of(
+                "hanh dong", "tinh cam", "kinh di", "hoat hinh", "hai", "phieu luu",
+                "khoa hoc vien tuong", "tam ly", "chinh kich", "the loai",
+                "khung", "khung gio", "buoi", "ca", "sang", "trua", "toi", "chieu"
+        ).contains(candidate);
+    }
+
+    private Movie findMovieByTitleCandidate(String titleCandidate, List<Movie> allMovies) {
+        String candidate = normalizeForLooseTitleMatch(titleCandidate);
+        if (candidate.isBlank() || allMovies == null || allMovies.isEmpty()) {
+            return null;
+        }
+
+        Movie bestMovie = null;
+        double bestScore = 0.0;
+        double secondBestScore = 0.0;
+        for (Movie movie : allMovies) {
+            for (String title : movieTitleCandidates(movie)) {
+                double score = calculateTitleCandidateScore(candidate, title);
+                if (score > bestScore) {
+                    secondBestScore = bestScore;
+                    bestScore = score;
+                    bestMovie = movie;
+                } else if (score > secondBestScore) {
+                    secondBestScore = score;
+                }
+            }
+        }
+
+        if (bestMovie == null || bestScore < 0.45) {
+            return null;
+        }
+        if (bestScore < 0.95 && bestScore - secondBestScore < 0.08) {
+            return null;
+        }
+        return bestMovie;
+    }
+
+    private double calculateTitleCandidateScore(String candidate, String title) {
+        if (candidate == null || candidate.isBlank() || title == null || title.isBlank()) {
+            return 0.0;
+        }
+        if (candidate.equals(title)) {
+            return 1.0;
+        }
+        if (candidate.length() <= 3) {
+            return title.equals(candidate) ? 1.0 : 0.0;
+        }
+        if (containsPhraseAsWords(title, candidate)) {
+            return Math.min(0.95, 0.45 + ((double) candidate.length() / Math.max(title.length(), 1)));
+        }
+        if (containsPhraseAsWords(candidate, title)) {
+            return Math.min(0.95, 0.45 + ((double) title.length() / Math.max(candidate.length(), 1)));
+        }
+
+        List<String> candidateWords = significantTitleWords(candidate);
+        List<String> titleWords = significantTitleWords(title);
+        if (candidateWords.isEmpty() || titleWords.isEmpty()) {
+            return 0.0;
+        }
+        long matchedWords = candidateWords.stream().filter(titleWords::contains).count();
+        if (matchedWords == 0) {
+            return 0.0;
+        }
+        double coverage = (double) matchedWords / candidateWords.size();
+        double titleCoverage = (double) matchedWords / titleWords.size();
+        return coverage >= 1.0 ? 0.55 + Math.min(0.35, titleCoverage * 0.35) : coverage * 0.45;
+    }
+
+    private List<String> significantTitleWords(String value) {
+        String normalized = normalizeForLooseTitleMatch(value);
+        if (normalized.isBlank()) {
+            return List.of();
+        }
+        Set<String> ignored = Set.of("phan", "tap", "the", "and", "va", "cua");
+        return Arrays.stream(normalized.split("\\s+"))
+                .filter(word -> word.length() > 1)
+                .filter(word -> !ignored.contains(word))
+                .collect(Collectors.toList());
+    }
+
+    private String buildUnknownMovieShowtimeReply(String requestedMovieTitle) {
+        return String.format(
+                "Dạ mình chưa tìm thấy phim \"%s\" trong danh sách phim của rạp, nên mình chưa thể tra lịch chiếu riêng cho phim này. Bạn có thể kiểm tra lại tên phim hoặc hỏi \"rạp có phim gì không\" để xem các phim đang chiếu.",
+                requestedMovieTitle
+        );
+    }
+
+    private String normalizeForLooseTitleMatch(String value) {
+        if (value == null) {
+            return "";
+        }
+        String normalized = removeAccents(value.toLowerCase(Locale.ROOT));
+        normalized = normalized.replaceAll("[^a-z0-9]+", " ");
+        return collapseSpaces(normalized);
+    }
+
+    private String replacePhrase(String value, String phrase, String replacement) {
+        return Pattern.compile("(^|\\s)" + Pattern.quote(phrase) + "(?=\\s|$)")
+                .matcher(value)
+                .replaceAll("$1" + replacement);
+    }
+
+    private String replaceWord(String value, String word, String replacement) {
+        return Pattern.compile("(^|\\s)" + Pattern.quote(word) + "(?=\\s|$)")
+                .matcher(value)
+                .replaceAll("$1" + replacement);
+    }
+
+    private String collapseSpaces(String value) {
+        return value == null ? "" : value.trim().replaceAll("\\s+", " ");
+    }
+
     private Movie findMovieMentionedInMessage(String cleanedMsg, List<Movie> allMovies) {
         if (cleanedMsg == null || cleanedMsg.isBlank() || allMovies == null || allMovies.isEmpty()) {
             return null;
@@ -2422,53 +2691,118 @@ public class CinemaBotService {
         return matchedMovie;
     }
 
-    /**
-     * Chuyển đổi và làm sạch dữ liệu JSON trích xuất từ Ollama.
-     */
-    private Movie findMovieByKnownAlias(String message, List<Movie> allMovies) {
+    private Movie findMovieByTitleMention(String message, List<Movie> allMovies) {
         if (message == null || message.isBlank() || allMovies == null || allMovies.isEmpty()) {
             return null;
         }
-        String normalized = removeAccents(message.toLowerCase(Locale.ROOT));
-        List<String> titleFragments = knownMovieTitleFragmentsForAlias(normalized);
-        if (titleFragments.isEmpty()) {
+        String normalizedMessage = normalizeForLooseTitleMatch(message);
+        if (normalizedMessage.isBlank()) {
             return null;
         }
 
-        for (String fragment : titleFragments) {
-            for (Movie movie : allMovies) {
-                if (movie.getTitle() == null || movie.getTitle().isBlank()) {
+        Movie bestMovie = null;
+        double bestScore = 0.0;
+        double secondBestScore = 0.0;
+        for (Movie movie : allMovies) {
+            for (String title : movieTitleCandidates(movie)) {
+                if (!titleMentionedInMessage(normalizedMessage, title)) {
                     continue;
                 }
-                String title = removeAccents(movie.getTitle().toLowerCase(Locale.ROOT));
-                if (title.contains(fragment)) {
-                    return movie;
+                double score = calculateTitleMentionScore(normalizedMessage, title);
+                if (score > bestScore) {
+                    secondBestScore = bestScore;
+                    bestScore = score;
+                    bestMovie = movie;
+                } else if (score > secondBestScore) {
+                    secondBestScore = score;
                 }
             }
         }
-        return null;
+
+        if (bestMovie == null || bestScore < 0.35) {
+            return null;
+        }
+        if (bestScore < 0.95 && bestScore - secondBestScore < 0.05) {
+            return null;
+        }
+        return bestMovie;
     }
 
-    private List<String> knownMovieTitleFragmentsForAlias(String normalizedMessage) {
-        if (normalizedMessage == null || normalizedMessage.isBlank()) {
+    private List<String> movieTitleCandidates(Movie movie) {
+        if (movie == null) {
             return List.of();
         }
-        if (containsAnyText(normalizedMessage, "gau truc", "panda", "kungfu panda", "kung fu panda")) {
-            return List.of("kung fu panda");
+        Set<String> candidates = new LinkedHashSet<>();
+        addTitleDerivedCandidates(candidates, movie.getTitle());
+        return List.copyOf(candidates);
+    }
+
+    private void addTitleDerivedCandidates(Set<String> candidates, String title) {
+        if (title == null || title.isBlank()) {
+            return;
         }
-        if (containsAnyText(normalizedMessage, "cam xuc", "manh ghep cam xuc", "inside out")) {
-            return List.of("inside out", "manh ghep cam xuc");
+        addMovieTitleCandidate(candidates, title);
+        String titleWithoutParentheses = title.replaceAll("\\([^)]*\\)", " ");
+        addMovieTitleCandidate(candidates, titleWithoutParentheses);
+        addDelimitedTitleParts(candidates, titleWithoutParentheses);
+
+        Matcher matcher = Pattern.compile("\\(([^)]+)\\)").matcher(title);
+        while (matcher.find()) {
+            String parentheticalTitle = matcher.group(1);
+            addMovieTitleCandidate(candidates, parentheticalTitle);
+            addDelimitedTitleParts(candidates, parentheticalTitle);
         }
-        if (containsAnyText(normalizedMessage, "minion", "ke trom mat trang", "gru")) {
-            return List.of("ke trom mat trang", "despicable");
+    }
+
+    private void addDelimitedTitleParts(Set<String> candidates, String title) {
+        if (title == null || title.isBlank()) {
+            return;
         }
-        if (containsAnyText(normalizedMessage, "nguoi nhen", "spider man", "spiderman")) {
-            return List.of("spider-man", "spider man");
+        for (String part : title.split(":")) {
+            addMovieTitleCandidate(candidates, part);
         }
-        if (containsAnyText(normalizedMessage, "nguoi doi", "batman", "ky si bong dem")) {
-            return List.of("batman", "dark knight");
+    }
+
+    private void addMovieTitleCandidate(Set<String> candidates, String rawTitle) {
+        String normalizedTitle = normalizeForLooseTitleMatch(rawTitle);
+        if (!normalizedTitle.isBlank() && normalizedTitle.length() >= 3) {
+            candidates.add(normalizedTitle);
         }
-        return List.of();
+    }
+
+    private boolean titleMentionedInMessage(String normalizedMessage, String normalizedTitle) {
+        if (normalizedTitle == null || normalizedTitle.isBlank()) {
+            return false;
+        }
+        if (normalizedTitle.length() <= 3) {
+            return hasExplicitShortMovieTitleCue(normalizedMessage, normalizedTitle);
+        }
+        return containsPhraseAsWords(normalizedMessage, normalizedTitle);
+    }
+
+    private double calculateTitleMentionScore(String normalizedMessage, String normalizedTitle) {
+        double score = 0.45 + Math.min(0.4, (double) normalizedTitle.length() / Math.max(normalizedMessage.length(), 1));
+        if (normalizedTitle.contains(" ")) {
+            score += 0.05;
+        }
+        return Math.min(1.0, score);
+    }
+
+    private boolean isVagueMovieReferenceQuestion(String userMessage) {
+        String normalized = intentRouter.normalize(userMessage);
+        if (normalized.isBlank()) {
+            return false;
+        }
+        boolean vagueCue = containsAnyText(normalized,
+                "khong nho ten phim", "khong nho phim", "hinh nhu",
+                "phim co", "nhan vat", "noi ve");
+        boolean availabilityCue = containsAnyText(normalized,
+                "con chieu", "co chieu", "dang chieu", "co suat", "co lich", "con ban ve");
+        return vagueCue && availabilityCue;
+    }
+
+    private String buildUnclearMovieReferenceReply() {
+        return "Mình chưa xác định chắc bạn đang nói phim nào. Bạn có thể nhập tên phim rõ hơn, hoặc hỏi \"rạp có phim gì không\" để xem danh sách phim đang chiếu.";
     }
 
     private boolean isSpecificMovieAvailabilityQuestion(String userMessage) {
@@ -2476,8 +2810,7 @@ public class CinemaBotService {
         if (normalized.isBlank()) {
             return false;
         }
-        return !knownMovieTitleFragmentsForAlias(removeAccents(normalized)).isEmpty()
-                || containsAnyText(normalized,
+        return containsAnyText(normalized,
                 "con chieu", "dang chieu", "co chieu", "hien co chieu", "rap co chieu",
                 "con ban ve", "co suat", "co lich", "co phim nay", "phim nay");
     }

@@ -169,7 +169,8 @@ class MovieDiscoveryServiceTest {
                         Map.of(
                                 4L, new MovieDiscoveryRerankService.RerankScore(0.10, null),
                                 22L, new MovieDiscoveryRerankService.RerankScore(0.95, null)
-                        )
+                        ),
+                        false
                 ));
 
         List<MovieDiscoveryResultDTO> results = service.discover(
@@ -215,7 +216,8 @@ class MovieDiscoveryServiceTest {
                         Map.of(
                                 4L, new MovieDiscoveryRerankService.RerankScore(0.021, null),
                                 22L, new MovieDiscoveryRerankService.RerankScore(0.038, null)
-                        )
+                        ),
+                        false
                 ));
 
         List<MovieDiscoveryResultDTO> results = service.discover(
@@ -261,7 +263,8 @@ class MovieDiscoveryServiceTest {
                         Map.of(
                                 1L, new MovieDiscoveryRerankService.RerankScore(0.002, null),
                                 22L, new MovieDiscoveryRerankService.RerankScore(0.001, null)
-                        )
+                        ),
+                        false
                 ));
 
         List<MovieDiscoveryResultDTO> results = service.discover(
@@ -319,7 +322,8 @@ class MovieDiscoveryServiceTest {
                         Map.of(
                                 4L, new MovieDiscoveryRerankService.RerankScore(0.177, null),
                                 22L, new MovieDiscoveryRerankService.RerankScore(0.006, null)
-                        )
+                        ),
+                        false
                 ));
 
         List<MovieDiscoveryResultDTO> results = service.discover(

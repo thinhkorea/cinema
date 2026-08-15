@@ -34,6 +34,8 @@ public class MovieDiscoveryRerankService {
 
     private static final int MAX_RERANK_DOCUMENT_LENGTH = 1200;
     private static final int MIN_DESCRIPTION_SNIPPET_BUDGET = 450;
+    private static final double V2_CLEAN_MIN_TOP_SCORE = 0.01;
+    private static final double V2_CLEAN_MIN_TOP_SCORE_RATIO = 3.0;
     private static final Pattern NON_WORD_PATTERN = Pattern.compile("[^a-z0-9]+");
     private static final Pattern CHARACTER_NAME_PATTERN = Pattern.compile(
             "(?U)\\b\\p{Lu}[\\p{L}\\p{M}\\p{Nd}'’.-]*\\b(?:\\s+\\b\\p{Lu}[\\p{L}\\p{M}\\p{Nd}'’.-]*\\b){0,3}"
@@ -62,12 +64,15 @@ public class MovieDiscoveryRerankService {
     private final boolean enabled;
     private final String rerankUrl;
     private final String rerankModelName;
+    private final String rerankDocumentFormat;
+    private final MovieDiscoveryRerankDocumentFormatter documentFormatter;
 
     public MovieDiscoveryRerankService(
             RestTemplateBuilder restTemplateBuilder,
             @Value("${cinema.movie-discovery.rerank-enabled:true}") boolean enabled,
             @Value("${cinema.movie-discovery.rerank-url:http://localhost:8002/rerank-movies}") String rerankUrl,
             @Value("${cinema.movie-discovery.rerank-model:BAAI/bge-reranker-v2-m3}") String rerankModelName,
+            @Value("${cinema.movie-discovery.rerank-document-format:legacy}") String rerankDocumentFormat,
             @Value("${cinema.movie-discovery.rerank-connect-timeout-seconds:3}") int connectTimeoutSeconds,
             @Value("${cinema.movie-discovery.rerank-read-timeout-seconds:5}") int readTimeoutSeconds
     ) {
@@ -78,6 +83,8 @@ public class MovieDiscoveryRerankService {
         this.enabled = enabled;
         this.rerankUrl = rerankUrl;
         this.rerankModelName = rerankModelName;
+        this.documentFormatter = new MovieDiscoveryRerankDocumentFormatter();
+        this.rerankDocumentFormat = documentFormatter.normalizeFormat(rerankDocumentFormat);
     }
 
     public RerankResponse rerank(String query, List<RerankCandidate> candidates) {
@@ -125,6 +132,10 @@ public class MovieDiscoveryRerankService {
     }
 
     private String buildRerankDocument(RerankCandidate candidate, String query) {
+        if (documentFormatter.isV2Clean(rerankDocumentFormat)) {
+            return documentFormatter.formatV2Clean(candidate);
+        }
+
         String header = joinNonBlank(List.of(
                 safe(candidate.title()),
                 safe(candidate.genre()),
@@ -417,7 +428,26 @@ public class MovieDiscoveryRerankService {
         if (scores.isEmpty()) {
             return RerankResponse.empty();
         }
-        return new RerankResponse(modelName, scores);
+        boolean prioritizeTopScore = documentFormatter.isV2Clean(rerankDocumentFormat);
+        if (prioritizeTopScore && !isConfidentV2CleanResponse(scores)) {
+            return RerankResponse.empty();
+        }
+        return new RerankResponse(modelName, scores, prioritizeTopScore);
+    }
+
+    private boolean isConfidentV2CleanResponse(Map<Long, RerankScore> scores) {
+        if (scores == null || scores.isEmpty()) {
+            return false;
+        }
+
+        List<Double> sortedScores = scores.values().stream()
+                .map(RerankScore::score)
+                .sorted(Comparator.reverseOrder())
+                .toList();
+        double top1Score = sortedScores.get(0);
+        double top2Score = sortedScores.size() > 1 ? sortedScores.get(1) : 0.0;
+        double ratio = top2Score > 0.0 ? top1Score / top2Score : Double.POSITIVE_INFINITY;
+        return top1Score >= V2_CLEAN_MIN_TOP_SCORE && ratio >= V2_CLEAN_MIN_TOP_SCORE_RATIO;
     }
 
     private Object firstValue(Map<?, ?> map, String firstKey, String secondKey) {
@@ -506,9 +536,9 @@ public class MovieDiscoveryRerankService {
     public record RerankScore(double score, String reason) {
     }
 
-    public record RerankResponse(String modelName, Map<Long, RerankScore> scores) {
+    public record RerankResponse(String modelName, Map<Long, RerankScore> scores, boolean prioritizeTopScore) {
         public static RerankResponse empty() {
-            return new RerankResponse(null, Collections.emptyMap());
+            return new RerankResponse(null, Collections.emptyMap(), false);
         }
 
         public boolean hasScores() {

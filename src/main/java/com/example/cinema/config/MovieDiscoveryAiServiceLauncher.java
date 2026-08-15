@@ -35,6 +35,8 @@ public class MovieDiscoveryAiServiceLauncher {
     private final boolean warmupEnabled;
     private final String warmupUrl;
     private final String cacheRoot;
+    private final String embeddingModelName;
+    private final String rerankModelName;
     private Process process;
 
     public MovieDiscoveryAiServiceLauncher(
@@ -46,7 +48,9 @@ public class MovieDiscoveryAiServiceLauncher {
             @Value("${cinema.movie-discovery.ai-health-url:http://localhost:8002/health}") String healthUrl,
             @Value("${cinema.movie-discovery.ai-warmup-enabled:true}") boolean warmupEnabled,
             @Value("${cinema.movie-discovery.ai-warmup-url:http://localhost:8002/warmup}") String warmupUrl,
-            @Value("${cinema.movie-discovery.ai-cache-root:D:/AI_CACHE}") String cacheRoot
+            @Value("${cinema.movie-discovery.ai-cache-root:D:/AI_CACHE}") String cacheRoot,
+            @Value("${cinema.bot.embedding-model:BAAI/bge-m3}") String embeddingModelName,
+            @Value("${cinema.movie-discovery.rerank-model:BAAI/bge-reranker-v2-m3}") String rerankModelName
     ) {
         this.enabled = enabled;
         this.pythonCommand = pythonCommand;
@@ -57,6 +61,8 @@ public class MovieDiscoveryAiServiceLauncher {
         this.warmupEnabled = warmupEnabled;
         this.warmupUrl = warmupUrl;
         this.cacheRoot = cacheRoot;
+        this.embeddingModelName = embeddingModelName;
+        this.rerankModelName = rerankModelName;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -166,28 +172,34 @@ public class MovieDiscoveryAiServiceLauncher {
     }
 
     private void configureAiCacheEnvironment(ProcessBuilder builder) {
-        if (cacheRoot == null || cacheRoot.isBlank()) {
-            return;
+        if (cacheRoot != null && !cacheRoot.isBlank()) {
+            Path root = Paths.get(cacheRoot).toAbsolutePath().normalize();
+            Path huggingFaceHome = root.resolve("huggingface");
+            Path huggingFaceHub = huggingFaceHome.resolve("hub");
+            Path torchHome = root.resolve("torch");
+            Path pipCache = root.resolve("pip");
+
+            try {
+                Files.createDirectories(huggingFaceHub);
+                Files.createDirectories(torchHome);
+                Files.createDirectories(pipCache);
+            } catch (IOException ex) {
+                log.warn("[MovieDiscoveryAI] Could not create AI cache folders under {}: {}", root, ex.getMessage());
+            }
+
+            builder.environment().put("HF_HOME", huggingFaceHome.toString());
+            builder.environment().put("HUGGINGFACE_HUB_CACHE", huggingFaceHub.toString());
+            builder.environment().put("TORCH_HOME", torchHome.toString());
+            builder.environment().put("PIP_CACHE_DIR", pipCache.toString());
         }
 
-        Path root = Paths.get(cacheRoot).toAbsolutePath().normalize();
-        Path huggingFaceHome = root.resolve("huggingface");
-        Path huggingFaceHub = huggingFaceHome.resolve("hub");
-        Path torchHome = root.resolve("torch");
-        Path pipCache = root.resolve("pip");
-
-        try {
-            Files.createDirectories(huggingFaceHub);
-            Files.createDirectories(torchHome);
-            Files.createDirectories(pipCache);
-        } catch (IOException ex) {
-            log.warn("[MovieDiscoveryAI] Could not create AI cache folders under {}: {}", root, ex.getMessage());
+        if (embeddingModelName != null && !embeddingModelName.isBlank()) {
+            builder.environment().put("MOVIE_DISCOVERY_EMBEDDING_MODEL", embeddingModelName);
         }
-
-        builder.environment().put("HF_HOME", huggingFaceHome.toString());
-        builder.environment().put("HUGGINGFACE_HUB_CACHE", huggingFaceHub.toString());
-        builder.environment().put("TORCH_HOME", torchHome.toString());
-        builder.environment().put("PIP_CACHE_DIR", pipCache.toString());
+        if (rerankModelName != null && !rerankModelName.isBlank()) {
+            builder.environment().put("MOVIE_DISCOVERY_RERANK_MODEL", rerankModelName);
+            builder.environment().put("CINEMA_MOVIE_DISCOVERY_RERANK_MODEL", rerankModelName);
+        }
     }
 
     private void warmupInBackground() {
