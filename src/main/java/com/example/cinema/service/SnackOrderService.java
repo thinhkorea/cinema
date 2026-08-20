@@ -84,6 +84,7 @@ public class SnackOrderService {
         SnackOrder order = snackOrderRepository.findFirstByBookingTxnRefOrderByCreatedAtDesc(txnRef)
                 .orElseGet(() -> SnackOrder.builder()
                         .orderCode(generateOrderCode())
+                        .totalAmount(0.0)
                         .build());
 
         order.setCustomer(customer);
@@ -172,6 +173,24 @@ public class SnackOrderService {
     }
 
     @Transactional
+    public void cancelPendingByOrderCode(String orderCode) {
+        SnackOrder order = snackOrderRepository.findByOrderCode(orderCode)
+                .orElseThrow(() -> new IllegalArgumentException("Khong tim thay don bap nuoc."));
+        if (order.getStatus() == SnackOrder.Status.PENDING) {
+            order.setStatus(SnackOrder.Status.CANCELLED);
+            snackOrderRepository.save(order);
+        }
+    }
+
+    @Transactional
+    public void deletePendingAttachedByBookingTxnRef(String txnRef) {
+        snackOrderRepository.findFirstByBookingTxnRefOrderByCreatedAtDesc(txnRef)
+                .filter(order -> order.getOrderType() == SnackOrder.OrderType.BOOKING_ATTACHED)
+                .filter(order -> order.getStatus() != SnackOrder.Status.PAID)
+                .ifPresent(snackOrderRepository::delete);
+    }
+
+    @Transactional
     public void markPaidByBookingTxnRef(String txnRef, String paymentMethod) {
         snackOrderRepository.findFirstByBookingTxnRefOrderByCreatedAtDesc(txnRef)
                 .ifPresent(order -> {
@@ -206,6 +225,9 @@ public class SnackOrderService {
     }
 
     private SnackOrderResponseDTO saveOrderItems(SnackOrder order, List<SnackItemRequestDTO> itemRequests) {
+        if (order.getTotalAmount() == null) {
+            order.setTotalAmount(0.0);
+        }
         SnackOrder managedOrder = snackOrderRepository.save(order);
         if (managedOrder.getItems() == null) {
             managedOrder.setItems(new ArrayList<>());

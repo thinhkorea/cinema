@@ -250,7 +250,7 @@ public class BookingService {
         }
         
         // TÍCH ĐIỂM: Tính từ tổng tiền THANH TOÁN (sau khi trừ điểm)
-        if (customer != null && totalAmount > 0) {
+        if (hasNewlyPaidBooking && customer != null && totalAmount > 0) {
             Integer pointsUsed = bookings.get(0).getPointsUsed() != null ?
                 bookings.get(0).getPointsUsed() : 0;
 
@@ -1151,6 +1151,7 @@ public class BookingService {
     public void cancelPendingBookingsByTxn(String txnRef) {
         List<Booking> bookingsToCancel = bookingRepo.findByTxnRefAndStatus(txnRef, Booking.Status.PENDING);
         if (!bookingsToCancel.isEmpty()) {
+            snackOrderService.deletePendingAttachedByBookingTxnRef(txnRef);
             bookingRepo.deleteAll(bookingsToCancel);
             System.out.println("Đã hủy " + bookingsToCancel.size() + " booking PENDING với txnRef: " + txnRef);
         }

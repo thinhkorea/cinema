@@ -27,6 +27,12 @@ public class MovieReviewService {
 
     private static final Charset WINDOWS_1252 = Charset.forName("Windows-1252");
     private static final String REPLACEMENT_CHARACTER = String.valueOf((char) 65533);
+    private static final String MOVIE_REVIEW_SOURCE = "MOVIE_REVIEW";
+    private static final String SPAM_VIOLATION_TYPE = "SPAM";
+    private static final int SPAM_VIOLATION_LIMIT = 3;
+    private static final int SPAM_VIOLATION_WINDOW_HOURS = 24;
+    private static final int REVIEW_VIOLATION_LIMIT = 5;
+    private static final int REVIEW_VIOLATION_WINDOW_DAYS = 7;
 
     private final MovieReviewRepository reviewRepo;
     private final MovieRepository movieRepo;
@@ -78,6 +84,7 @@ public class MovieReviewService {
                 .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy phim"));
 
         User user = getCustomerUser(username);
+        ensureReviewPostingAllowed(user);
 
         Optional<MovieReview> existingReview = reviewRepo.findByMovie_MovieIdAndUser_UserId(movieId, user.getUserId());
         if (existingReview.isPresent()) {
@@ -116,6 +123,7 @@ public class MovieReviewService {
     @Transactional
     public MovieReviewResponseDTO updateReview(Long movieId, Long reviewId, String username, MovieReviewRequestDTO request) {
         User user = getCustomerUser(username);
+        ensureReviewPostingAllowed(user);
         MovieReview review = getOwnedReview(movieId, reviewId, user);
 
         ReviewModerationService.ModerationResult moderation = applyReviewContent(review, request);
@@ -186,6 +194,27 @@ public class MovieReviewService {
         }
 
         return user;
+    }
+
+    private void ensureReviewPostingAllowed(User user) {
+        LocalDateTime spamWindowStart = LocalDateTime.now().minusHours(SPAM_VIOLATION_WINDOW_HOURS);
+        long recentSpamViolations = violationLogRepo.countByUser_UserIdAndSourceTypeAndViolationTypeAndCreatedAtAfter(
+                user.getUserId(),
+                MOVIE_REVIEW_SOURCE,
+                SPAM_VIOLATION_TYPE,
+                spamWindowStart);
+        if (recentSpamViolations >= SPAM_VIOLATION_LIMIT) {
+            throw new IllegalArgumentException("Tài khoản của bạn đang bị tạm khóa quyền đánh giá do có quá nhiều bình luận spam trong 24 giờ. Vui lòng thử lại sau.");
+        }
+
+        LocalDateTime reviewViolationWindowStart = LocalDateTime.now().minusDays(REVIEW_VIOLATION_WINDOW_DAYS);
+        long recentReviewViolations = violationLogRepo.countByUser_UserIdAndSourceTypeAndCreatedAtAfter(
+                user.getUserId(),
+                MOVIE_REVIEW_SOURCE,
+                reviewViolationWindowStart);
+        if (recentReviewViolations >= REVIEW_VIOLATION_LIMIT) {
+            throw new IllegalArgumentException("Tài khoản của bạn đang bị tạm khóa quyền đánh giá do có nhiều bình luận vi phạm trong 7 ngày. Vui lòng liên hệ quản trị viên hoặc thử lại sau.");
+        }
     }
 
     private MovieReview getOwnedReview(Long movieId, Long reviewId, User user) {
@@ -259,7 +288,7 @@ public class MovieReviewService {
         UserViolationLog log = new UserViolationLog();
         log.setUser(user);
         log.setReview(review);
-        log.setSourceType("MOVIE_REVIEW");
+        log.setSourceType(MOVIE_REVIEW_SOURCE);
         log.setViolationType(truncate(moderation.violationType(), 50));
         log.setSeverity(truncate(moderation.severity(), 30));
         log.setReason(truncate(moderation.reason(), 1000));

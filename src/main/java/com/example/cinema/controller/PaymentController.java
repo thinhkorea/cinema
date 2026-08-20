@@ -234,9 +234,15 @@ public class PaymentController {
         } else if (txnRef == null || txnRef.isBlank()) {
             responseCode = "99";
             System.out.println("VNPay missing txnRef");
+        } else if (responseCode != null && !"00".equals(responseCode)) {
+            System.out.println("VNPay payment not successful, txnRef=" + txnRef + ", response=" + responseCode);
         } else if (transactionStatus != null && !"00".equals(transactionStatus)) {
             responseCode = transactionStatus;
             System.out.println("VNPay transaction failed, txnRef=" + txnRef + ", status=" + transactionStatus);
+        }
+
+        if (txnRef != null && !txnRef.isBlank()) {
+            finalizePaymentReturn(txnRef, responseCode, snackOrderFlow);
         }
 
         String paymentToken = "00".equals(responseCode) ? createPaymentToken(txnRef, responseCode, flow) : null;
@@ -248,6 +254,27 @@ public class PaymentController {
         return ResponseEntity.status(302)
                 .header("Location", redirectUrl)
                 .build();
+    }
+
+    private void finalizePaymentReturn(String txnRef, String responseCode, boolean snackOrderFlow) {
+        try {
+            if ("00".equals(responseCode)) {
+                if (snackOrderFlow) {
+                    snackOrderService.markPaidByOrderCode(txnRef, "VNPAY");
+                } else {
+                    bookingService.markPaidByTxn(txnRef, "VNPAY");
+                }
+                return;
+            }
+
+            if (snackOrderFlow) {
+                snackOrderService.cancelPendingByOrderCode(txnRef);
+            } else {
+                bookingService.cancelPendingBookingsByTxn(txnRef);
+            }
+        } catch (Exception ex) {
+            System.out.println("Could not finalize VNPay return, txnRef=" + txnRef + ": " + ex.getMessage());
+        }
     }
 
     @PostMapping("/confirm-vnpay")

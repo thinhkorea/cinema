@@ -5,6 +5,7 @@ import com.example.cinema.domain.MovieReview;
 import com.example.cinema.domain.User;
 import com.example.cinema.domain.UserViolationLog;
 import com.example.cinema.dto.MovieReviewResponseDTO;
+import com.example.cinema.dto.ReviewModerationUserRiskDTO;
 import com.example.cinema.dto.UserViolationLogResponseDTO;
 import com.example.cinema.repository.MovieReviewRepository;
 import com.example.cinema.repository.UserViolationLogRepository;
@@ -16,6 +17,8 @@ import org.springframework.web.bind.annotation.*;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -25,6 +28,12 @@ public class AdminReviewModerationController {
 
     private static final Charset WINDOWS_1252 = Charset.forName("Windows-1252");
     private static final String REPLACEMENT_CHARACTER = String.valueOf((char) 65533);
+    private static final String MOVIE_REVIEW_SOURCE = "MOVIE_REVIEW";
+    private static final String SPAM_VIOLATION_TYPE = "SPAM";
+    private static final int SPAM_VIOLATION_LIMIT = 3;
+    private static final int SPAM_VIOLATION_WINDOW_HOURS = 24;
+    private static final int REVIEW_VIOLATION_LIMIT = 5;
+    private static final int REVIEW_VIOLATION_WINDOW_DAYS = 7;
 
     private final MovieReviewRepository reviewRepo;
     private final UserViolationLogRepository violationLogRepo;
@@ -56,6 +65,49 @@ public class AdminReviewModerationController {
         return violationLogRepo.findTop100ByOrderByCreatedAtDesc()
                 .stream()
                 .map(this::toViolationResponse)
+                .toList();
+    }
+
+    @GetMapping("/suspicious-users")
+    @Transactional(readOnly = true)
+    public List<ReviewModerationUserRiskDTO> getSuspiciousUsers() {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime spamWindowStart = now.minusHours(SPAM_VIOLATION_WINDOW_HOURS);
+        LocalDateTime reviewViolationWindowStart = now.minusDays(REVIEW_VIOLATION_WINDOW_DAYS);
+
+        Map<Long, UserRiskAccumulator> users = new HashMap<>();
+        for (UserViolationLog log : violationLogRepo.findBySourceTypeAndCreatedAtAfterOrderByCreatedAtDesc(
+                MOVIE_REVIEW_SOURCE,
+                reviewViolationWindowStart)) {
+            User user = log.getUser();
+            if (user == null || user.getUserId() == null) {
+                continue;
+            }
+
+            UserRiskAccumulator accumulator = users.computeIfAbsent(user.getUserId(), ignored -> new UserRiskAccumulator(user));
+            accumulator.reviewViolations7d++;
+
+            if (SPAM_VIOLATION_TYPE.equalsIgnoreCase(log.getViolationType())
+                    && log.getCreatedAt() != null
+                    && !log.getCreatedAt().isBefore(spamWindowStart)) {
+                accumulator.spamViolations24h++;
+            }
+
+            if (accumulator.lastViolationAt == null
+                    || (log.getCreatedAt() != null && log.getCreatedAt().isAfter(accumulator.lastViolationAt))) {
+                accumulator.lastViolationAt = log.getCreatedAt();
+                accumulator.lastViolationType = log.getViolationType();
+                accumulator.lastSeverity = log.getSeverity();
+                accumulator.lastReason = normalizeStoredText(log.getReason());
+                accumulator.lastContentSnapshot = normalizeStoredText(log.getContentSnapshot());
+            }
+        }
+
+        return users.values()
+                .stream()
+                .filter(UserRiskAccumulator::isReviewBlocked)
+                .sorted(Comparator.comparing(UserRiskAccumulator::lastViolationAtOrMin).reversed())
+                .map(UserRiskAccumulator::toResponse)
                 .toList();
     }
 
@@ -173,6 +225,53 @@ public class AdminReviewModerationController {
             return decoded.contains(REPLACEMENT_CHARACTER) ? value : decoded;
         } catch (RuntimeException ignored) {
             return value;
+        }
+    }
+
+    private static class UserRiskAccumulator {
+        private final User user;
+        private long spamViolations24h;
+        private long reviewViolations7d;
+        private LocalDateTime lastViolationAt;
+        private String lastViolationType;
+        private String lastSeverity;
+        private String lastReason;
+        private String lastContentSnapshot;
+
+        private UserRiskAccumulator(User user) {
+            this.user = user;
+        }
+
+        private boolean isReviewBlocked() {
+            return spamViolations24h >= SPAM_VIOLATION_LIMIT || reviewViolations7d >= REVIEW_VIOLATION_LIMIT;
+        }
+
+        private LocalDateTime lastViolationAtOrMin() {
+            return lastViolationAt != null ? lastViolationAt : LocalDateTime.MIN;
+        }
+
+        private ReviewModerationUserRiskDTO toResponse() {
+            String riskLevel = spamViolations24h >= SPAM_VIOLATION_LIMIT ? "HIGH" : "MEDIUM";
+            String recommendedAction = spamViolations24h >= SPAM_VIOLATION_LIMIT
+                    ? "Tài khoản đã spam nhiều lần trong 24 giờ. Nên kiểm tra log và cân nhắc khóa tài khoản."
+                    : "Tài khoản có nhiều bình luận vi phạm trong 7 ngày. Nên kiểm tra lịch sử trước khi xử lý.";
+
+            return ReviewModerationUserRiskDTO.builder()
+                    .userId(user.getUserId())
+                    .email(user.getEmail())
+                    .fullName(user.getFullName())
+                    .isActive(user.getIsActive())
+                    .spamViolations24h(spamViolations24h)
+                    .reviewViolations7d(reviewViolations7d)
+                    .reviewBlocked(isReviewBlocked())
+                    .riskLevel(riskLevel)
+                    .recommendedAction(recommendedAction)
+                    .lastViolationType(lastViolationType)
+                    .lastSeverity(lastSeverity)
+                    .lastReason(lastReason)
+                    .lastContentSnapshot(lastContentSnapshot)
+                    .lastViolationAt(lastViolationAt)
+                    .build();
         }
     }
 }

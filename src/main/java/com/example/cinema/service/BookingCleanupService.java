@@ -13,12 +13,14 @@ import java.util.List;
 public class BookingCleanupService {
 
     private final BookingRepository bookingRepository;
+    private final SnackOrderService snackOrderService;
 
     // Thời gian giữ ghế (phút) - đủ thời gian để user chọn snacks và thanh toán
     private static final int PENDING_BOOKING_TIMEOUT_MINUTES = 10;
 
-    public BookingCleanupService(BookingRepository bookingRepository) {
+    public BookingCleanupService(BookingRepository bookingRepository, SnackOrderService snackOrderService) {
         this.bookingRepository = bookingRepository;
+        this.snackOrderService = snackOrderService;
     }
 
     /**
@@ -35,6 +37,11 @@ public class BookingCleanupService {
 
         if (!expiredBookings.isEmpty()) {
             System.out.println("Dọn dẹp " + expiredBookings.size() + " booking quá hạn...");
+            expiredBookings.stream()
+                    .map(Booking::getTxnRef)
+                    .filter(txnRef -> txnRef != null && !txnRef.isBlank())
+                    .distinct()
+                    .forEach(snackOrderService::deletePendingAttachedByBookingTxnRef);
             bookingRepository.deleteAll(expiredBookings);
         }
     }
